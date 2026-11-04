@@ -1,3 +1,7 @@
-# Robot Viewer for VS Code
+# Robot Preview: URDF & MJCF
 
-Live 3D preview of URDF, Xacro and MJCF beside the text editor. Click a link to jump to its definition, move the cursor to highlight it, edit joint limits from the viewer, and run MuJoCo simulation for MJCF. `package://` and `$(find)` references to other ROS packages are resolved from the workspace and `/opt/ros`.
+![demo](images/demo.gif)
+
+![preview](images/preview.png)
+
+Based on [fan-ziqi/robot_viewer](https://github.com/fan-ziqi/robot_viewer), with [three.js](https://threejs.org/), [urdf-loader](https://github.com/gkjohnson/urdf-loaders), [xacro-parser](https://github.com/gkjohnson/xacro-parser), [mujoco_wasm](https://github.com/zalo/mujoco_wasm) and [d3](https://d3js.org/).

@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<robot name="robot_a" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="side" default="left"/>
+  <xacro:include filename="$(find robot_b)/urdf/arm.xacro"/>
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.2 0.2 0.05"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="lift_joint" type="prismatic">
+    <parent link="base_link"/>
+    <child link="lift_link"/>
+    <origin xyz="0 0 0.05"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="0" upper="0.2" effort="10" velocity="1"/>
+  </joint>
+  <link name="lift_link">
+    <visual>
+      <geometry>
+        <cylinder radius="0.03" length="0.1"/>
+      </geometry>
+    </visual>
+  </link>
+  <joint name="mount_joint" type="fixed">
+    <parent link="lift_link"/>
+    <child link="mount_link"/>
+  </joint>
+  <link name="mount_link"/>
+  <xacro:arm prefix="$(arg side)" parent="mount_link"/>
+</robot>

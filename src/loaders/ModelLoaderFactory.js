@@ -7,7 +7,7 @@ import { URDFAdapter } from '../adapters/URDFAdapter.js';
 import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
 import { resolveFileFromMap } from '../utils/FileUtils.js';
-import { trackMeshLoads } from '../utils/MeshLoader.js';
+import { trackMeshLoads, cachedMeshParse } from '../utils/MeshLoader.js';
 
 export class ModelLoaderFactory {
     /**
@@ -100,7 +100,7 @@ export class ModelLoaderFactory {
      * @param {Map} fileMap - File map (path -> File object), for loading mesh files
      * @param {File} file - Original file object (optional)
      */
-    static async loadModel(fileType, content, fileName, fileMap = null, file = null) {
+    static async loadModel(fileType, content, fileName, fileMap = null, file = null, { xacroArgs = {} } = {}) {
         // Extract base path from fileName for MJCF include resolution
         let basePath = null;
         if (fileName) {
@@ -114,7 +114,7 @@ export class ModelLoaderFactory {
             case 'urdf':
                 return await this.loadURDF(content, fileName, fileMap, file);
             case 'xacro':
-                return await this.loadXacro(content, fileName, fileMap, file);
+                return await this.loadXacro(content, fileName, fileMap, file, xacroArgs);
             case 'mjcf':
                 return await this.loadMJCF(content, fileMap, basePath);
             default:
@@ -178,7 +178,7 @@ export class ModelLoaderFactory {
                     // This can happen when ColladaLoader or other loaders incorrectly create blob URLs
                     if (url.startsWith('blob:')) {
                         // Extract the path after blob:http://host/
-                        const blobMatch = url.match(/^blob:https?:\/\/[^\/]+\/(.+)$/);
+                        const blobMatch = url.match(/^blob:[^/]+\/\/[^\/]+\/(.+)$/);
                         if (blobMatch && blobMatch[1]) {
                             const fileName = blobMatch[1];
                             // If it looks like a filename (has extension), it's a malformed blob URL
@@ -233,7 +233,6 @@ export class ModelLoaderFactory {
                 loader.manager.setURLModifier(urlModifier);
 
                 // Custom loadMeshCb to load mesh files from fileMap
-                const originalLoadMeshCb = loader.loadMeshCb || loader.defaultMeshLoader.bind(loader);
                 loader.loadMeshCb = (path, manager, done) => {
                     // Use Promise but don't await, let loading happen in background
                     this.findFileInMapByPath(path, fileMap, urdfDir).then(file => {
@@ -255,13 +254,11 @@ export class ModelLoaderFactory {
                                 done(null, err);
                             });
                         } else {
-                            // If not found, try using original path loader
-                            originalLoadMeshCb(path, manager, done);
+                            done(null, new Error(`Mesh not found: ${path}`));
                         }
                     }).catch(error => {
                         console.error(`Failed to find file: ${path}`, error);
-                        // Try using original path loader
-                        originalLoadMeshCb(path, manager, done);
+                        done(null, new Error(`Mesh not found: ${path}`));
                     });
                 };
             }
@@ -269,7 +266,7 @@ export class ModelLoaderFactory {
             // Create temporary URL
             const blob = new Blob([content], { type: 'text/xml' });
             const url = URL.createObjectURL(blob);
-            const meshesLoaded = trackMeshLoads(loader);
+            const meshes = trackMeshLoads(loader);
 
             loader.load(url, (robot) => {
                 URL.revokeObjectURL(url);
@@ -277,7 +274,9 @@ export class ModelLoaderFactory {
                 // Convert to unified model
                 try {
                     const model = URDFAdapter.convert(robot, content); // Pass original XML content
-                    model.meshesReady = meshesLoaded();
+                    model.meshesReady = meshes.ready();
+                    model.missingMeshes = meshes.missing;
+                    model.expandedUrdf = content;
                     resolve(model);
                 } catch (error) {
                     console.error('URDF conversion error:', error);
@@ -298,9 +297,9 @@ export class ModelLoaderFactory {
      * @param {Map} fileMap - File map
      * @param {File} file - Original file object (optional)
      */
-    static async loadXacro(content, fileName, fileMap = null, file = null) {
+    static async loadXacro(content, fileName, fileMap = null, file = null, xacroArgs = {}) {
         try {
-            const model = await XacroAdapter.parse(content, fileName, fileMap, file);
+            const model = await XacroAdapter.parse(content, fileName, fileMap, file, xacroArgs);
             return model;
         } catch (error) {
             console.error('Xacro parsing error:', error);
@@ -551,7 +550,11 @@ export class ModelLoaderFactory {
      * @param {THREE.LoadingManager} manager - Three.js loading manager
      * @returns {Promise<THREE.Group|THREE.Mesh|null>}
      */
-    static async loadMeshFileAsync(file, ext, manager) {
+    static loadMeshFileAsync(file, ext, manager) {
+        return cachedMeshParse(file, () => this.parseMeshFileAsync(file, ext, manager));
+    }
+
+    static async parseMeshFileAsync(file, ext, manager) {
         const blobUrl = URL.createObjectURL(file);
 
         try {

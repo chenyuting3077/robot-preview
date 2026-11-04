@@ -1,13 +1,14 @@
 {
-  "name": "robot-viewer-urdf-mjcf",
-  "displayName": "Robot Viewer: URDF & MJCF",
+  "name": "robot-preview-urdf-mjcf",
+  "displayName": "Robot Preview: URDF & MJCF",
   "description": "Preview URDF, Xacro and MJCF robot models inside VS Code",
-  "version": "1.5.0",
+  "version": "0.1.0",
   "publisher": "chenyuting3077",
+  "icon": "images/icon.png",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenyuting3077/robot-viewer-urdf-mjcf"
+    "url": "https://github.com/chenyuting3077/robot-preview-urdf-mjcf"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -19,35 +20,57 @@
   "main": "./extension.js",
   "activationEvents": [
     "onStartupFinished",
-    "onWebviewPanel:robotViewer"
+    "onWebviewPanel:robotPreviewUrdf.preview"
   ],
   "contributes": {
     "commands": [
       {
-        "command": "robotViewer.open",
+        "command": "robotPreviewUrdf.open",
         "title": "Open Preview to the Side",
-        "category": "Robot Viewer",
+        "category": "Robot Preview",
         "icon": "$(preview)"
+      },
+      {
+        "command": "robotPreviewUrdf.setXacroArgs",
+        "title": "Set Xacro Arguments",
+        "category": "Robot Preview"
+      },
+      {
+        "command": "robotPreviewUrdf.exportUrdf",
+        "title": "Export Expanded URDF",
+        "category": "Robot Preview"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "robotViewer.open",
+          "command": "robotPreviewUrdf.open",
           "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
-          "command": "robotViewer.open",
+          "command": "robotPreviewUrdf.open",
           "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/"
+        },
+        {
+          "command": "robotPreviewUrdf.setXacroArgs",
+          "when": "resourceExtname == .xacro"
         }
       ],
       "commandPalette": [
         {
-          "command": "robotViewer.open",
+          "command": "robotPreviewUrdf.open",
           "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/"
+        },
+        {
+          "command": "robotPreviewUrdf.setXacroArgs",
+          "when": "resourceExtname == .xacro"
+        },
+        {
+          "command": "robotPreviewUrdf.exportUrdf",
+          "when": "resourceExtname == .xacro"
         }
       ]
     },
@@ -61,21 +84,62 @@
       }
     ],
     "configuration": {
-      "title": "Robot Viewer",
+      "title": "Robot Preview: URDF & MJCF",
       "properties": {
-        "robotViewer.autoOpen": {
+        "robotPreviewUrdf.autoOpen": {
           "type": "boolean",
           "default": true,
           "description": "Open the preview beside the editor when a URDF, Xacro or MJCF file becomes active."
+        },
+        "robotPreviewUrdf.updateOn": {
+          "type": "string",
+          "enum": [
+            "type",
+            "save"
+          ],
+          "default": "type",
+          "enumDescriptions": [
+            "Rebuild the preview 300 ms after typing stops, including unsaved edits; the preview title shows ● while it contains unsaved changes.",
+            "Rebuild the preview only when a file is saved."
+          ],
+          "description": "When the preview picks up edits made in VS Code. Changes made outside VS Code always update immediately."
         }
       }
-    }
+    },
+    "customEditors": [
+      {
+        "viewType": "robotPreviewUrdf.mesh",
+        "displayName": "Robot Preview: Mesh",
+        "selector": [
+          {
+            "filenamePattern": "*.stl"
+          },
+          {
+            "filenamePattern": "*.STL"
+          },
+          {
+            "filenamePattern": "*.dae"
+          },
+          {
+            "filenamePattern": "*.DAE"
+          },
+          {
+            "filenamePattern": "*.obj"
+          },
+          {
+            "filenamePattern": "*.OBJ"
+          }
+        ],
+        "priority": "default"
+      }
+    ]
   },
   "scripts": {
-    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies"
+    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview-urdf-mjcf/raw/HEAD/vscode-extension",
+    "publish": "npx --yes -p node@20 -p @vscode/vsce@3 vsce publish --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview-urdf-mjcf/raw/HEAD/vscode-extension"
   },
   "bugs": {
-    "url": "https://github.com/chenyuting3077/robot-viewer-urdf-mjcf/issues"
+    "url": "https://github.com/chenyuting3077/robot-preview-urdf-mjcf/issues"
   },
   "keywords": [
     "urdf",

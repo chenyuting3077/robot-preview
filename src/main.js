@@ -63,6 +63,8 @@ class App {
         this.lastLoadError = null;
         this.lastSettings = null;
         this.lastHighlight = null;
+        this.lastMissingMeshes = [];
+        this.xacroArgs = {};
         this.pendingSyntax = {};
         this.pendingPrimary = null;
         this.pendingIsUpdate = null;
@@ -211,20 +213,32 @@ class App {
     }
 
     async runLoads() {
+        const indicator = document.getElementById('loading-indicator');
+        indicator.textContent = `${i18n.t('loading')}…`;
+        indicator.classList.toggle('overlay', !this.currentModel);
+        indicator.style.display = 'block';
+        try {
+            await this.drainLoads();
+        } finally {
+            indicator.style.display = 'none';
+        }
+    }
+
+    async drainLoads() {
         while (this.pendingPrimary) {
             const primary = this.pendingPrimary;
             const syntax = this.pendingSyntax;
             this.isUpdate = this.pendingIsUpdate && this.currentModel !== null;
-            Object.assign(this, { pendingPrimary: null, pendingSyntax: {}, pendingIsUpdate: null, lastLoadError: null });
+            Object.assign(this, { pendingPrimary: null, pendingSyntax: {}, pendingIsUpdate: null, lastLoadError: null, lastMissingMeshes: [] });
 
             const pose = this.isUpdate ? this.poseController.getPose() : null;
             const previousModel = this.currentModel;
-            await this.fileHandler.loadPrimary(primary);
+            await this.fileHandler.loadPrimary(primary, { xacroArgs: this.xacroArgs });
             if (!this.lastLoadError) this.showError('');
             if (pose && this.currentModel !== previousModel) this.poseController.applyPose(pose, { source: 'user' });
             if (this.lastHighlight) this.highlightByPattern(this.lastHighlight.kind, this.lastHighlight.pattern);
 
-            vscode.postMessage({ type: 'diagnostics', syntax, loadError: this.lastLoadError });
+            vscode.postMessage({ type: 'diagnostics', syntax, loadError: this.lastLoadError, missingMeshes: this.lastMissingMeshes });
         }
     }
 
@@ -232,11 +246,20 @@ class App {
         const handlers = {
             load: async (message) => {
                 vscode.setState({ sourcePath: message.sourcePath });
+                this.xacroArgs = message.xacroArgs || {};
                 if (this.lastSettings === null) this.applyPanelSettings(message.settings || {});
                 await this.loadFiles(message, true);
                 if (this.lastSettings === null) this.applySettings(message.settings || {});
             },
             update: (message) => this.loadFiles(message, false),
+            exportUrdf: async ({ requestId }) => {
+                vscode.postMessage({ type: 'urdf', requestId, text: this.lastLoadError ? null : this.currentModel?.expandedUrdf ?? null });
+            },
+            dirty: async ({ dirty }) => {
+                const badge = document.getElementById('unsaved-badge');
+                badge.textContent = i18n.t('unsaved');
+                badge.style.display = dirty ? 'block' : 'none';
+            },
             highlight: async ({ kind, pattern }) => {
                 this.lastHighlight = pattern ? { kind, pattern } : null;
                 this.highlightByPattern(kind, pattern);
@@ -266,6 +289,7 @@ class App {
     }
 
     handleModelLoaded(model, file) {
+        this.lastMissingMeshes = model.missingMeshes || [];
         const isMJCF = file.name.toLowerCase().endsWith('.xml') && model?.userData?.type === 'mjcf';
 
         if (this.mujocoSimulationManager?.hasScene()) {
@@ -302,7 +326,7 @@ class App {
             const jointList = document.getElementById('joint-controls');
             const scrollTop = jointList?.scrollTop ?? 0;
             this.sceneManager.addModel(model, { fitCamera: false });
-            this.sceneManager.setGroundVisible(true);
+            this.sceneManager.setGroundVisible(!model.isMesh);
             this.jointControlsUI.setupJointControls(model);
             if (jointList) jointList.scrollTop = scrollTop;
             this.modelGraphView.drawModelGraph(model, { keepView: true });
@@ -339,7 +363,7 @@ class App {
         this.sceneManager.on('modelReady', removeSnapshot);
 
         this.sceneManager.addModel(model);
-        this.sceneManager.setGroundVisible(true);
+        this.sceneManager.setGroundVisible(!model.isMesh);
         this.jointControlsUI.setupJointControls(model);
         this.modelGraphView.drawModelGraph(model);
     }

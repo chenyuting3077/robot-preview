@@ -1626,6 +1626,42 @@
             background-color: var(--bg-primary);
         }
 
+        #loading-indicator {
+            position: fixed;
+            left: 50%;
+            bottom: 16px;
+            transform: translateX(-50%);
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            color: var(--text-primary);
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 10000;
+        }
+
+        #loading-indicator.overlay {
+            top: 50%;
+            bottom: auto;
+            transform: translate(-50%, -50%);
+            padding: 8px 18px;
+            font-size: 14px;
+        }
+
+        #unsaved-badge {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(255, 159, 10, 0.9);
+            color: #000;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 10000;
+        }
+
         #load-error {
             display: none;
             position: fixed;
@@ -1700,6 +1736,9 @@
                     </button>
                 </div>
             </div>
+
+            <div id="unsaved-badge" style="display: none;"></div>
+            <div id="loading-indicator" style="display: none;"></div>
 
             <div id="mujoco-simulation-bar" style="display:none;">
                 <button id="mujoco-reset-btn-bar">

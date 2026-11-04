@@ -47,7 +47,7 @@ function stripBlobPath(path) {
         return path;
     }
 
-    const blobMatch = path.match(/^blob:https?:\/\/[^/]+\/(.+)$/);
+    const blobMatch = path.match(/^blob:[^/]+\/\/[^/]+\/(.+)$/);
     return blobMatch?.[1] || path;
 }
 

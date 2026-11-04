@@ -24,6 +24,7 @@ import { XacroParser } from 'xacro-parser';
 import { URDFAdapter } from './URDFAdapter.js';
 import { resolveFileFromMap } from '../utils/FileUtils.js';
 import { trackMeshLoads } from '../utils/MeshLoader.js';
+import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
 
 export class XacroAdapter {
     /**
@@ -34,7 +35,7 @@ export class XacroAdapter {
      * @param {File} file - Original file object (optional)
      * @returns {Promise<UnifiedRobotModel>}
      */
-    static async parse(xacroContent, fileName, fileMap = null, file = null) {
+    static async parse(xacroContent, fileName, fileMap = null, file = null, userArgs = {}) {
         try {
             // Create xacro parser
             const parser = new XacroParser();
@@ -67,7 +68,7 @@ export class XacroAdapter {
                 xacroArgs.SELF_COLLIDE = 'false';
             }
 
-            parser.arguments = xacroArgs;
+            parser.arguments = { ...xacroArgs, ...userArgs };
 
             // If fileMap provided, setup custom file loader
             if (fileMap) {
@@ -146,7 +147,7 @@ export class XacroAdapter {
                     const urlModifier = (url) => {
                         // Handle blob URLs
                         if (url.startsWith('blob:')) {
-                            const blobMatch = url.match(/^blob:https?:\/\/[^\/]+\/(.+)$/);
+                            const blobMatch = url.match(/^blob:[^/]+\/\/[^\/]+\/(.+)$/);
                             if (blobMatch && blobMatch[1]) {
                                 const fileName = blobMatch[1];
                                 if (/\.(jpg|jpeg|png|gif|bmp|tga|tiff|webp|dae|stl|obj|gltf|glb)$/i.test(fileName)) {
@@ -190,12 +191,11 @@ export class XacroAdapter {
                     loader.manager.setURLModifier(urlModifier);
 
                     // Custom loadMeshCb (same as URDF loading)
-                    const originalLoadMeshCb = loader.loadMeshCb || loader.defaultMeshLoader.bind(loader);
                     loader.loadMeshCb = (path, manager, done) => {
                         this.findFileInMapByPath(path, fileMap, urdfDir).then(file => {
                             if (file) {
                                 const ext = (file.name || path).toLowerCase().split('.').pop();
-                                this.loadMeshFileAsync(file, ext, manager).then(meshObject => {
+                                ModelLoaderFactory.loadMeshFileAsync(file, ext, manager).then(meshObject => {
                                     if (meshObject) {
                                         done(meshObject, null);
                                     } else {
@@ -206,11 +206,11 @@ export class XacroAdapter {
                                     done(null, err);
                                 });
                             } else {
-                                originalLoadMeshCb(path, manager, done);
+                                done(null, new Error(`Mesh not found: ${path}`));
                             }
                         }).catch(error => {
                             console.error(`Failed to find file: ${path}`, error);
-                            originalLoadMeshCb(path, manager, done);
+                            done(null, new Error(`Mesh not found: ${path}`));
                         });
                     };
                 }
@@ -218,7 +218,7 @@ export class XacroAdapter {
                 // Create temporary URL for URDF content
                 const blob = new Blob([finalUrdfString], { type: 'text/xml' });
                 const url = URL.createObjectURL(blob);
-                const meshesLoaded = trackMeshLoads(loader);
+                const meshes = trackMeshLoads(loader);
 
                 loader.load(url, (robot) => {
                     URL.revokeObjectURL(url);
@@ -226,7 +226,9 @@ export class XacroAdapter {
                     // Convert to unified model using URDFAdapter
                     try {
                         const model = URDFAdapter.convert(robot, finalUrdfString);
-                        model.meshesReady = meshesLoaded();
+                        model.meshesReady = meshes.ready();
+                        model.missingMeshes = meshes.missing;
+                        model.expandedUrdf = urdfString;
                         resolve(model);
                     } catch (error) {
                         console.error('[XacroAdapter] URDF conversion error:', error);
@@ -381,92 +383,6 @@ export class XacroAdapter {
      */
     static async findFileInMapByPath(path, fileMap, urdfDir) {
         return resolveFileFromMap(path, fileMap, { baseDir: urdfDir });
-    }
-
-    /**
-     * Load mesh file asynchronously
-     * @param {File} file - File object
-     * @param {string} ext - File extension
-     * @param {THREE.LoadingManager} manager - Loading manager
-     * @returns {Promise<THREE.Object3D>}
-     */
-    static async loadMeshFileAsync(file, ext, manager) {
-        const THREE = await import('three');
-        const blobUrl = URL.createObjectURL(file);
-
-        try {
-            let meshObject = null;
-
-            switch (ext) {
-                case 'stl': {
-                    const { STLLoader } = await import('three/examples/jsm/loaders/STLLoader.js');
-                    const stlLoader = new STLLoader(manager);
-                    const stlGeometry = await new Promise((resolve, reject) => {
-                        stlLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    const stlMaterial = new THREE.MeshPhongMaterial();
-                    meshObject = new THREE.Mesh(stlGeometry, stlMaterial);
-                    break;
-                }
-
-                case 'dae': {
-                    const { ColladaLoader } = await import('three/examples/jsm/loaders/ColladaLoader.js');
-                    const colladaLoader = new ColladaLoader(manager);
-                    const colladaModel = await new Promise((resolve, reject) => {
-                        colladaLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    meshObject = colladaModel.scene;
-
-                    // Remove lights
-                    if (meshObject && meshObject.traverse) {
-                        const lightsToRemove = [];
-                        meshObject.traverse(child => {
-                            if (child.isLight) {
-                                lightsToRemove.push(child);
-                            }
-                        });
-                        lightsToRemove.forEach(light => {
-                            if (light.parent) {
-                                light.parent.remove(light);
-                            }
-                        });
-                    }
-                    break;
-                }
-
-                case 'obj': {
-                    const { OBJLoader } = await import('three/examples/jsm/loaders/OBJLoader.js');
-                    const objLoader = new OBJLoader(manager);
-                    meshObject = await new Promise((resolve, reject) => {
-                        objLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    break;
-                }
-
-                case 'gltf':
-                case 'glb': {
-                    const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-                    const gltfLoader = new GLTFLoader(manager);
-                    const gltfModel = await new Promise((resolve, reject) => {
-                        gltfLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    meshObject = gltfModel.scene;
-                    break;
-                }
-
-                default:
-                    console.warn(`Unsupported file format: ${ext}`);
-                    URL.revokeObjectURL(blobUrl);
-                    return null;
-            }
-
-            URL.revokeObjectURL(blobUrl);
-            return meshObject;
-        } catch (error) {
-            URL.revokeObjectURL(blobUrl);
-            console.error(`Failed to load mesh file: ${file.name}`, error);
-            throw error;
-        }
     }
 
     /**

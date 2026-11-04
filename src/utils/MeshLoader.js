@@ -65,86 +65,90 @@ export async function loadMeshFile(meshPath, fileMap) {
             return null;
         }
 
-        // Determine file extension
         const fileExt = file.name ? file.name.toLowerCase().split('.').pop() : meshPath.toLowerCase().split('.').pop();
-        const url = URL.createObjectURL(file);
-
-        try {
-            const loaders = await getLoaders();
-            let geometry = null;
-
-            switch (fileExt) {
-                case 'stl':
-                    geometry = await new Promise((resolve, reject) => {
-                        loaders.STLLoader.load(url, resolve, undefined, reject);
-                    });
-                    break;
-
-                case 'obj':
-                    // Try loading MTL file
-                    const mtlFileName = file.name.replace(/\.obj$/i, '.mtl');
-                    const mtlFile = Array.from(fileMap.values()).find(f =>
-                        f.name && f.name.toLowerCase() === mtlFileName.toLowerCase()
-                    );
-
-                    if (mtlFile) {
-                        try {
-                            const mtlUrl = URL.createObjectURL(mtlFile);
-                            const materials = await new Promise((resolve, reject) => {
-                                loaders.MTLLoader.load(mtlUrl, resolve, undefined, reject);
-                            });
-                            URL.revokeObjectURL(mtlUrl);
-                            materials.preload();
-                            loaders.OBJLoader.setMaterials(materials);
-                        } catch (error) {
-                            console.warn('MTL file loading failed:', error);
-                        }
-                    }
-
-                    geometry = await new Promise((resolve, reject) => {
-                        loaders.OBJLoader.load(url, resolve, undefined, reject);
-                    });
-
-                    loaders.OBJLoader.setMaterials(null);
-                    break;
-
-                case 'dae':
-                    const daeResult = await new Promise((resolve, reject) => {
-                        loaders.ColladaLoader.load(url, resolve, undefined, reject);
-                    });
-                    geometry = daeResult ? daeResult.scene : null;
-                    break;
-
-                case 'gltf':
-                case 'glb':
-                    const gltfResult = await new Promise((resolve, reject) => {
-                        loaders.GLTFLoader.load(url, resolve, undefined, reject);
-                    });
-                    geometry = gltfResult ? gltfResult.scene : null;
-                    break;
-
-                default:
-                    console.warn(`Unsupported mesh file format: ${fileExt}`);
-                    URL.revokeObjectURL(url);
-                    return null;
-            }
-
-            URL.revokeObjectURL(url);
-
-            // Ensure all meshes in loaded geometry have Phong materials with proper lighting
-            // This is critical for DAE/OBJ files which may have nested Groups
-            if (geometry && (geometry.isGroup || geometry.isObject3D || geometry.isScene)) {
-                ensureMeshHasPhongMaterial(geometry);
-            }
-
-            return geometry;
-        } catch (error) {
-            URL.revokeObjectURL(url);
-            console.error(`Failed to load mesh file: ${meshPath}`, error);
-            return null;
-        }
+        return await cachedMeshParse(file, () => parseMeshFile(file, fileExt, meshPath, fileMap));
     } catch (error) {
         console.error(`Failed to process mesh file: ${meshPath}`, error);
+        return null;
+    }
+}
+
+async function parseMeshFile(file, fileExt, meshPath, fileMap) {
+    const url = URL.createObjectURL(file);
+
+    try {
+        const manager = textureManager(fileMap);
+        const loaders = Object.fromEntries(Object.entries(await getLoaders()).map(([name, loader]) => [name, new loader.constructor(manager)]));
+        let geometry = null;
+
+        switch (fileExt) {
+            case 'stl':
+                geometry = await new Promise((resolve, reject) => {
+                    loaders.STLLoader.load(url, resolve, undefined, reject);
+                });
+                break;
+
+            case 'obj':
+                // Try loading MTL file
+                const mtlFileName = file.name.replace(/\.obj$/i, '.mtl');
+                const mtlFile = Array.from(fileMap.values()).find(f =>
+                    f.name && f.name.toLowerCase() === mtlFileName.toLowerCase()
+                );
+
+                if (mtlFile) {
+                    try {
+                        const mtlUrl = URL.createObjectURL(mtlFile);
+                        const materials = await new Promise((resolve, reject) => {
+                            loaders.MTLLoader.load(mtlUrl, resolve, undefined, reject);
+                        });
+                        URL.revokeObjectURL(mtlUrl);
+                        materials.preload();
+                        loaders.OBJLoader.setMaterials(materials);
+                    } catch (error) {
+                        console.warn('MTL file loading failed:', error);
+                    }
+                }
+
+                geometry = await new Promise((resolve, reject) => {
+                    loaders.OBJLoader.load(url, resolve, undefined, reject);
+                });
+
+                loaders.OBJLoader.setMaterials(null);
+                break;
+
+            case 'dae':
+                const daeResult = await new Promise((resolve, reject) => {
+                    loaders.ColladaLoader.load(url, resolve, undefined, reject);
+                });
+                geometry = daeResult ? daeResult.scene : null;
+                break;
+
+            case 'gltf':
+            case 'glb':
+                const gltfResult = await new Promise((resolve, reject) => {
+                    loaders.GLTFLoader.load(url, resolve, undefined, reject);
+                });
+                geometry = gltfResult ? gltfResult.scene : null;
+                break;
+
+            default:
+                console.warn(`Unsupported mesh file format: ${fileExt}`);
+                URL.revokeObjectURL(url);
+                return null;
+        }
+
+        URL.revokeObjectURL(url);
+
+        // Ensure all meshes in loaded geometry have Phong materials with proper lighting
+        // This is critical for DAE/OBJ files which may have nested Groups
+        if (geometry && (geometry.isGroup || geometry.isObject3D || geometry.isScene)) {
+            ensureMeshHasPhongMaterial(geometry);
+        }
+
+        return geometry;
+    } catch (error) {
+        URL.revokeObjectURL(url);
+        console.error(`Failed to load mesh file: ${meshPath}`, error);
         return null;
     }
 }
@@ -249,14 +253,62 @@ export { getLoaders };
 
 export function trackMeshLoads(loader) {
     const pending = [];
+    const missing = [];
     const loadMeshCb = loader.loadMeshCb;
     loader.loadMeshCb = (path, manager, done) => {
         pending.push(new Promise(resolve => {
             loadMeshCb(path, manager, (mesh, error) => {
+                if (!mesh || error) missing.push(path);
                 done(mesh, error);
                 resolve();
             });
         }));
     };
-    return () => Promise.all(pending);
+    return { ready: () => Promise.all(pending), missing };
+}
+
+let meshCache = new WeakMap();
+
+export function clearMeshCache() {
+    meshCache = new WeakMap();
+}
+
+function cloneMesh(mesh) {
+    if (!mesh) return mesh;
+    if (mesh.isBufferGeometry) return mesh.clone();
+    const copy = mesh.clone(true);
+    copy.traverse(object => {
+        if (object.geometry) object.geometry = object.geometry.clone();
+        if (object.material) {
+            object.material = Array.isArray(object.material)
+                ? object.material.map(material => material.clone())
+                : object.material.clone();
+        }
+    });
+    return copy;
+}
+
+export async function cachedMeshParse(file, parse) {
+    if (!meshCache.has(file)) {
+        meshCache.set(file, parse().then(mesh => {
+            if (!mesh) meshCache.delete(file);
+            return mesh;
+        }, error => {
+            meshCache.delete(file);
+            throw error;
+        }));
+    }
+    return cloneMesh(await meshCache.get(file));
+}
+
+export function textureManager(fileMap) {
+    const manager = new THREE.LoadingManager();
+    const urls = new Map();
+    manager.setURLModifier(url => {
+        const file = /\.(png|jpe?g|gif|bmp|tga|tiff?|webp|mtl)$/i.test(url) && resolveFileFromMap(url, fileMap);
+        if (!file) return url;
+        if (!urls.has(file)) urls.set(file, URL.createObjectURL(file));
+        return urls.get(file);
+    });
+    return manager;
 }

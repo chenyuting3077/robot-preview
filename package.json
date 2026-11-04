@@ -1,13 +1,14 @@
 {
-  "name": "robot-viewer-urdf-mjcf",
-  "version": "1.5.0",
+  "name": "robot-preview-urdf-mjcf",
+  "version": "0.1.0",
   "description": "VS Code extension for previewing URDF, Xacro and MJCF robot models",
   "type": "module",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "build": "vite build",
     "package": "vite build && cd vscode-extension && npm run package",
-    "test": "node --test tests/animation/*.test.js tests/mjcf/*.test.js"
+    "test": "node --import ./tests/setup.mjs --test tests/animation/*.test.js tests/mjcf/*.test.js tests/viewer/*.test.mjs tests/extension/*.test.mjs",
+    "test:e2e": "vite build && npx -y -p node@22 node tests/e2e/webview.mjs"
   },
   "keywords": [
     "robot",

@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:macro name="arm" params="prefix parent">
+    <xacro:property name="arm_link_name" value="${prefix}_arm"/>
+    <joint name="${arm_link_name}_joint" type="revolute">
+      <parent link="${parent}"/>
+      <child link="${arm_link_name}"/>
+      <origin xyz="0 0 0.1"/>
+      <axis xyz="0 1 0"/>
+      <limit lower="-1" upper="1" effort="10" velocity="1"/>
+    </joint>
+    <link name="${arm_link_name}">
+      <visual>
+        <geometry>
+          <mesh filename="package://robot_b/meshes/arm.stl"/>
+        </geometry>
+      </visual>
+    </link>
+  </xacro:macro>
+</robot>

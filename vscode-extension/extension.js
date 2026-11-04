@@ -134,35 +134,38 @@ async function walk(dir, out = [], visited = new Set()) {
 
 const openDocument = fsPath => vscode.workspace.textDocuments.find(doc => doc.uri.fsPath === fsPath);
 
-async function versionOf(fsPath) {
-    const doc = openDocument(fsPath);
+const liveEditing = () => vscode.workspace.getConfiguration('robotPreviewUrdf').get('updateOn') === 'type';
+
+async function versionOf(fsPath, live = true) {
+    const doc = live && openDocument(fsPath);
     if (doc) return `doc:${doc.version}`;
     const stat = await fs.stat(fsPath).catch(() => null);
     return stat ? `disk:${stat.mtimeMs}:${stat.size}` : null;
 }
 
-async function readData(fsPath) {
-    const doc = openDocument(fsPath);
+async function readData(fsPath, live = true) {
+    const doc = live && openDocument(fsPath);
     return doc ? new TextEncoder().encode(doc.getText()) : new Uint8Array(await vscode.workspace.fs.readFile(vscode.Uri.file(fsPath)));
 }
 
 const modelCache = new Map();
 
-async function modelInfo(fsPath, version) {
-    const cached = modelCache.get(fsPath);
+async function modelInfo(fsPath, version, live = true) {
+    const cacheKey = `${live}:${fsPath}`;
+    const cached = modelCache.get(cacheKey);
     if (cached?.version === version) return cached;
-    const text = new TextDecoder().decode(await readData(fsPath));
+    const text = new TextDecoder().decode(await readData(fsPath, live));
     const info = {
         version,
         text,
         refs: Array.from(text.matchAll(REF_RE), m => m[1] || m[2]),
         includes: Array.from(text.matchAll(INCLUDE_RE), m => path.basename(m[1]))
     };
-    modelCache.set(fsPath, info);
+    modelCache.set(cacheKey, info);
     return info;
 }
 
-async function listFiles(fileUri) {
+async function listFiles(fileUri, live) {
     const start = await findPackageRoot(fileUri);
     const workspace = vscode.workspace.getWorkspaceFolder(fileUri);
     const rootDir = start?.dir ?? workspace?.uri.fsPath ?? path.dirname(fileUri.fsPath);
@@ -170,6 +173,7 @@ async function listFiles(fileUri) {
     const toKey = (name, dir, file) => `/${name}/` + path.relative(dir, file).split(path.sep).join('/');
 
     const entries = new Map();
+    const packages = new Map();
     const roots = [];
     const missing = [];
     const includes = new Set();
@@ -178,12 +182,13 @@ async function listFiles(fileUri) {
     while (queue.length) {
         const [name, dir] = queue.shift();
         roots.push(dir);
+        packages.set(name, dir);
         for (const fsPath of await walk(dir)) {
-            const version = await versionOf(fsPath);
+            const version = await versionOf(fsPath, live);
             if (!version) continue;
             entries.set(toKey(name, dir, fsPath), { fsPath, version });
             if (!MODEL_RE.test(fsPath)) continue;
-            const info = await modelInfo(fsPath, version);
+            const info = await modelInfo(fsPath, version, live);
             info.includes.forEach(include => includes.add(include));
             for (const ref of info.refs) {
                 if (seen.has(ref)) continue;
@@ -195,7 +200,7 @@ async function listFiles(fileUri) {
         }
     }
     const paths = new Set(Array.from(entries.values(), entry => entry.fsPath));
-    return { entries, paths, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes };
+    return { entries, paths, packages, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes };
 }
 
 function closingEnd(text, tag, from) {
@@ -259,6 +264,7 @@ class Preview {
         if (this.primary?.fsPath === uri.fsPath) return;
         this.primary = uri;
         this.panel.title = path.basename(uri.fsPath);
+        this.lastDirty = null;
         this.sent = new Map();
         this.lastHighlight = null;
         this.clearDiagnostics();
@@ -266,7 +272,7 @@ class Preview {
     }
 
     createPanel() {
-        this.attachPanel(vscode.window.createWebviewPanel('robotViewer', 'Robot Viewer',
+        this.attachPanel(vscode.window.createWebviewPanel('robotPreviewUrdf.preview', 'Robot Preview',
             { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
             { enableScripts: true, retainContextWhenHidden: true }));
     }
@@ -294,6 +300,7 @@ class Preview {
             this.watchers = [];
             this.watchedRoots = '';
             if (this.primary) this.dismissed.add(this.primary.fsPath);
+            this.pendingExport?.resolve(null);
             this.clearDiagnostics();
             Object.assign(this, { panel: null, primary: null, listing: null, sent: new Map(), ready: false });
         });
@@ -308,32 +315,114 @@ class Preview {
         this.diagnostics.clear();
     }
 
-    onDiagnostics({ syntax, loadError }) {
+    async onDiagnostics({ syntax, loadError, missingMeshes }) {
+        const token = this.diagnosticsToken = (this.diagnosticsToken || 0) + 1;
+        const make = (range, message, severity) => {
+            const diagnostic = new vscode.Diagnostic(range, message, severity);
+            diagnostic.source = 'Robot Preview';
+            return diagnostic;
+        };
         for (const [key, errors] of Object.entries(syntax || {})) {
             const fsPath = this.listing?.entries.get(key)?.fsPath;
             if (!fsPath) continue;
-            this.syntaxDiagnostics.set(fsPath, errors.map(error => {
-                const diagnostic = new vscode.Diagnostic(
-                    new vscode.Range(error.line, error.column, error.line, error.column + 1),
-                    error.message,
-                    vscode.DiagnosticSeverity.Error
-                );
-                diagnostic.source = 'Robot Viewer';
-                return diagnostic;
-            }));
+            this.syntaxDiagnostics.set(fsPath, errors.map(error => make(
+                new vscode.Range(error.line, error.column, error.line, error.column + 1),
+                error.message,
+                vscode.DiagnosticSeverity.Error
+            )));
         }
-        this.diagnostics.clear();
+
+        const byFile = new Map();
+        const add = (fsPath, diagnostic) => byFile.set(fsPath, [...(byFile.get(fsPath) || []), diagnostic]);
         let hasSyntaxError = false;
         for (const [fsPath, diagnostics] of this.syntaxDiagnostics) {
-            if (diagnostics.length === 0) continue;
-            hasSyntaxError = true;
-            this.diagnostics.set(vscode.Uri.file(fsPath), diagnostics);
+            diagnostics.forEach(diagnostic => add(fsPath, diagnostic));
+            hasSyntaxError ||= diagnostics.length > 0;
         }
         if (loadError && !hasSyntaxError && this.primary) {
-            const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 0), loadError, vscode.DiagnosticSeverity.Error);
-            diagnostic.source = 'Robot Viewer';
-            this.diagnostics.set(this.primary, [diagnostic]);
+            add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), loadError, vscode.DiagnosticSeverity.Error));
         }
+        for (const meshPath of new Set(missingMeshes || [])) {
+            const reference = await this.findMeshReference(meshPath);
+            if (reference) {
+                add(reference.fsPath, make(reference.range, `Mesh not found: ${reference.value}`, vscode.DiagnosticSeverity.Warning));
+            } else if (this.primary) {
+                add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), `Mesh not found: ${meshPath}`, vscode.DiagnosticSeverity.Warning));
+            }
+        }
+
+        if (token !== this.diagnosticsToken) return;
+        this.diagnostics.clear();
+        for (const [fsPath, diagnostics] of byFile) this.diagnostics.set(vscode.Uri.file(fsPath), diagnostics);
+    }
+
+    async findMeshReference(meshPath) {
+        if (!this.listing) return null;
+        const normalize = value => value.replace(/^package:\/\//, '').replace(/^(\.\/|\/)+/, '');
+        const target = normalize(meshPath);
+        for (const fsPath of this.listing.paths) {
+            if (!MODEL_RE.test(fsPath)) continue;
+            const version = await versionOf(fsPath);
+            if (!version) continue;
+            const { text } = await modelInfo(fsPath, version);
+            for (const match of text.matchAll(/\bfilename\s*=\s*["']([^"']+)["']/g)) {
+                const value = normalize(match[1]);
+                if (value !== target && !target.endsWith(`/${value}`) && !value.endsWith(`/${target}`)) continue;
+                const doc = await vscode.workspace.openTextDocument(fsPath);
+                const start = match.index + match[0].indexOf(match[1]);
+                return { fsPath, value: match[1], range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + match[1].length)) };
+            }
+        }
+        return null;
+    }
+
+    xacroArgsFor(fsPath) {
+        const text = this.context.workspaceState.get('xacroArgs', {})[fsPath] || '';
+        return Object.fromEntries(text.split(/\s+/).filter(Boolean).map(pair => {
+            const separator = pair.indexOf(':=');
+            return [pair.slice(0, separator), pair.slice(separator + 2)];
+        }));
+    }
+
+    async setXacroArgs(uri) {
+        const all = this.context.workspaceState.get('xacroArgs', {});
+        const value = await vscode.window.showInputBox({
+            title: `Xacro arguments for ${path.basename(uri.fsPath)}`,
+            prompt: 'Space-separated name:=value pairs, as in a ROS launch file',
+            placeHolder: 'prefix:=left_ use_gazebo:=false',
+            value: all[uri.fsPath] || '',
+            validateInput: text => text.split(/\s+/).filter(Boolean).every(pair => /^[^:=\s]+:=\S*$/.test(pair)) ? null : 'Use name:=value pairs separated by spaces'
+        });
+        if (value === undefined) return;
+        await this.context.workspaceState.update('xacroArgs', { ...all, [uri.fsPath]: value.trim() });
+        if (this.primary?.fsPath === uri.fsPath) await this.sync(true);
+    }
+
+    async exportUrdf() {
+        if (!this.panel || !this.ready || !this.primary) {
+            vscode.window.showInformationMessage('Robot Preview: open the preview of a xacro file first.');
+            return;
+        }
+        const requestId = Date.now();
+        this.pendingExport?.resolve(null);
+        let text = await new Promise(resolve => {
+            this.pendingExport = { requestId, resolve };
+            setTimeout(() => resolve(null), 5000);
+            this.panel.webview.postMessage({ type: 'exportUrdf', requestId });
+        });
+        this.pendingExport = null;
+        if (!text) {
+            vscode.window.showErrorMessage('Robot Preview: the current model has no expanded URDF (fix load errors first).');
+            return;
+        }
+        for (const [name, dir] of this.listing.packages) {
+            text = text.replace(new RegExp(`(["'\\s>])/${escapeRegex(name)}/`, 'g'), (match, before) => `${before}${dir}/`);
+        }
+        const defaultUri = vscode.Uri.file(this.primary.fsPath.replace(/(\.urdf)?\.xacro$/i, '') + '.urdf');
+        const target = await vscode.window.showSaveDialog({ defaultUri, filters: { URDF: ['urdf'] } });
+        if (!target) return;
+        await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(text));
+        await vscode.window.showTextDocument(target);
     }
 
     async onMessage(msg) {
@@ -347,9 +436,11 @@ class Preview {
         } else if (msg?.type === 'settings') {
             await this.context.globalState.update('settings', msg.settings);
         } else if (msg?.type === 'diagnostics') {
-            this.onDiagnostics(msg);
+            await this.onDiagnostics(msg);
+        } else if (msg?.type === 'urdf') {
+            if (this.pendingExport?.requestId === msg.requestId) this.pendingExport.resolve(msg.text);
         } else if (msg?.type === 'error') {
-            vscode.window.showErrorMessage(`Robot Viewer: ${msg.message}`);
+            vscode.window.showErrorMessage(`Robot Preview: ${msg.message}`);
         }
     }
 
@@ -362,32 +453,34 @@ class Preview {
         const primary = this.primary;
         if (!primary || !this.panel || !this.ready) return;
         try {
-            const listing = await listFiles(primary);
+            const live = liveEditing();
+            const listing = await listFiles(primary, live);
             if (primary !== this.primary || !this.panel) return;
             this.listing = listing;
             this.watchRoots(listing.roots);
+            this.updateDirty();
 
             const newMissing = listing.missing.filter(name => !this.warned.has(name));
             if (newMissing.length) {
                 newMissing.forEach(name => this.warned.add(name));
-                vscode.window.showWarningMessage(`Robot Viewer: ROS package not found: ${newMissing.join(', ')}`);
+                vscode.window.showWarningMessage(`Robot Preview: ROS package not found: ${newMissing.join(', ')}`);
             }
 
             const changed = Array.from(listing.entries).filter(([key, entry]) => full || this.sent.get(key) !== entry.version);
             const removed = full ? [] : Array.from(this.sent.keys()).filter(key => !listing.entries.has(key));
             if (!full && changed.length === 0 && removed.length === 0) return;
 
-            const files = await Promise.all(changed.map(async ([key, entry]) => ({ path: key, data: await readData(entry.fsPath) })));
+            const files = await Promise.all(changed.map(async ([key, entry]) => ({ path: key, data: await readData(entry.fsPath, live) })));
             this.sent = new Map(Array.from(listing.entries, ([key, entry]) => [key, entry.version]));
             if (full) this.syntaxDiagnostics.clear();
             for (const fsPath of this.syntaxDiagnostics.keys()) {
                 if (!listing.paths.has(fsPath)) this.syntaxDiagnostics.delete(fsPath);
             }
             this.panel.webview.postMessage(full
-                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings') }
+                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), xacroArgs: this.xacroArgsFor(primary.fsPath) }
                 : { type: 'update', files, removed, primary: listing.primary });
         } catch (error) {
-            vscode.window.showErrorMessage(`Robot Viewer: ${error.message}`);
+            vscode.window.showErrorMessage(`Robot Preview: ${error.message}`);
         }
     }
 
@@ -406,10 +499,27 @@ class Preview {
         });
     }
 
+    updateDirty() {
+        if (!this.panel || !this.primary) return;
+        const dirty = liveEditing() && vscode.workspace.textDocuments.some(doc => doc.isDirty && this.listing?.paths.has(doc.uri.fsPath));
+        this.panel.title = `${dirty ? '● ' : ''}${path.basename(this.primary.fsPath)}`;
+        if (dirty !== this.lastDirty) {
+            this.lastDirty = dirty;
+            this.panel.webview.postMessage({ type: 'dirty', dirty });
+        }
+    }
+
     onDocumentChanged(event) {
-        if (this.panel && event.contentChanges.length && this.listing?.paths.has(event.document.uri.fsPath)) {
+        if (this.listing?.paths.has(event.document.uri.fsPath)) this.updateDirty();
+        if (liveEditing() && this.panel && event.contentChanges.length && this.listing?.paths.has(event.document.uri.fsPath)) {
             this.scheduleUpdate();
         }
+    }
+
+    onDocumentSaved(doc) {
+        if (!this.panel || !this.listing?.paths.has(doc.uri.fsPath)) return;
+        this.updateDirty();
+        this.scheduleUpdate();
     }
 
     onSelectionChanged(event) {
@@ -462,7 +572,7 @@ class Preview {
         if (!this.listing) return;
         const target = (await this.findDefinitions('joint', jointName)).exact[0];
         if (!target || target.tag.endsWith('/>')) {
-            vscode.window.setStatusBarMessage(`Robot Viewer: cannot write limits of "${jointName}" (not a literal URDF joint in source)`, 5000);
+            vscode.window.setStatusBarMessage(`Robot Preview: cannot write limits of "${jointName}" (not a literal URDF joint in source)`, 5000);
             return;
         }
         const doc = await vscode.workspace.openTextDocument(target.fsPath);
@@ -483,7 +593,7 @@ class Preview {
         const { exact, fuzzy } = await this.findDefinitions(kind, name);
         const candidates = exact.length ? exact : fuzzy;
         if (candidates.length === 0) {
-            vscode.window.setStatusBarMessage(`Robot Viewer: "${name}" not found in source`, 4000);
+            vscode.window.setStatusBarMessage(`Robot Preview: "${name}" not found in source`, 4000);
             return;
         }
 
@@ -511,16 +621,68 @@ class Preview {
     onActiveEditorChanged(editor) {
         const doc = editor?.document;
         if (!doc || !isRobotModel(doc) || (this.panel && this.contains(doc.uri.fsPath))) return;
-        if (this.panel || (vscode.workspace.getConfiguration('robotViewer').get('autoOpen') && !this.dismissed.has(doc.uri.fsPath))) {
+        if (this.panel || (vscode.workspace.getConfiguration('robotPreviewUrdf').get('autoOpen') && !this.dismissed.has(doc.uri.fsPath))) {
             this.show(doc.uri);
         }
+    }
+}
+
+class MeshEditorProvider {
+    constructor(context) {
+        this.context = context;
+    }
+
+    openCustomDocument(uri) {
+        return { uri, dispose() {} };
+    }
+
+    async resolveCustomEditor(document, panel) {
+        const distUri = vscode.Uri.joinPath(this.context.extensionUri, 'dist');
+        const fsPath = document.uri.fsPath;
+        const dir = path.dirname(fsPath);
+        const name = path.basename(fsPath);
+        panel.webview.options = { enableScripts: true, localResourceRoots: [distUri] };
+
+        let loaded = false;
+        let sending = Promise.resolve();
+        const read = async () => {
+            const names = (await listDir(dir)).filter(entry => entry === name || /\.(mtl|png|jpe?g)$/i.test(entry));
+            const files = await Promise.all(names.map(async entry => ({
+                path: `/mesh/${entry}`,
+                data: new Uint8Array(await fs.readFile(path.join(dir, entry)))
+            })));
+            panel.webview.postMessage({ type: loaded ? 'update' : 'load', files, removed: [], primary: `/mesh/${name}` });
+            loaded = true;
+        };
+        const send = () => {
+            sending = sending.then(read).catch(error => vscode.window.showErrorMessage(`Robot Preview: ${error.message}`));
+        };
+
+        const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(dir), '*'));
+        const onEvent = uri => (uri.fsPath === fsPath || /\.(mtl|png|jpe?g)$/i.test(uri.fsPath)) && send();
+        watcher.onDidChange(onEvent);
+        watcher.onDidCreate(onEvent);
+        const subscription = panel.webview.onDidReceiveMessage(msg => {
+            if (msg?.type === 'ready') send();
+            if (msg?.type === 'error') vscode.window.showErrorMessage(`Robot Preview: ${msg.message}`);
+        });
+        panel.onDidDispose(() => {
+            watcher.dispose();
+            subscription.dispose();
+        });
+
+        const html = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(distUri, 'index.html')));
+        panel.webview.html = renderHtml(html, panel.webview, distUri);
     }
 }
 
 exports.activate = context => {
     const preview = new Preview(context);
     context.subscriptions.push(preview.diagnostics);
-    context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('robotViewer', {
+    context.subscriptions.push(vscode.window.registerCustomEditorProvider('robotPreviewUrdf.mesh', new MeshEditorProvider(context), {
+        webviewOptions: { retainContextWhenHidden: true }
+    }));
+    context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('robotPreviewUrdf.preview', {
         deserializeWebviewPanel: (panel, state) => preview.restore(panel, state)
     }));
     const packageWatcher = vscode.workspace.createFileSystemWatcher('**/package.xml');
@@ -531,7 +693,12 @@ exports.activate = context => {
 
     context.subscriptions.push(
         packageWatcher,
-        vscode.commands.registerCommand('robotViewer.open', uri => {
+        vscode.commands.registerCommand('robotPreviewUrdf.setXacroArgs', uri => {
+            uri = uri || vscode.window.activeTextEditor?.document.uri;
+            return uri && preview.setXacroArgs(uri);
+        }),
+        vscode.commands.registerCommand('robotPreviewUrdf.exportUrdf', () => preview.exportUrdf()),
+        vscode.commands.registerCommand('robotPreviewUrdf.open', uri => {
             uri = uri || vscode.window.activeTextEditor?.document.uri;
             if (!uri) return;
             preview.dismissed.delete(uri.fsPath);
@@ -540,6 +707,12 @@ exports.activate = context => {
         }),
         vscode.window.onDidChangeActiveTextEditor(editor => preview.onActiveEditorChanged(editor)),
         vscode.workspace.onDidChangeTextDocument(event => preview.onDocumentChanged(event)),
+        vscode.workspace.onDidSaveTextDocument(doc => preview.onDocumentSaved(doc)),
+        vscode.workspace.onDidChangeConfiguration(event => {
+            if (!event.affectsConfiguration('robotPreviewUrdf.updateOn')) return;
+            preview.updateDirty();
+            preview.scheduleUpdate();
+        }),
         vscode.window.onDidChangeTextEditorSelection(event => preview.onSelectionChanged(event))
     );
     preview.onActiveEditorChanged(vscode.window.activeTextEditor);
