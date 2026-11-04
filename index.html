@@ -2929,6 +2929,26 @@
             opacity: 0.3;
         }
 
+        html.vscode :is(#toggle-files-panel, #floating-files-panel, #open-editor-btn, #code-editor-panel,
+            #toggle-animation-panel, #animation-workspace, #help-button, #floating-help-panel,
+            #language-toggle, #theme-toggle, #drop-zone, #bottom-help-bar, #copyright-watermark) {
+            display: none !important;
+        }
+
+        #vscode-load-error {
+            display: none;
+            position: fixed;
+            left: 16px;
+            bottom: 16px;
+            max-width: calc(100% - 32px);
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(200, 40, 40, 0.9);
+            color: #fff;
+            font: 12px/1.4 monospace;
+            white-space: pre-wrap;
+            z-index: 10000;
+        }
     </style>
     <!-- MATOMO_PLACEHOLDER -->
 </head>

@@ -1,0 +1,3 @@
+dist/usd-viewer/**
+dist/usd-iframe.html
+**/*.map

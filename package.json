@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test tests/animation/*.test.js tests/mjcf/*.test.js"
+    "test": "node --test tests/animation/*.test.js tests/mjcf/*.test.js",
+    "build:vscode": "vite build --outDir vscode-extension/dist --emptyOutDir && cd vscode-extension && npm run package"
   },
   "keywords": [
     "robot",

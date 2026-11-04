@@ -49,65 +49,6 @@ class App {
         this.currentMJCFFile = null;
         this.currentMJCFModel = null;
         this.angleUnit = 'rad';
-        this.vscodeFileMap = new Map(); // Store VSCode files
-    }
-
-    /**
-     * Load model from VSCode extension
-     * @param {Object} fileInfo - File info from VSCode {name, path, content, directory}
-     */
-    async loadModelFromVSCode(fileInfo) {
-        try {
-            console.log('Loading model from VSCode:', fileInfo.name);
-
-            // Create a File-like object from the content
-            const blob = new Blob([fileInfo.content], { type: 'text/plain' });
-            const file = new File([blob], fileInfo.name, { type: 'text/plain' });
-
-            // Store file info for resolving relative paths
-            file.vscodeDirectory = fileInfo.directory;
-            file.vscodePath = fileInfo.path;
-
-            // Add to file map
-            this.fileHandler.fileMap.set(fileInfo.name, file);
-            this.fileHandler.fileMap.set(fileInfo.path, file);
-            this.vscodeFileMap.set(fileInfo.name, fileInfo);
-
-            // Load the model
-            await this.fileHandler.loadFile(file);
-
-            // Update file tree
-            const loadableFiles = [{
-                file: file,
-                name: fileInfo.name,
-                type: this.detectFileType(fileInfo.name),
-                path: fileInfo.path,
-                category: 'model',
-                ext: fileInfo.name.split('.').pop().toLowerCase()
-            }];
-
-            this.fileHandler.availableModels = loadableFiles;
-            if (this.fileTreeView) {
-                this.fileTreeView.updateFileTree(loadableFiles, this.fileHandler.fileMap);
-            }
-
-            vscodeAdapter.log(`Model loaded successfully: ${fileInfo.name}`);
-        } catch (error) {
-            console.error('Failed to load model from VSCode:', error);
-            vscodeAdapter.showError(`Failed to load model: ${error.message}`);
-        }
-    }
-
-    /**
-     * Detect file type from filename
-     */
-    detectFileType(filename) {
-        const ext = filename.split('.').pop().toLowerCase();
-        if (['urdf', 'xacro'].includes(ext)) return 'urdf';
-        if (['mjcf', 'xml'].includes(ext)) return 'mjcf';
-        if (['usd', 'usda', 'usdc', 'usdz'].includes(ext)) return 'usd';
-        if (['obj', 'stl', 'dae', 'gltf', 'glb'].includes(ext)) return 'mesh';
-        return 'unknown';
     }
 
     /**
@@ -288,9 +229,94 @@ class App {
             // Start render loop
             this.animate();
 
+            if (typeof acquireVsCodeApi === 'function') {
+                this.setupVSCode(acquireVsCodeApi());
+            }
+
         } catch (error) {
             console.error('Initialization error:', error);
         }
+    }
+
+    setupVSCode(vscode) {
+        document.documentElement.classList.add('vscode');
+
+        const syncTheme = () => {
+            const light = /\bvscode-(high-contrast-)?light\b/.test(document.body.className);
+            if ((document.documentElement.getAttribute('data-theme') === 'light') !== light) {
+                document.getElementById('theme-toggle')?.click();
+            }
+        };
+        syncTheme();
+        new MutationObserver(syncTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+        const errorBox = document.createElement('div');
+        errorBox.id = 'vscode-load-error';
+        document.body.appendChild(errorBox);
+        this.fileHandler.onLoadError = error => {
+            errorBox.textContent = error.message;
+            errorBox.style.display = 'block';
+        };
+
+        this.codeEditorManager.onReveal = (kind, name) => vscode.postMessage({ type: 'reveal', kind, name });
+
+        const handlers = {
+            load: async ({ files, primary, language }) => {
+                const lang = language?.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US';
+                if (window.i18n.getCurrentLanguage() !== lang) {
+                    document.getElementById('language-toggle')?.click();
+                }
+                errorBox.style.display = 'none';
+                await this.fileHandler.loadFileEntries(files, primary);
+            },
+            update: async ({ files, removed, primary }) => {
+                const previousModel = this.currentModel;
+                const { camera, controls } = this.sceneManager;
+                const position = camera.position.clone();
+                const target = controls.target.clone();
+                const pose = this.poseController.getPose();
+                const restoreView = () => {
+                    this.sceneManager.off('modelReady', restoreView);
+                    camera.position.copy(position);
+                    controls.target.copy(target);
+                    controls.update();
+                    this.sceneManager.redraw();
+                };
+                this.sceneManager.on('modelReady', restoreView);
+
+                errorBox.style.display = 'none';
+                await this.fileHandler.updateFileEntries(files, removed, primary);
+
+                if (this.currentModel === previousModel) {
+                    this.sceneManager.off('modelReady', restoreView);
+                } else {
+                    this.poseController.applyPose(pose, { source: 'user' });
+                }
+            },
+            highlight: async ({ kind, pattern }) => this.highlightByPattern(kind, pattern)
+        };
+
+        window.addEventListener('message', ({ data }) => {
+            handlers[data?.type]?.(data).catch(error => {
+                vscode.postMessage({ type: 'error', message: error.stack || String(error) });
+            });
+        });
+        vscode.postMessage({ type: 'ready' });
+    }
+
+    highlightByPattern(kind, pattern) {
+        const highlightManager = this.sceneManager.highlightManager;
+        highlightManager.clearHighlight();
+        const model = this.currentModel;
+        if (!pattern || !model?.links) return;
+
+        const regex = new RegExp(`^(?:${pattern})$`);
+        // ponytail: wildcard matches from xacro macros highlight only the first link; HighlightManager tracks a single link.
+        const linkName = kind === 'joint'
+            ? Array.from(model.joints.values()).find(joint => regex.test(joint.name))?.child
+            : Array.from(model.links.keys()).find(name => regex.test(name));
+        const link = linkName && model.links.get(linkName);
+        if (link) highlightManager.highlightLink(link, model);
     }
 
     /**
@@ -663,6 +689,15 @@ class App {
                     // Clear measurement state
                     if (this.measurementController) {
                         this.measurementController.clearMeasurement();
+                    }
+                } else if (this.codeEditorManager?.onReveal) {
+                    const links = Array.from(this.currentModel?.links?.values() || []);
+                    for (let obj = modelIntersects[0].object; obj; obj = obj.parent) {
+                        const link = links.find(candidate => candidate.threeObject === obj);
+                        if (link) {
+                            this.codeEditorManager.scrollToLink(link.name);
+                            break;
+                        }
                     }
                 }
             }

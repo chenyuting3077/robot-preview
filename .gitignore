@@ -31,3 +31,6 @@ Thumbs.db
 # Local robot model assets
 /examples/mjcf/
 
+
+# VS Code extension package
+*.vsix

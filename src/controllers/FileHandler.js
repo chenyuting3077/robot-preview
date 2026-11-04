@@ -134,6 +134,32 @@ export class FileHandler {
 
         if (files.length === 0) return;
 
+        await this.loadFiles(files);
+    }
+
+    async loadFileEntries(entries, primaryPath) {
+        this.fileMap.clear();
+        const files = entries.map(({ path, data }) => {
+            const file = new File([data], path.split('/').pop());
+            this.fileMap.set(path, file);
+            return file;
+        });
+        await this.loadFiles(files, this.fileMap.get(primaryPath));
+    }
+
+    async updateFileEntries(entries, removed, primaryPath) {
+        const structureChanged = removed.length > 0 || entries.some(({ path }) => !this.fileMap.has(path));
+        removed.forEach(path => this.fileMap.delete(path));
+        entries.forEach(({ path, data }) => this.fileMap.set(path, new File([data], path.split('/').pop())));
+
+        this.availableModels = await this.findAllLoadableFiles(Array.from(this.fileMap.values()));
+        if (structureChanged) this.onFilesLoaded?.(this.availableModels);
+
+        const primary = this.fileMap.get(primaryPath);
+        if (primary) await this.loadFile(primary);
+    }
+
+    async loadFiles(files, primaryFile = null) {
         const loadableFiles = await this.findAllLoadableFiles(files);
 
         if (loadableFiles.length === 0) {
@@ -144,9 +170,8 @@ export class FileHandler {
         this.availableModels = loadableFiles;
         this.onFilesLoaded?.(loadableFiles);
 
-        if (loadableFiles.length > 0) {
-            await this.loadFileOrMesh(this.selectInitialModel(loadableFiles));
-        }
+        const primary = loadableFiles.find(fileInfo => fileInfo.file === primaryFile);
+        await this.loadFileOrMesh(primary || this.selectInitialModel(loadableFiles));
     }
 
     /**
@@ -394,6 +419,7 @@ export class FileHandler {
 
         } catch (error) {
             console.error('Failed to load file:', error);
+            this.onLoadError?.(error);
 
             // If error message contains USDC related content
             if (error.message && (error.message.includes('USDC') || error.message.includes('binary format'))) {

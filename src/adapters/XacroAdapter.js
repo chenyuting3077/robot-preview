@@ -48,6 +48,7 @@ export class XacroAdapter {
                 ? fileName.substring(0, fileName.lastIndexOf('/') + 1)
                 : '';
             parser.workingPath = workingPath;
+            parser.rospackCommands = { find: pkg => `/${pkg}` };
 
             // Inject Python-style boolean constants as xacro properties
             // Some xacro files use True/False (capitalized) in conditions

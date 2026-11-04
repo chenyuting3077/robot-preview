@@ -1,0 +1,72 @@
+{
+  "name": "robot-viewer",
+  "displayName": "Robot Viewer",
+  "description": "Preview URDF, Xacro and MJCF robot models inside VS Code",
+  "version": "1.5.0",
+  "publisher": "robot-viewer",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/fan-ziqi/robot_viewer",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "robotViewer.open",
+        "title": "Open Preview to the Side",
+        "category": "Robot Viewer",
+        "icon": "$(preview)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "robotViewer.open",
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "robotViewer.open",
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "robotViewer.open",
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "xml",
+        "extensions": [
+          ".urdf",
+          ".xacro"
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "Robot Viewer",
+      "properties": {
+        "robotViewer.autoOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open the preview beside the editor when a URDF, Xacro or MJCF file becomes active."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies"
+  }
+}

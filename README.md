@@ -61,6 +61,15 @@ pnpm run build
 
 Output will be in the `dist/` directory.
 
+Build the VS Code extension (`.vsix` in `vscode-extension/`):
+
+```bash
+pnpm run build:vscode
+code --install-extension vscode-extension/robot-viewer-*.vsix
+```
+
+Opening a URDF / Xacro / MJCF file shows a live 3D preview beside the editor. See [docs/vscode-extension.md](docs/vscode-extension.md) for limitations.
+
 ## MJCF Parallel Mechanisms
 
 Example mechanisms include the [Robotiq 2F-85 four-bar gripper](https://github.com/google-deepmind/mujoco_menagerie/tree/main/robotiq_2f85) and a [Stewart platform with six closed branches](https://github.com/duccuongvu/stewart_platform_mujoco). Obtain the XML and assets from the source repository, then drag the model folder into the viewer. It opens the robot model XML by default; select `scene.xml` in the file tree when you want the complete scene. Keep the XML and `assets/` together when importing your own models.

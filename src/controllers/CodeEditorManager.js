@@ -489,6 +489,10 @@ export class CodeEditorManager {
      * @param {string} linkName - Link name
      */
     scrollToLink(linkName) {
+        if (this.onReveal && linkName) {
+            this.onReveal('link', linkName);
+            return true;
+        }
         if (!this.codeEditorInstance || !linkName) {
             return false;
         }
@@ -526,6 +530,10 @@ export class CodeEditorManager {
      * @param {string} jointName - Joint name
      */
     scrollToJoint(jointName) {
+        if (this.onReveal && jointName) {
+            this.onReveal('joint', jointName);
+            return true;
+        }
         if (!this.codeEditorInstance || !jointName) {
             return false;
         }
