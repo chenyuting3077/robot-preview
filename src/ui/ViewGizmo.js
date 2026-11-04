@@ -48,7 +48,7 @@ export class ViewGizmo {
         // Floating panels can be moved and resized. Keep the widget in the
         // available viewport beside them without polling layout each frame.
         this.container = container;
-        this.panels = [...container.querySelectorAll('.floating-panel, #code-editor-panel')];
+        this.panels = [...container.querySelectorAll('.floating-panel')];
         if (typeof ResizeObserver !== 'undefined') {
             this.resizeObserver = new ResizeObserver(() => this.updatePosition());
             this.resizeObserver.observe(container);

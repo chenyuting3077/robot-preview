@@ -1,40 +1,27 @@
 {
-  "name": "robot-viewer",
+  "name": "robot-viewer-urdf-mjcf",
   "version": "1.5.0",
-  "description": "Web-based robot model viewer supporting URDF, MJCF, and USD formats",
+  "description": "VS Code extension for previewing URDF, Xacro and MJCF robot models",
   "type": "module",
-  "main": "index.html",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "test": "node --test tests/animation/*.test.js tests/mjcf/*.test.js",
-    "build:vscode": "vite build --outDir vscode-extension/dist --emptyOutDir && cd vscode-extension && npm run package"
+    "package": "vite build && cd vscode-extension && npm run package",
+    "test": "node --test tests/animation/*.test.js tests/mjcf/*.test.js"
   },
   "keywords": [
     "robot",
     "urdf",
     "xacro",
     "mjcf",
-    "usd",
     "three.js",
-    "viewer"
+    "viewer",
+    "vscode"
   ],
   "author": "",
   "license": "Apache-2.0",
   "dependencies": {
     "@babel/runtime": "^7.23.0",
-    "@codemirror/autocomplete": "^6.12.0",
-    "@codemirror/commands": "^6.3.3",
-    "@codemirror/lang-xml": "^6.0.2",
-    "@codemirror/search": "^6.5.5",
-    "@codemirror/state": "^6.4.0",
-    "@codemirror/view": "^6.23.0",
-    "@uiw/codemirror-theme-dracula": "^4.21.21",
-    "@uiw/codemirror-theme-github": "^4.21.21",
-    "@uiw/codemirror-theme-vscode": "^4.21.21",
-    "codemirror": "^6.0.1",
     "d3": "^7.9.0",
     "mujoco-js": "^0.0.7",
     "three": "^0.163.0",

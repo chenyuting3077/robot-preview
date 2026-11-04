@@ -6,7 +6,6 @@
 export class PanelManager {
     constructor() {
         this.panels = new Map();
-        this.mobileMedia = window.matchMedia('(max-width: 1023px)');
         this.modelGraphOriginalTransform = null; // Save original transform of model structure graph
         this.modelGraphView = null; // Save ModelGraphView instance reference
     }
@@ -49,7 +48,7 @@ export class PanelManager {
 
         // Bring to front
         const bringToFront = () => {
-            const allPanels = document.querySelectorAll('.floating-panel, #code-editor-panel');
+            const allPanels = document.querySelectorAll('.floating-panel');
             let maxZIndex = 50;
 
             allPanels.forEach(p => {
@@ -64,7 +63,6 @@ export class PanelManager {
 
         // Mouse move to detect edges
         panel.addEventListener('mousemove', (e) => {
-            if (this.mobileMedia.matches) return;
             if (isDragging || isResizing) return;
 
             const rect = panel.getBoundingClientRect();
@@ -110,7 +108,6 @@ export class PanelManager {
 
         // Mouse down to start drag or resize
         panel.addEventListener('mousedown', (e) => {
-            if (this.mobileMedia.matches) return;
             bringToFront();
 
             if (e.target === header || header.contains(e.target)) {
@@ -142,12 +139,11 @@ export class PanelManager {
 
         // Drag start
         const dragStart = (e) => {
-            if (this.mobileMedia.matches) return;
             bringToFront();
 
             const target = e.target;
             if (target.tagName === 'BUTTON' || target.tagName === 'SELECT' ||
-                target.closest('button') || target.closest('.code-editor-actions')) {
+                target.closest('button')) {
                 return;
             }
 
@@ -262,11 +258,8 @@ export class PanelManager {
      * Initialize all panels
      */
     initAllPanels() {
-        this.registerPanel('floating-files-panel');
         this.registerPanel('floating-joints-panel');
         this.registerPanel('floating-model-tree');
-        this.registerPanel('floating-help-panel');
-        this.registerPanel('code-editor-panel', '.code-editor-header');
 
         // Setup all maximize buttons (common functionality)
         this.setupMaximizeButtons();

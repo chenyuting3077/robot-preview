@@ -12,6 +12,41 @@ const SKIP_DIRS = new Set(['node_modules', 'build', 'install', 'log']);
 const UPDATE_DELAY_MS = 300;
 const CURSOR_DELAY_MS = 100;
 
+function updateLimitBlock(block, limits) {
+    const values = Object.entries(limits)
+        .filter(([, value]) => value !== undefined && value !== null)
+        .map(([key, value]) => [key, Number(Number(value).toFixed(6))]);
+    const limitTag = block.match(/<limit\b[^>]*?\/?>/)?.[0];
+    if (limitTag) {
+        let tag = limitTag;
+        for (const [key, value] of values) {
+            const attr = new RegExp(`\\b${key}\\s*=\\s*["'][^"']*["']`);
+            tag = attr.test(tag) ? tag.replace(attr, `${key}="${value}"`) : tag.replace(/\s*(\/?)>$/, ` ${key}="${value}"$1>`);
+        }
+        return block.replace(limitTag, tag);
+    }
+    const indent = block.match(/\n([ \t]*)<(?!\/joint)/)?.[1] ?? '    ';
+    const attrs = values.map(([key, value]) => `${key}="${value}"`).join(' ');
+    return block.replace(/(\s*)<\/joint>$/, `\n${indent}<limit ${attrs}/>$1</joint>`);
+}
+
+function renderHtml(html, webview, distUri) {
+    const source = webview.cspSource;
+    const csp = [
+        "default-src 'none'",
+        `script-src ${source} 'unsafe-eval' 'wasm-unsafe-eval'`,
+        `style-src ${source} 'unsafe-inline'`,
+        `img-src ${source} blob: data:`,
+        `connect-src ${source} blob: data:`,
+        `font-src ${source} data:`,
+        'media-src blob: data:',
+        'worker-src blob:'
+    ].join('; ');
+    return html
+        .replace(/<html lang="[^"]*">/, `<html lang="${vscode.env.language}">`)
+        .replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><base href="${webview.asWebviewUri(distUri)}/">`);
+}
+
 const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const PLACEHOLDER_RE = /(\$\{[^}]*\}|\$\([^)]*\))/;
 const namePattern = name => name.split(PLACEHOLDER_RE).map((part, i) => (i % 2 ? '.+?' : escapeRegex(part))).join('');
@@ -36,13 +71,12 @@ async function readPackageName(dir) {
 }
 
 async function findPackageRoot(fileUri) {
-    const workspace = vscode.workspace.getWorkspaceFolder(fileUri);
     let dir = path.dirname(fileUri.fsPath);
     while (true) {
         const name = await readPackageName(dir);
         if (name) return { dir, name };
         const parent = path.dirname(dir);
-        if (parent === dir || (workspace && dir === workspace.uri.fsPath)) return null;
+        if (parent === dir) return null;
         dir = parent;
     }
 }
@@ -211,6 +245,8 @@ class Preview {
         this.updateTimer = null;
         this.cursorTimer = null;
         this.lastHighlight = null;
+        this.diagnostics = vscode.languages.createDiagnosticCollection('robot-viewer');
+        this.syntaxDiagnostics = new Map();
     }
 
     contains(fsPath) {
@@ -225,14 +261,29 @@ class Preview {
         this.panel.title = path.basename(uri.fsPath);
         this.sent = new Map();
         this.lastHighlight = null;
+        this.clearDiagnostics();
         if (this.ready) await this.sync(true);
     }
 
     createPanel() {
-        const distUri = vscode.Uri.joinPath(this.context.extensionUri, 'dist');
-        const panel = vscode.window.createWebviewPanel('robotViewer', 'Robot Viewer',
+        this.attachPanel(vscode.window.createWebviewPanel('robotViewer', 'Robot Viewer',
             { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-            { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [distUri] });
+            { enableScripts: true, retainContextWhenHidden: true }));
+    }
+
+    async restore(panel, state) {
+        const exists = state?.sourcePath && await fs.stat(state.sourcePath).then(() => true, () => false);
+        if (!exists || this.panel) {
+            panel.dispose();
+            return;
+        }
+        this.attachPanel(panel);
+        await this.show(vscode.Uri.file(state.sourcePath));
+    }
+
+    attachPanel(panel) {
+        const distUri = vscode.Uri.joinPath(this.context.extensionUri, 'dist');
+        panel.webview.options = { enableScripts: true, localResourceRoots: [distUri] };
         this.panel = panel;
         this.ready = false;
 
@@ -243,13 +294,46 @@ class Preview {
             this.watchers = [];
             this.watchedRoots = '';
             if (this.primary) this.dismissed.add(this.primary.fsPath);
+            this.clearDiagnostics();
             Object.assign(this, { panel: null, primary: null, listing: null, sent: new Map(), ready: false });
         });
 
         vscode.workspace.fs.readFile(vscode.Uri.joinPath(distUri, 'index.html')).then(buf => {
-            const html = new TextDecoder().decode(buf);
-            panel.webview.html = html.replace('<head>', `<head><base href="${panel.webview.asWebviewUri(distUri)}/">`);
+            panel.webview.html = renderHtml(new TextDecoder().decode(buf), panel.webview, distUri);
         });
+    }
+
+    clearDiagnostics() {
+        this.syntaxDiagnostics.clear();
+        this.diagnostics.clear();
+    }
+
+    onDiagnostics({ syntax, loadError }) {
+        for (const [key, errors] of Object.entries(syntax || {})) {
+            const fsPath = this.listing?.entries.get(key)?.fsPath;
+            if (!fsPath) continue;
+            this.syntaxDiagnostics.set(fsPath, errors.map(error => {
+                const diagnostic = new vscode.Diagnostic(
+                    new vscode.Range(error.line, error.column, error.line, error.column + 1),
+                    error.message,
+                    vscode.DiagnosticSeverity.Error
+                );
+                diagnostic.source = 'Robot Viewer';
+                return diagnostic;
+            }));
+        }
+        this.diagnostics.clear();
+        let hasSyntaxError = false;
+        for (const [fsPath, diagnostics] of this.syntaxDiagnostics) {
+            if (diagnostics.length === 0) continue;
+            hasSyntaxError = true;
+            this.diagnostics.set(vscode.Uri.file(fsPath), diagnostics);
+        }
+        if (loadError && !hasSyntaxError && this.primary) {
+            const diagnostic = new vscode.Diagnostic(new vscode.Range(0, 0, 0, 0), loadError, vscode.DiagnosticSeverity.Error);
+            diagnostic.source = 'Robot Viewer';
+            this.diagnostics.set(this.primary, [diagnostic]);
+        }
     }
 
     async onMessage(msg) {
@@ -258,6 +342,12 @@ class Preview {
             await this.sync(true);
         } else if (msg?.type === 'reveal') {
             await this.reveal(msg.kind, msg.name);
+        } else if (msg?.type === 'editLimits') {
+            await this.editLimits(msg.joint, msg.limits);
+        } else if (msg?.type === 'settings') {
+            await this.context.globalState.update('settings', msg.settings);
+        } else if (msg?.type === 'diagnostics') {
+            this.onDiagnostics(msg);
         } else if (msg?.type === 'error') {
             vscode.window.showErrorMessage(`Robot Viewer: ${msg.message}`);
         }
@@ -289,8 +379,12 @@ class Preview {
 
             const files = await Promise.all(changed.map(async ([key, entry]) => ({ path: key, data: await readData(entry.fsPath) })));
             this.sent = new Map(Array.from(listing.entries, ([key, entry]) => [key, entry.version]));
+            if (full) this.syntaxDiagnostics.clear();
+            for (const fsPath of this.syntaxDiagnostics.keys()) {
+                if (!listing.paths.has(fsPath)) this.syntaxDiagnostics.delete(fsPath);
+            }
             this.panel.webview.postMessage(full
-                ? { type: 'load', files, primary: listing.primary, language: vscode.env.language }
+                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings') }
                 : { type: 'update', files, removed, primary: listing.primary });
         } catch (error) {
             vscode.window.showErrorMessage(`Robot Viewer: ${error.message}`);
@@ -335,8 +429,7 @@ class Preview {
         }, CURSOR_DELAY_MS);
     }
 
-    async reveal(kind, name) {
-        if (!this.listing) return;
+    async findDefinitions(kind, name) {
         const tags = kind === 'joint' ? 'joint' : 'link|body';
         const re = new RegExp(`<(?:${tags})\\b[^>]*?\\bname\\s*=\\s*["']([^"']+)["'][^>]*>`, 'g');
         const files = [this.primary.fsPath, ...Array.from(this.listing.paths).filter(p => p !== this.primary.fsPath && MODEL_RE.test(p))];
@@ -359,11 +452,35 @@ class Preview {
         }
         const bestScore = Math.max(...fuzzy.map(c => c.score));
         fuzzy = fuzzy.filter(c => c.score === bestScore);
-        // URDF <transmission> repeats <joint name>; the definition is the one with a type attribute.
         if (kind === 'joint' && exact.length > 1 && exact.some(c => /\btype\s*=/.test(c.tag))) {
             exact = exact.filter(c => /\btype\s*=/.test(c.tag));
         }
+        return { exact, fuzzy };
+    }
 
+    async editLimits(jointName, limits) {
+        if (!this.listing) return;
+        const target = (await this.findDefinitions('joint', jointName)).exact[0];
+        if (!target || target.tag.endsWith('/>')) {
+            vscode.window.setStatusBarMessage(`Robot Viewer: cannot write limits of "${jointName}" (not a literal URDF joint in source)`, 5000);
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument(target.fsPath);
+        const text = doc.getText();
+        const close = text.indexOf('</joint>', target.index);
+        if (close === -1) return;
+        const end = close + '</joint>'.length;
+        const block = text.slice(target.index, end);
+        const updated = updateLimitBlock(block, limits);
+        if (updated === block) return;
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(doc.uri, new vscode.Range(doc.positionAt(target.index), doc.positionAt(end)), updated);
+        await vscode.workspace.applyEdit(edit);
+    }
+
+    async reveal(kind, name) {
+        if (!this.listing) return;
+        const { exact, fuzzy } = await this.findDefinitions(kind, name);
         const candidates = exact.length ? exact : fuzzy;
         if (candidates.length === 0) {
             vscode.window.setStatusBarMessage(`Robot Viewer: "${name}" not found in source`, 4000);
@@ -402,6 +519,10 @@ class Preview {
 
 exports.activate = context => {
     const preview = new Preview(context);
+    context.subscriptions.push(preview.diagnostics);
+    context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('robotViewer', {
+        deserializeWebviewPanel: (panel, state) => preview.restore(panel, state)
+    }));
     const packageWatcher = vscode.workspace.createFileSystemWatcher('**/package.xml');
     const resetIndex = () => { packageIndex = null; };
     packageWatcher.onDidChange(resetIndex);

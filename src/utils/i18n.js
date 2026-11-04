@@ -392,23 +392,7 @@ export const translations = {
 
 class I18n {
     constructor() {
-        // 检测浏览器语言
-        const browserLang = this.detectBrowserLanguage();
-        // 从localStorage读取语言设置，如果没有则使用浏览器语言
-        this.currentLang = localStorage.getItem('language') || browserLang;
-    }
-
-    /**
-     * 检测浏览器语言
-     */
-    detectBrowserLanguage() {
-        const lang = navigator.language || navigator.userLanguage;
-        // 如果浏览器语言是中文（包括zh, zh-CN, zh-TW等），返回zh-CN
-        if (lang.toLowerCase().startsWith('zh')) {
-            return 'zh-CN';
-        }
-        // 否则默认返回英文
-        return 'en-US';
+        this.currentLang = document.documentElement.lang.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US';
     }
 
     /**
@@ -417,17 +401,6 @@ class I18n {
     t(key) {
         const lang = translations[this.currentLang] || translations['zh-CN'];
         return lang[key] || key;
-    }
-
-    /**
-     * 切换语言
-     */
-    setLanguage(lang) {
-        if (translations[lang]) {
-            this.currentLang = lang;
-            localStorage.setItem('language', lang);
-            this.updatePageLanguage();
-        }
     }
 
     /**

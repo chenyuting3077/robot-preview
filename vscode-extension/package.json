@@ -1,20 +1,25 @@
 {
-  "name": "robot-viewer",
-  "displayName": "Robot Viewer",
+  "name": "robot-viewer-urdf-mjcf",
+  "displayName": "Robot Viewer: URDF & MJCF",
   "description": "Preview URDF, Xacro and MJCF robot models inside VS Code",
   "version": "1.5.0",
-  "publisher": "robot-viewer",
+  "publisher": "chenyuting3077",
   "license": "Apache-2.0",
-  "repository": "https://github.com/fan-ziqi/robot_viewer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chenyuting3077/robot-viewer-urdf-mjcf"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
-    "Visualization"
+    "Visualization",
+    "Other"
   ],
   "main": "./extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onWebviewPanel:robotViewer"
   ],
   "contributes": {
     "commands": [
@@ -68,5 +73,18 @@
   },
   "scripts": {
     "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/chenyuting3077/robot-viewer-urdf-mjcf/issues"
+  },
+  "keywords": [
+    "urdf",
+    "xacro",
+    "mjcf",
+    "mujoco",
+    "ros",
+    "robot",
+    "3d",
+    "preview"
+  ]
 }

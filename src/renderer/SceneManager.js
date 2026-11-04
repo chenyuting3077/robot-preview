@@ -152,7 +152,7 @@ export class SceneManager {
 
     // ==================== Model Management ====================
 
-    addModel(model) {
+    addModel(model, { fitCamera = true } = {}) {
         // Clear previous model
         if (this.currentModel && this.currentModel.threeObject) {
             this.removeModel(this.currentModel);
@@ -242,38 +242,8 @@ export class SceneManager {
         // Initialize drag controls
         this.initDragControls(model);
 
-        // Update environment (adjust ground position and shadows, but not camera)
-        // Don't adjust camera on first time, wait for mesh to load completely
-        this.updateEnvironment(false);
-
-        if (isSingleMesh) {
-            // Single mesh: synchronous loading, delay camera adjustment to keep snapshot occlusion
-            // Use requestAnimationFrame to ensure rendering completes
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    this.updateEnvironment(true);
-
-                    // Trigger model ready event
-                    this.emit('modelReady', model);
-                });
-            });
-        } else {
-            // URDF/MJCF model: mesh files are loaded asynchronously, need to delay
-            // Multiple extractions to catch meshes loaded at different times
-            setTimeout(() => {
-                this.visualizationManager.extractVisualAndCollision(model);
-            }, 100);
-
-            setTimeout(() => {
-                this.visualizationManager.extractVisualAndCollision(model);
-                this.updateEnvironment(true);
-                this.emit('modelReady', model);
-            }, 1000);
-
-            setTimeout(() => {
-                this.visualizationManager.extractVisualAndCollision(model);
-            }, 2500);
-        }
+        this.updateEnvironment(fitCamera);
+        requestAnimationFrame(() => this.emit('modelReady', model));
     }
 
     removeModel(model) {

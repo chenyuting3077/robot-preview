@@ -246,3 +246,17 @@ export function ensureMeshHasPhongMaterial(meshObject) {
 }
 
 export { getLoaders };
+
+export function trackMeshLoads(loader) {
+    const pending = [];
+    const loadMeshCb = loader.loadMeshCb;
+    loader.loadMeshCb = (path, manager, done) => {
+        pending.push(new Promise(resolve => {
+            loadMeshCb(path, manager, (mesh, error) => {
+                done(mesh, error);
+                resolve();
+            });
+        }));
+    };
+    return () => Promise.all(pending);
+}

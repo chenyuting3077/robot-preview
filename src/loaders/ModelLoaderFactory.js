@@ -5,9 +5,9 @@
 import * as THREE from 'three';
 import { URDFAdapter } from '../adapters/URDFAdapter.js';
 import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
-import { USDAdapter } from '../adapters/USDAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
 import { resolveFileFromMap } from '../utils/FileUtils.js';
+import { trackMeshLoads } from '../utils/MeshLoader.js';
 
 export class ModelLoaderFactory {
     /**
@@ -32,11 +32,6 @@ export class ModelLoaderFactory {
                     }
                 }
                 return null;
-            case 'usd':
-            case 'usda':
-            case 'usdc':
-            case 'usdz':
-                return 'usd';
             default:
                 return null;
         }
@@ -104,9 +99,8 @@ export class ModelLoaderFactory {
      * @param {string} fileName - File name (key in fileMap)
      * @param {Map} fileMap - File map (path -> File object), for loading mesh files
      * @param {File} file - Original file object (optional)
-     * @param {Object} options - Additional options (e.g., usdViewerManager)
      */
-    static async loadModel(fileType, content, fileName, fileMap = null, file = null, options = {}) {
+    static async loadModel(fileType, content, fileName, fileMap = null, file = null) {
         // Extract base path from fileName for MJCF include resolution
         let basePath = null;
         if (fileName) {
@@ -123,8 +117,6 @@ export class ModelLoaderFactory {
                 return await this.loadXacro(content, fileName, fileMap, file);
             case 'mjcf':
                 return await this.loadMJCF(content, fileMap, basePath);
-            case 'usd':
-                return await this.loadUSD(content, fileMap, file, options);
             default:
                 throw new Error(`Unsupported file type: ${fileType}`);
         }
@@ -277,6 +269,7 @@ export class ModelLoaderFactory {
             // Create temporary URL
             const blob = new Blob([content], { type: 'text/xml' });
             const url = URL.createObjectURL(blob);
+            const meshesLoaded = trackMeshLoads(loader);
 
             loader.load(url, (robot) => {
                 URL.revokeObjectURL(url);
@@ -284,6 +277,7 @@ export class ModelLoaderFactory {
                 // Convert to unified model
                 try {
                     const model = URDFAdapter.convert(robot, content); // Pass original XML content
+                    model.meshesReady = meshesLoaded();
                     resolve(model);
                 } catch (error) {
                     console.error('URDF conversion error:', error);
@@ -551,92 +545,6 @@ export class ModelLoaderFactory {
     }
 
     /**
-     * Load mesh file directly using Three.js loaders
-     * @param {File} file - File object
-     * @param {string} path - Original path (used to determine file type)
-     * @returns {Promise<THREE.Group|THREE.Mesh|null>}
-     */
-    static async loadMeshFileDirect(file, path) {
-        const fileExt = file.name ? file.name.toLowerCase().split('.').pop() : path.toLowerCase().split('.').pop();
-        const blobUrl = URL.createObjectURL(file);
-
-        try {
-            let meshObject = null;
-
-            switch (fileExt) {
-                case 'stl':
-                    const { STLLoader } = await import('three/examples/jsm/loaders/STLLoader.js');
-                    const stlLoader = new STLLoader();
-                    const stlGeometry = await new Promise((resolve, reject) => {
-                        stlLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    const stlMaterial = new THREE.MeshStandardMaterial({ color: 0xcccccc });
-                    meshObject = new THREE.Mesh(stlGeometry, stlMaterial);
-                    break;
-
-                case 'dae':
-                    const { ColladaLoader } = await import('three/examples/jsm/loaders/ColladaLoader.js');
-                    const colladaLoader = new ColladaLoader();
-                    const colladaModel = await new Promise((resolve, reject) => {
-                        colladaLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    // ColladaLoader returns scene
-                    meshObject = colladaModel.scene || colladaModel;
-
-                    // Remove lights
-                    if (meshObject && meshObject.traverse) {
-                        const lightsToRemove = [];
-                        meshObject.traverse(child => {
-                            if (child.isLight) {
-                                lightsToRemove.push(child);
-                            }
-                        });
-                        lightsToRemove.forEach(light => {
-                            if (light.parent) {
-                                light.parent.remove(light);
-                            }
-                        });
-                    }
-
-                    // Note: Do not apply rotation here!
-                    // SceneManager's world object has already applied coordinate system conversion (-90 degrees X-axis)
-                    // Applying rotation again will cause double rotation error
-                    break;
-
-                case 'obj':
-                    const { OBJLoader } = await import('three/examples/jsm/loaders/OBJLoader.js');
-                    const objLoader = new OBJLoader();
-                    meshObject = await new Promise((resolve, reject) => {
-                        objLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    break;
-
-                case 'gltf':
-                case 'glb':
-                    const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
-                    const gltfLoader = new GLTFLoader();
-                    const gltfModel = await new Promise((resolve, reject) => {
-                        gltfLoader.load(blobUrl, resolve, undefined, reject);
-                    });
-                    meshObject = gltfModel.scene || gltfModel;
-                    break;
-
-                default:
-                    console.warn(`Unsupported file format: ${fileExt}`);
-                    URL.revokeObjectURL(blobUrl);
-                    return null;
-            }
-
-            URL.revokeObjectURL(blobUrl);
-            return meshObject;
-        } catch (error) {
-            URL.revokeObjectURL(blobUrl);
-            console.error(`Failed to load mesh file: ${path}`, error);
-            return null;
-        }
-    }
-
-    /**
      * Asynchronously load mesh file (for URDFLoader's loadMeshCb)
      * @param {File} file - File object
      * @param {string} ext - File extension
@@ -741,22 +649,6 @@ export class ModelLoaderFactory {
     }
 
     /**
-     * Load USD
-     * @param {string|ArrayBuffer} content - USD content
-     * @param {Map} fileMap - File map
-     * @param {File} file - Original file object
-     * @param {Object} options - Additional options (e.g., usdViewerManager)
-     */
-    static async loadUSD(content, fileMap = null, file = null, options = {}) {
-        try {
-            const model = await USDAdapter.parse(content, fileMap, file, options);
-            return model;
-        } catch (error) {
-            throw new Error('USD parsing failed: ' + error.message);
-        }
-    }
-
-    /**
      * Set joint angle (universal method)
      */
     static setJointAngle(model, jointName, angle, ignoreLimits = false, updateMatrices = true) {
@@ -776,7 +668,7 @@ export class ModelLoaderFactory {
         if (joint.threeObject && (typeof joint.threeObject.setJointValue === 'function' || typeof joint.threeObject.setAngle === 'function')) {
             URDFAdapter.setJointAngle(joint, angle, ignoreLimits);
         } else {
-            // MJCF or USD format
+            // MJCF format
             MJCFAdapter.setJointAngle(joint, angle, updateMatrices);
         }
 

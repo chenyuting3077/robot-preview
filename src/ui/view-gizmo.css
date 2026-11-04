@@ -93,10 +93,3 @@
     outline-offset: 1px;
     z-index: 250 !important;
 }
-
-@media (max-width: 1023px) {
-    .view-gizmo {
-        top: 4px;
-        right: max(4px, env(safe-area-inset-right));
-    }
-}

@@ -4,15 +4,13 @@ import { isScalarJoint } from '../models/UnifiedRobotModel.js';
  * Responsible for creating and managing joint control sliders and input fields
  */
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
-import { XMLUpdater } from '../utils/XMLUpdater.js';
 
 export class JointControlsUI {
     constructor(sceneManager) {
         this.sceneManager = sceneManager;
         this.angleUnit = 'rad';
         this.initialJointValues = new Map(); // Save initial joint positions when model loads
-        this.codeEditorManager = null; // Code editor manager reference
-        this.isUpdatingFromEditor = false; // Flag to prevent circular updates
+        this.onLimitsEdited = null;
         this.poseController = null;
         this.unsubscribePose = null;
         this.jointControls = new Map();
@@ -48,12 +46,6 @@ export class JointControlsUI {
         updateValue();
     }
 
-    /**
-     * Set code editor manager reference
-     */
-    setCodeEditorManager(codeEditorManager) {
-        this.codeEditorManager = codeEditorManager;
-    }
 
     /**
      * Whether the joint moves along an axis (translation) instead of rotating.
@@ -106,69 +98,8 @@ export class JointControlsUI {
         return this.angleUnit === 'deg' ? displayValue * Math.PI / 180 : displayValue; // deg -> rad
     }
 
-    /**
-     * Update XML content in editor (URDF format only)
-     */
     updateEditorXML(jointName, limits) {
-        // If updating from editor, skip
-        if (this.isUpdatingFromEditor) {
-            return;
-        }
-
-        if (!this.codeEditorManager) {
-            return;
-        }
-
-        const editor = this.codeEditorManager.getEditor();
-        if (!editor) {
-            return;
-        }
-
-        // Get current editor content
-        const currentContent = editor.getValue();
-        if (!currentContent || currentContent.trim().length === 0) {
-            return;
-        }
-
-        // Check if URDF format (contains <robot> tag)
-        if (!currentContent.includes('<robot')) {
-            return;
-        }
-
-        // Set flag to prevent circular updates
-        this.isUpdatingFromEditor = true;
-
-        try {
-            // Use XMLUpdater to update XML
-            const updatedXML = XMLUpdater.updateURDFJointLimits(currentContent, jointName, limits);
-
-            // If content changed, update editor
-            if (updatedXML !== currentContent) {
-                // Save cursor position
-                const cursorPos = editor.view.state.selection.main.head;
-
-                // Update content
-                editor.setValue(updatedXML);
-
-                // Restore cursor position (if possible)
-                try {
-                    const maxPos = editor.view.state.doc.length;
-                    const newPos = Math.min(cursorPos, maxPos);
-                    editor.view.dispatch({
-                        selection: { anchor: newPos, head: newPos }
-                    });
-                } catch (e) {
-                    // Ignore cursor restoration errors
-                }
-            }
-        } catch (error) {
-            console.error('Failed to update editor XML:', error);
-        } finally {
-            // Delay resetting flag to ensure editor onChange doesn't immediately trigger update
-            setTimeout(() => {
-                this.isUpdatingFromEditor = false;
-            }, 100);
-        }
+        this.onLimitsEdited?.(jointName, limits);
     }
 
     /**

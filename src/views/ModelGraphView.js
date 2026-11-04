@@ -8,18 +8,29 @@ export class ModelGraphView {
     constructor(sceneManager, measurementController = null) {
         this.sceneManager = sceneManager;
         this.measurementController = measurementController;
-        this.codeEditorManager = null; // Code editor manager reference
+        this.onReveal = null;
         this.currentZoom = null; // Save current zoom behavior
         this.currentSvg = null; // Save current SVG selector
         this.currentContainer = null; // Save current container
+
+        const svgNode = document.getElementById('model-graph-svg');
+        if (svgNode) {
+            let wasVisible = false;
+            new ResizeObserver(([entry]) => {
+                const visible = entry.contentRect.width > 0 && entry.contentRect.height > 0;
+                if (visible && !wasVisible) this.fitToView(false);
+                wasVisible = visible;
+            }).observe(svgNode);
+        }
     }
 
     /**
      * Draw model structure graph
      */
-    drawModelGraph(model) {
+    drawModelGraph(model, { keepView = false } = {}) {
         const svg = d3.select('#model-graph-svg');
         const emptyState = document.getElementById('graph-empty-state');
+        const previousTransform = keepView && svg.node() ? d3.zoomTransform(svg.node()) : null;
 
         svg.selectAll('*:not(defs)').remove();
 
@@ -276,8 +287,8 @@ export class ModelGraphView {
                 }
 
                 // Jump to joint definition in code editor
-                if (this.codeEditorManager && d.target.data.jointName) {
-                    this.codeEditorManager.scrollToJoint(d.target.data.jointName);
+                if (d.target.data.jointName) {
+                    this.onReveal?.('joint', d.target.data.jointName);
                 }
             }
         });
@@ -387,8 +398,8 @@ export class ModelGraphView {
                 }
 
                 // Jump to link definition in code editor
-                if (this.codeEditorManager && d.data.name) {
-                    this.codeEditorManager.scrollToLink(d.data.name);
+                if (d.data.name) {
+                    this.onReveal?.('link', d.data.name);
                 }
             }
         });
@@ -567,6 +578,11 @@ export class ModelGraphView {
             });
         }
 
+        if (previousTransform) {
+            svg.call(zoom.transform, previousTransform);
+            return;
+        }
+
         // After initialization, auto-fit view to fill container
         // Use brief delay to ensure DOM is fully rendered
         setTimeout(() => {
@@ -706,12 +722,6 @@ export class ModelGraphView {
         this.measurementController = controller;
     }
 
-    /**
-     * Set code editor manager
-     */
-    setCodeEditorManager(manager) {
-        this.codeEditorManager = manager;
-    }
 
     /**
      * Auto-fit view to fill container
@@ -726,6 +736,9 @@ export class ModelGraphView {
         try {
             const svg = this.currentSvg.node();
             const svgRect = svg.getBoundingClientRect();
+            if (svgRect.width === 0 || svgRect.height === 0) {
+                return;
+            }
 
             // Get bounding box of container content
             let bbox;

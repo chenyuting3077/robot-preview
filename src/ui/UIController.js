@@ -201,92 +201,12 @@ export class UIController {
     }
 
     /**
-     * Setup theme toggle
-     */
-    setupThemeToggle(onThemeChanged) {
-        const themeToggle = document.getElementById('theme-toggle');
-        if (!themeToggle) {
-            return;
-        }
-
-        const currentTheme = localStorage.getItem('theme') || 'dark';
-        document.documentElement.setAttribute('data-theme', currentTheme);
-        this.updateThemeIcon(currentTheme);
-
-        if (this.sceneManager) {
-            this.sceneManager.updateBackgroundColor();
-        }
-
-        themeToggle.addEventListener('click', () => {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            document.documentElement.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-            this.updateThemeIcon(newTheme);
-
-            if (this.sceneManager) {
-                this.sceneManager.updateBackgroundColor();
-            }
-
-            onThemeChanged?.(newTheme);
-        });
-    }
-
-    /**
-     * Setup language toggle
-     */
-    setupLanguageToggle(onLanguageChanged) {
-        const languageToggle = document.getElementById('language-toggle');
-        if (!languageToggle) {
-            return;
-        }
-
-        // Get current language from i18n
-        const currentLang = window.i18n?.getCurrentLanguage() || 'zh-CN';
-        this.updateLanguageIcon(currentLang);
-
-        languageToggle.addEventListener('click', () => {
-            const currentLang = window.i18n?.getCurrentLanguage() || 'zh-CN';
-            const newLang = currentLang === 'zh-CN' ? 'en-US' : 'zh-CN';
-
-            onLanguageChanged?.(newLang);
-            this.updateLanguageIcon(newLang);
-        });
-    }
-
-    /**
-     * Update language icon
-     */
-    updateLanguageIcon(lang) {
-        const languageToggle = document.getElementById('language-toggle');
-        const text = languageToggle?.querySelector('.tool-button-text');
-        if (text) {
-            // Display the other language based on current language (toggle hint)
-            text.textContent = lang === 'zh-CN' ? 'Language' : '语言';
-        }
-    }
-
-    /**
-     * Update theme icon
-     */
-    updateThemeIcon(theme) {
-        const themeToggle = document.getElementById('theme-toggle');
-        const icon = themeToggle?.querySelector('.tool-button-icon');
-        if (icon) {
-            icon.textContent = theme === 'dark' ? '🌙' : '☀️';
-        }
-    }
-
-
-    /**
      * Setup panel close button functionality
      */
     setupPanelCloseButtons() {
         const panelButtonMap = {
-            'floating-files-panel': 'toggle-files-panel',
             'floating-joints-panel': 'toggle-joints-panel',
-            'floating-model-tree': 'toggle-model-tree',
-            'floating-help-panel': 'help-button'
+            'floating-model-tree': 'toggle-model-tree'
         };
 
         const closeButtons = document.querySelectorAll('.panel-close-btn');
@@ -539,8 +459,6 @@ export class UIController {
         this.onMujocoToggleSimulate = callbacks.onMujocoToggleSimulate;
 
         this.setupControlPanel();
-        this.setupThemeToggle(callbacks.onThemeChanged);
-        this.setupLanguageToggle(callbacks.onLanguageChanged);
         this.setupPanelCloseButtons();
         this.setupAxesToggle();
         this.setupJointAxesToggle();

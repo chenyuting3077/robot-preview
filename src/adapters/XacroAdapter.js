@@ -23,6 +23,7 @@
 import { XacroParser } from 'xacro-parser';
 import { URDFAdapter } from './URDFAdapter.js';
 import { resolveFileFromMap } from '../utils/FileUtils.js';
+import { trackMeshLoads } from '../utils/MeshLoader.js';
 
 export class XacroAdapter {
     /**
@@ -217,6 +218,7 @@ export class XacroAdapter {
                 // Create temporary URL for URDF content
                 const blob = new Blob([finalUrdfString], { type: 'text/xml' });
                 const url = URL.createObjectURL(blob);
+                const meshesLoaded = trackMeshLoads(loader);
 
                 loader.load(url, (robot) => {
                     URL.revokeObjectURL(url);
@@ -224,6 +226,7 @@ export class XacroAdapter {
                     // Convert to unified model using URDFAdapter
                     try {
                         const model = URDFAdapter.convert(robot, finalUrdfString);
+                        model.meshesReady = meshesLoaded();
                         resolve(model);
                     } catch (error) {
                         console.error('[XacroAdapter] URDF conversion error:', error);
