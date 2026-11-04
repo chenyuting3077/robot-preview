@@ -119,6 +119,10 @@ class App {
             this.mujocoSimulationManager = new MujocoSimulationManager(this.sceneManager);
 
             this.setupModelTreePanel();
+            const toolbar = document.getElementById('top-control-bar');
+            new ResizeObserver(() => {
+                document.documentElement.style.setProperty('--toolbar-bottom', `${toolbar.offsetTop + toolbar.offsetHeight}px`);
+            }).observe(toolbar);
             this.setupTheme();
             this.setupSettingsSync();
             this.setupMessages();

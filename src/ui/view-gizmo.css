@@ -1,6 +1,6 @@
 .view-gizmo {
     position: absolute;
-    top: 76px;
+    top: calc(var(--toolbar-bottom, 60px) + 16px);
     right: max(16px, env(safe-area-inset-right));
     width: 120px;
     height: 120px;

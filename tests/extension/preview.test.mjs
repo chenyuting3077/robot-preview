@@ -45,6 +45,19 @@ test('opens beside the editor and sends every referenced package', async () => {
     assert.ok(load.files.every(file => file.data instanceof Uint8Array && file.data.constructor === Uint8Array));
 });
 
+test('the cursor position at open is highlighted once the preview loads', async () => {
+    const workspace = await copyFixture();
+    const env = loadExtension({ workspace });
+    const primary = path.join(workspace, PRIMARY);
+    const doc = env.open(primary);
+    env.vscode.window.activeTextEditor.selections = [{ active: doc.positionAt(doc.getText().indexOf('<link name="lift_link">') + 5) }];
+    env.activate();
+    const panel = await waitFor(() => env.state.panels[0]?.webview.html && env.state.panels[0]);
+    panel.receive({ type: 'ready' });
+    const highlight = await waitFor(() => env.lastOf('highlight'));
+    assert.equal(highlight.pattern, 'lift_link');
+});
+
 test('typing resends only the edited file, merges rapid edits and marks the preview unsaved', async () => {
     const env = await start();
     env.doc.edit(env.doc.getText().replace('0.2 0.2 0.05', '0.3 0.2 0.05'));

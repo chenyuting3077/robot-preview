@@ -479,6 +479,8 @@ class Preview {
             this.panel.webview.postMessage(full
                 ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), xacroArgs: this.xacroArgsFor(primary.fsPath) }
                 : { type: 'update', files, removed, primary: listing.primary });
+            const editor = vscode.window.activeTextEditor;
+            if (full && editor) this.onSelectionChanged({ textEditor: editor, selections: editor.selections });
         } catch (error) {
             vscode.window.showErrorMessage(`Robot Preview: ${error.message}`);
         }

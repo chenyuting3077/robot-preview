@@ -206,7 +206,7 @@ export function loadExtension({ workspace, config = {} }) {
 
     const open = fsPath => {
         const doc = openDocument(fsPath);
-        vscode.window.activeTextEditor = { document: doc, viewColumn: 1 };
+        vscode.window.activeTextEditor = { document: doc, viewColumn: 1, selections: [{ active: { line: 0, character: 0 } }] };
         vscode.window.visibleTextEditors = [vscode.window.activeTextEditor];
         return doc;
     };

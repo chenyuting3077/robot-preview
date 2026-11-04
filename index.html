@@ -193,9 +193,14 @@
         #top-control-bar {
             position: absolute;
             top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 20px;
+            right: 20px;
+            margin: 0 auto;
+            width: fit-content;
             display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            row-gap: 4px;
             align-items: center;
             gap: 6px;
             padding: 5px 9px;
@@ -212,8 +217,16 @@
 
         .control-bar-section {
             display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
             align-items: center;
             gap: 6px;
+        }
+
+        @media (max-width: 900px) {
+            .control-bar-divider {
+                display: none;
+            }
         }
 
         .control-bar-section:first-child {
@@ -474,7 +487,7 @@
 
         /* Model tree floating panel */
         #floating-model-tree {
-            top: 80px;
+            top: calc(var(--toolbar-bottom, 60px) + 20px);
             left: calc(100vw - 360px - 20px);
             width: 360px;
             height: 340px;
@@ -760,7 +773,7 @@
         /* MuJoCo simulation control bar */
         #mujoco-simulation-bar {
             position: fixed;
-            top: 80px;
+            top: calc(var(--toolbar-bottom, 60px) + 20px);
             left: 50%;
             transform: translateX(-50%);
             z-index: 100;
