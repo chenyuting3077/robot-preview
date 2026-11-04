@@ -58,7 +58,7 @@ test('the cursor position at open is highlighted once the preview loads', async 
     assert.equal(highlight.pattern, 'lift_link');
 });
 
-test('typing resends only the edited file, merges rapid edits and marks the preview unsaved', async () => {
+test('typing resends only the edited file and merges rapid edits', async () => {
     const env = await start();
     env.doc.edit(env.doc.getText().replace('0.2 0.2 0.05', '0.3 0.2 0.05'));
     env.fire('change', { document: env.doc, contentChanges: [{}] });
@@ -68,14 +68,6 @@ test('typing resends only the edited file, merges rapid edits and marks the prev
     assert.equal(updates.length, 1);
     assert.deepEqual(updates[0].files.map(file => file.path), ['/robot_a/urdf/robot_a.urdf.xacro']);
     assert.match(textOf(updates[0].files[0]), /0\.3 0\.2 0\.05/);
-    assert.match(env.panel.title, /^● /);
-    assert.equal(env.lastOf('dirty').dirty, true);
-
-    env.doc.save();
-    env.fire('save', env.doc);
-    await sleep(600);
-    assert.doesNotMatch(env.panel.title, /^● /);
-    assert.equal(env.lastOf('dirty').dirty, false);
 });
 
 test('save mode ignores typing and never leaks unsaved text', async () => {
@@ -86,7 +78,6 @@ test('save mode ignores typing and never leaks unsaved text', async () => {
     await sleep(600);
     const leaked = env.allOf('update').flatMap(message => message.files).some(file => textOf(file).includes('lift_link2'));
     assert.equal(leaked, false);
-    assert.doesNotMatch(env.panel.title, /^● /);
 
     env.doc.save();
     env.fire('save', env.doc);

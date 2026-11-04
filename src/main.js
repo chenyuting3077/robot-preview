@@ -119,6 +119,17 @@ class App {
             this.mujocoSimulationManager = new MujocoSimulationManager(this.sceneManager);
 
             this.setupModelTreePanel();
+            const displayMenu = document.getElementById('display-menu');
+            const displayButton = document.getElementById('display-menu-btn');
+            displayButton.addEventListener('click', () => {
+                displayMenu.classList.toggle('open');
+                displayButton.classList.toggle('active', displayMenu.classList.contains('open'));
+            });
+            document.addEventListener('click', event => {
+                if (displayMenu.contains(event.target) || displayButton.contains(event.target)) return;
+                displayMenu.classList.remove('open');
+                displayButton.classList.remove('active');
+            });
             const toolbar = document.getElementById('top-control-bar');
             new ResizeObserver(() => {
                 document.documentElement.style.setProperty('--toolbar-bottom', `${toolbar.offsetTop + toolbar.offsetHeight}px`);
@@ -258,11 +269,6 @@ class App {
             update: (message) => this.loadFiles(message, false),
             exportUrdf: async ({ requestId }) => {
                 vscode.postMessage({ type: 'urdf', requestId, text: this.lastLoadError ? null : this.currentModel?.expandedUrdf ?? null });
-            },
-            dirty: async ({ dirty }) => {
-                const badge = document.getElementById('unsaved-badge');
-                badge.textContent = i18n.t('unsaved');
-                badge.style.display = dirty ? 'block' : 'none';
             },
             highlight: async ({ kind, pattern }) => {
                 this.lastHighlight = pattern ? { kind, pattern } : null;

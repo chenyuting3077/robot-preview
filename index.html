@@ -194,12 +194,11 @@
             position: absolute;
             top: 20px;
             left: 20px;
-            right: 20px;
-            margin: 0 auto;
             width: fit-content;
+            max-width: calc(100% - 40px);
             display: flex;
             flex-wrap: wrap;
-            justify-content: center;
+            justify-content: flex-start;
             row-gap: 4px;
             align-items: center;
             gap: 6px;
@@ -1662,17 +1661,42 @@
             font-size: 14px;
         }
 
-        #unsaved-badge {
-            position: fixed;
-            right: 16px;
-            bottom: 16px;
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: rgba(255, 159, 10, 0.9);
-            color: #000;
-            font-size: 12px;
-            pointer-events: none;
-            z-index: 10000;
+        .control-bar-views {
+            position: relative;
+        }
+
+        #display-menu {
+            display: none;
+            position: absolute;
+            top: calc(100% + 12px);
+            left: -4px;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
+            padding: 8px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px) saturate(150%);
+            -webkit-backdrop-filter: blur(20px) saturate(150%);
+            border: 0.5px solid var(--glass-border);
+            border-radius: 14px;
+            box-shadow: var(--glass-shadow);
+            z-index: 200;
+        }
+
+        #display-menu.open {
+            display: flex;
+        }
+
+        .display-menu-separator {
+            height: 1px;
+            margin: 2px 4px;
+            background: var(--glass-border);
+        }
+
+        #display-menu .control-button {
+            justify-content: flex-start;
+            text-align: left;
+            white-space: nowrap;
         }
 
         #load-error {
@@ -1696,6 +1720,10 @@
         <div id="canvas-container">
             <div id="top-control-bar">
                 <div class="control-bar-section control-bar-views">
+                    <button class="tool-button" id="display-menu-btn">
+                        <span class="tool-button-text" data-i18n="display"></span> ▾
+                    </button>
+                    <div id="display-menu">
                     <button class="control-button active" id="show-visual" data-checked="true">
                         <span data-i18n="visual"></span>
                     </button>
@@ -1714,6 +1742,7 @@
                     <button class="control-button" id="toggle-joint-axes-btn" data-checked="false">
                         <span data-i18n="jointAxes"></span>
                     </button>
+                    <div class="display-menu-separator"></div>
                     <button class="control-button active" id="toggle-shadow" data-checked="true">
                         <span data-i18n="shadow"></span>
                     </button>
@@ -1723,6 +1752,7 @@
                     <button class="control-button active" id="toggle-grid" data-checked="true">
                         <span data-i18n="grid"></span>
                     </button>
+                    </div>
                 </div>
 
                 <div class="control-bar-divider"></div>
@@ -1750,7 +1780,6 @@
                 </div>
             </div>
 
-            <div id="unsaved-badge" style="display: none;"></div>
             <div id="loading-indicator" style="display: none;"></div>
 
             <div id="mujoco-simulation-bar" style="display:none;">

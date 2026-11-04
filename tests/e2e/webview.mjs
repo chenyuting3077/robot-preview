@@ -185,9 +185,6 @@ try {
     const settings = await ev(`return window.__out.find(m => m.type === 'settings')?.settings`);
     check('panel toggle saved as setting', settings?.['toggle-joints-panel'] === true && settings['show-collision'] === true, JSON.stringify(settings));
 
-    await ev(`window.postMessage({ type: 'dirty', dirty: true }, '*')`);
-    check('unsaved badge', await waitFor(`getComputedStyle(document.getElementById('unsaved-badge')).display === 'block' && document.getElementById('unsaved-badge').textContent === '未儲存'`, 2000));
-    await ev(`window.postMessage({ type: 'dirty', dirty: false }, '*')`);
 
     await ev(`window.__out.length = 0; window.postMessage({ type: 'exportUrdf', requestId: 7 }, '*')`);
     await waitFor(`window.__out.some(m => m.type === 'urdf')`, 3000);

@@ -99,7 +99,7 @@
           ],
           "default": "type",
           "enumDescriptions": [
-            "Rebuild the preview 300 ms after typing stops, including unsaved edits; the preview title shows ● while it contains unsaved changes.",
+            "Rebuild the preview 300 ms after typing stops, including unsaved edits, like the Markdown preview.",
             "Rebuild the preview only when a file is saved."
           ],
           "description": "When the preview picks up edits made in VS Code. Changes made outside VS Code always update immediately."

@@ -264,7 +264,6 @@ class Preview {
         if (this.primary?.fsPath === uri.fsPath) return;
         this.primary = uri;
         this.panel.title = path.basename(uri.fsPath);
-        this.lastDirty = null;
         this.sent = new Map();
         this.lastHighlight = null;
         this.clearDiagnostics();
@@ -458,7 +457,6 @@ class Preview {
             if (primary !== this.primary || !this.panel) return;
             this.listing = listing;
             this.watchRoots(listing.roots);
-            this.updateDirty();
 
             const newMissing = listing.missing.filter(name => !this.warned.has(name));
             if (newMissing.length) {
@@ -501,27 +499,14 @@ class Preview {
         });
     }
 
-    updateDirty() {
-        if (!this.panel || !this.primary) return;
-        const dirty = liveEditing() && vscode.workspace.textDocuments.some(doc => doc.isDirty && this.listing?.paths.has(doc.uri.fsPath));
-        this.panel.title = `${dirty ? '● ' : ''}${path.basename(this.primary.fsPath)}`;
-        if (dirty !== this.lastDirty) {
-            this.lastDirty = dirty;
-            this.panel.webview.postMessage({ type: 'dirty', dirty });
-        }
-    }
-
     onDocumentChanged(event) {
-        if (this.listing?.paths.has(event.document.uri.fsPath)) this.updateDirty();
         if (liveEditing() && this.panel && event.contentChanges.length && this.listing?.paths.has(event.document.uri.fsPath)) {
             this.scheduleUpdate();
         }
     }
 
     onDocumentSaved(doc) {
-        if (!this.panel || !this.listing?.paths.has(doc.uri.fsPath)) return;
-        this.updateDirty();
-        this.scheduleUpdate();
+        if (this.panel && this.listing?.paths.has(doc.uri.fsPath)) this.scheduleUpdate();
     }
 
     onSelectionChanged(event) {
@@ -711,9 +696,7 @@ exports.activate = context => {
         vscode.workspace.onDidChangeTextDocument(event => preview.onDocumentChanged(event)),
         vscode.workspace.onDidSaveTextDocument(doc => preview.onDocumentSaved(doc)),
         vscode.workspace.onDidChangeConfiguration(event => {
-            if (!event.affectsConfiguration('robotPreviewUrdf.updateOn')) return;
-            preview.updateDirty();
-            preview.scheduleUpdate();
+            if (event.affectsConfiguration('robotPreviewUrdf.updateOn')) preview.scheduleUpdate();
         }),
         vscode.window.onDidChangeTextEditorSelection(event => preview.onSelectionChanged(event))
     );
