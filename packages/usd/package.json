@@ -1,7 +1,7 @@
 {
   "name": "robot-preview-usd",
   "displayName": "Robot Preview: USD",
-  "description": "3D viewer for OpenUSD scenes (USD, USDA, USDC, USDZ) with meshes and Gaussian splat particle fields inside VS Code",
+  "description": "OpenUSD viewer for USD, USDA, USDC and USDZ inside VS Code: Isaac Sim robots, meshes and Gaussian splats with a Stage tree",
   "version": "0.1.0",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
@@ -74,6 +74,13 @@
     "preview",
     "viewer",
     "3d viewer",
-    "usd viewer"
+    "usd viewer",
+    "usd preview",
+    "usdview",
+    "robotics",
+    "robot",
+    "usd stage",
+    "pixar usd",
+    "nvidia isaac"
   ]
 }

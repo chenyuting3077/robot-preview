@@ -10,6 +10,6 @@ Open meshes, point clouds and Gaussian splats in VS Code as a 3D view.
 
 ![preview](images/preview.png)
 
-Part of the Robot Preview series with [Robot Preview: URDF & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf).
+Part of the Robot Preview series with [Robot Preview: URDF & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) and [Robot Preview: USD](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-usd).
 
 Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs; format coverage follows [MeshLab](https://www.meshlab.net/). Screenshot: a splat derived from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0).

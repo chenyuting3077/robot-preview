@@ -5,6 +5,7 @@
 - File info moved behind an "i" button, collapsed until opened.
 - Point display keeps working when a mesh is hidden; framing ignores hidden objects.
 - three.js 0.187.
+- Links to the other Robot Preview extensions.
 
 ## 0.1.1
 

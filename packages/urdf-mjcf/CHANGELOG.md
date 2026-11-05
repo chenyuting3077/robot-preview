@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- Links to the other Robot Preview extensions.
+
 ## 0.2.1
 
 - Clearer Marketplace description and search keywords.

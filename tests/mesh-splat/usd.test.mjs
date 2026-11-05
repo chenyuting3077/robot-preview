@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Matrix4 } from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
 import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined } from '../../packages/mesh-splat/webview/usd.mjs';
 
@@ -159,4 +160,30 @@ test('dropUndefined removes over and class prims that no layer defines', () => {
         '/__class__': { specType: 1, fields: { specifier: 2 } }
     });
     assert.deepEqual(Object.keys(specs), ['/R']);
+});
+
+test('xformOps with suffixes, any rotation order and !invert! are applied', async () => {
+    const usda = `#usda 1.0
+def Xform "A"
+{
+    double3 xformOp:translate = (1, 0, 0)
+    float xformOp:rotateZ:joint = 90
+    double3 xformOp:translate:pivot = (0, 2, 0)
+    float3 xformOp:rotateXZY = (30, 40, 50)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateZ:joint", "xformOp:translate:pivot", "xformOp:rotateXZY", "!invert!xformOp:translate:pivot"]
+}
+`;
+    const { group } = await composeUsd(new TextEncoder().encode(usda));
+    const a = group.getObjectByName('A');
+    const deg = Math.PI / 180;
+    const pivot = new Matrix4().makeTranslation(0, 2, 0);
+    const expected = new Matrix4().makeTranslation(1, 0, 0)
+        .multiply(new Matrix4().makeRotationZ(90 * deg))
+        .multiply(pivot)
+        .multiply(new Matrix4().makeRotationY(40 * deg))
+        .multiply(new Matrix4().makeRotationZ(50 * deg))
+        .multiply(new Matrix4().makeRotationX(30 * deg))
+        .multiply(pivot.clone().invert());
+    a.updateMatrix();
+    a.matrix.elements.forEach((value, i) => assert.ok(Math.abs(value - expected.elements[i]) < 1e-5, `element ${i}`));
 });

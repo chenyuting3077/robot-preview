@@ -2,7 +2,7 @@ import { USDAParser } from 'three/examples/jsm/loaders/usd/USDAParser.js';
 import { USDCParser } from 'three/examples/jsm/loaders/usd/USDCParser.js';
 import { USDComposer } from 'three/examples/jsm/loaders/usd/USDComposer.js';
 import { unzipSync } from 'three/examples/jsm/libs/fflate.module.js';
-import { LoaderUtils } from 'three';
+import { Euler, LoaderUtils, Matrix4, Quaternion } from 'three';
 
 const SH_C0 = 0.28209479177387814;
 const MAX_DEPTH = 16;
@@ -303,6 +303,39 @@ export function gaussianPly(specs, path) {
     return out;
 }
 
+const DEGREES = Math.PI / 180;
+
+function xformOpMatrix(kind, value) {
+    const matrix = new Matrix4();
+    const vector = [value].flat();
+    const axisRotation = kind.match(/^rotate([XYZ])$/)?.[1];
+    const eulerOrder = kind.match(/^rotate([XYZ]{3})$/)?.[1];
+    if (kind === 'translate') return matrix.makeTranslation(vector[0], vector[1], vector[2]);
+    if (kind === 'scale') return vector.length === 1 ? matrix.makeScale(vector[0], vector[0], vector[0]) : matrix.makeScale(vector[0], vector[1], vector[2]);
+    if (kind === 'orient' && vector.length === 4) return matrix.makeRotationFromQuaternion(new Quaternion(vector[0], vector[1], vector[2], vector[3]));
+    if (kind === 'transform' && vector.length === 16) return matrix.fromArray(vector);
+    if (axisRotation) return matrix[`makeRotation${axisRotation}`](vector[0] * DEGREES);
+    if (eulerOrder) return matrix.makeRotationFromEuler(new Euler(vector[0] * DEGREES, vector[1] * DEGREES, vector[2] * DEGREES, [...eulerOrder].reverse().join('')));
+    return matrix;
+}
+
+class XformUSDComposer extends USDComposer {
+    applyTransform(object, fields, attrs = {}) {
+        const data = { ...fields, ...attrs };
+        const order = data.xformOpOrder;
+        if (!order?.length) return super.applyTransform(object, fields, attrs);
+        const matrix = new Matrix4();
+        for (const op of order) {
+            const inverse = op.startsWith('!invert!');
+            const name = inverse ? op.slice('!invert!'.length) : op;
+            if (data[name] === undefined) continue;
+            const step = xformOpMatrix(name.split(':')[1], data[name]);
+            matrix.multiply(inverse ? step.invert() : step);
+        }
+        matrix.decompose(object.position, object.quaternion, object.scale);
+    }
+}
+
 const USDZ_ROOT = 'https://usdz.invalid/';
 const noFile = async url => {
     throw new Error(`not found: ${url}`);
@@ -322,7 +355,7 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
     }
     const data = await loadLayer(bytes, basePath, { read, missing, layers: new Map() });
     const specs = hideGuides(dropUndefined(data.specsByPath));
-    const composer = new USDComposer();
+    const composer = new XformUSDComposer();
     const group = composer.compose(data, assets, {}, basePath);
     await Promise.all(composer.texturePromises);
     const gaussians = [];
