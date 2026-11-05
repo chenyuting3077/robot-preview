@@ -40,6 +40,23 @@ canvas { display: block; }
 .tool-button.active, .control-button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3); }
 #display-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
 #display-menu.open { display: flex; }
+#stage-bar { position: fixed; top: 20px; right: 20px; padding: 5px 9px; border-radius: 21px; z-index: 100; }
+#stage-panel { position: fixed; top: 70px; right: 20px; width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
+.stage-head, .prim-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 24px; align-items: center; gap: 6px; }
+.stage-head { padding: 6px 12px 6px 16px; font-size: 10px; color: var(--text-tertiary); border-bottom: 0.5px solid var(--glass-border); }
+.stage-head span:last-child { text-align: center; }
+#stage-rows { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px; }
+.prim-row { height: 24px; padding: 0 8px 0 12px; border-radius: 6px; font-size: 11px; color: var(--text-primary); }
+.prim-row:hover { background: var(--hover); }
+.prim-name { display: flex; align-items: center; gap: 2px; min-width: 0; white-space: nowrap; }
+.prim-name span { overflow: hidden; text-overflow: ellipsis; }
+.prim-toggle { flex: none; width: 16px; height: 16px; padding: 0; border: none; background: none; color: var(--text-tertiary); font-size: 9px; cursor: pointer; }
+.prim-type { color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prim-eye { width: 24px; height: 22px; padding: 0; border: none; border-radius: 6px; background: none; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.prim-eye:hover { background: var(--hover); color: var(--text-primary); }
+.prim-eye svg { width: 14px; height: 14px; }
+.prim-row.off .prim-eye, .prim-row.inherited .prim-eye { color: var(--text-tertiary); opacity: 0.6; }
+.prim-row.inherited .prim-name, .prim-row.inherited .prim-type, .prim-row.off .prim-name, .prim-row.off .prim-type { opacity: 0.45; }
 #help-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; white-space: nowrap; z-index: 200; }
 #help-panel.open { display: block; }
 #help-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
@@ -50,7 +67,8 @@ canvas { display: block; }
 #up-select:hover, #up-select:focus { outline: none; background-color: rgba(255, 255, 255, 0.12); }
 [data-theme="dark"] #up-select option { background-color: #2a2a2a; color: var(--text-primary); }
 [data-theme="light"] #up-select { background-color: rgba(0, 0, 0, 0.04); border: 1px solid rgba(0, 0, 0, 0.1); }
-#info-panel { position: fixed; top: 20px; right: 20px; padding: 12px 16px; border-radius: 16px; font-size: 11px; z-index: 50; max-width: calc(100vw - 40px); }
+#info-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; z-index: 200; width: max-content; max-width: min(420px, calc(100vw - 40px)); }
+#info-panel.open { display: block; }
 #info-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
 #info-panel td:first-child { color: var(--text-tertiary); }
 #info-panel td:last-child { color: var(--text-primary); overflow-wrap: anywhere; }
@@ -83,13 +101,20 @@ canvas { display: block; }
       <option value="-X">-X</option>
     </select>
   </div>
-  <button class="tool-button active" id="info-btn" data-t="info"></button>
+  <div class="control-bar-section">
+    <button class="tool-button" id="info-btn">i</button>
+    <div id="info-panel" class="glass"><table id="info-table"></table></div>
+  </div>
   <div class="control-bar-section">
     <button class="tool-button" id="help-btn">?</button>
     <div id="help-panel" class="glass"><table><tr><td data-t="helpKeyOrbit"></td><td data-t="helpOrbit"></td></tr><tr><td data-t="helpKeyPan"></td><td data-t="helpPan"></td></tr><tr><td data-t="helpKeyZoom"></td><td data-t="helpZoom"></td></tr><tr><td data-t="helpKeyPivot"></td><td data-t="helpPivot"></td></tr><tr><td data-t="helpKeyFly"></td><td data-t="helpFly"></td></tr><tr><td data-t="helpKeyTurn"></td><td data-t="helpTurn"></td></tr><tr><td data-t="helpKeyFast"></td><td data-t="helpFast"></td></tr><tr><td data-t="helpKeyFrame"></td><td data-t="helpFrame"></td></tr></table></div>
   </div>
 </div>
-<div id="info-panel" class="glass" hidden><table id="info-table"></table></div>
+<div id="stage-bar" class="glass" hidden><button class="tool-button" id="stage-btn"><span data-t="stage"></span> ▾</button></div>
+<div id="stage-panel" class="glass" hidden>
+  <div class="stage-head"><span data-t="primName"></span><span data-t="primType"></span><span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span></div>
+  <div id="stage-rows"></div>
+</div>
 <div id="loading-indicator" data-t="loading"></div>
 <div id="load-error" hidden></div>
 <script type="module" src="./main.js"></script>

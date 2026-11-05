@@ -43,6 +43,7 @@ function fixtures(dir) {
         }),
         'gauss3d.ply': splatPly(['scale_0', 'scale_1', 'scale_2']),
         'gauss2d.ply': splatPly(['scale_0', 'scale_1']),
+        'scene.usda': `#usda 1.0\n(\n    upAxis = "Z"\n    defaultPrim = "World"\n)\ndef Xform "World"\n{\n    def Mesh "Tri"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh "Hidden"\n    {\n        token visibility = "invisible"\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(50, 0, 0), (51, 0, 0), (50, 1, 0)]\n    }\n    def ParticleField3DGaussianSplat "Gaussians"\n    {\n        point3f[] positions = [(0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)]\n        quatf[] orientations = [(1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0)]\n        float3[] scales = [(0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1)]\n        float[] opacities = [0.9, 0.9, 0.9, 0.9]\n        int radiance:sphericalHarmonicsDegree = 0\n        float3[] radiance:sphericalHarmonicsCoefficients = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)]\n    }\n}\n`,
         'BIG.STL': fs.readFileSync(new URL('../fixtures/ros_ws/src/robot_b/meshes/arm.stl', import.meta.url))
     };
     Object.entries(files).forEach(([name, data]) => fs.writeFileSync(path.join(dir, name), data));
@@ -77,7 +78,7 @@ const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-e2e-'));
 const port = 9500 + Math.floor(Math.random() * 400);
 const chrome = spawn(process.env.CHROME || 'google-chrome', [
     '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--window-size=900,600',
-    '--use-gl=angle', `--use-angle=${process.env.ANGLE || 'swiftshader'}`, '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', 'about:blank'
+    '--use-gl=angle', `--use-angle=${process.env.ANGLE || 'swiftshader'}`, '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--js-flags=--expose-gc', 'about:blank'
 ], { stdio: 'ignore' });
 
 let target;
@@ -108,7 +109,7 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
     let state;
     const started = Date.now();
     while (Date.now() - started < 60000) {
-        state = await evaluate(`({ loading: !document.getElementById('loading-indicator')?.hidden, error: document.getElementById('load-error')?.hidden ? '' : document.getElementById('load-error')?.textContent, info: document.getElementById('info-table')?.innerText, csp: window.__csp })`);
+        state = await evaluate(`({ loading: !document.getElementById('loading-indicator')?.hidden, error: document.getElementById('load-error')?.hidden ? '' : document.getElementById('load-error')?.textContent, info: [...(document.getElementById('info-table')?.rows ?? [])].map(row => [...row.cells].map(cell => cell.textContent).join('\\t')).join('\\n'), csp: window.__csp })`);
         if (state && !state.loading) break;
         await sleep(200);
     }
@@ -155,10 +156,39 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
                 sizes: visible(document.querySelector('[data-size]'))
             };
         })()`);
-        const kind = /gauss|BIG|cube|quad|square|mesh\.ply|gltf/.test(name) ? (/gauss/.test(name) ? 'splat' : 'mesh') : 'points';
+        const kind = /\.usd/.test(name) ? (ui.modes ? 'mesh' : 'splat') : /gauss|BIG|cube|quad|square|mesh\.ply|gltf/.test(name) ? (/gauss/.test(name) ? 'splat' : 'mesh') : 'points';
         const expected = { mesh: [true, true, true], points: [true, false, true], splat: [false, false, false] }[kind];
         state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]);
         camera += ` ui ${JSON.stringify(ui)}`;
+        if (name === 'scene.usda') {
+            const size = await evaluate('[innerWidth, innerHeight]');
+            const shot = async () => (await send('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width: size[0], height: size[1], scale: 0.25 } })).data;
+            const tree = await evaluate(`(() => {
+                if (document.getElementById('stage-panel').hidden) return 'closed';
+                const rows = [...document.querySelectorAll('#stage-panel .prim-row')];
+                return rows.map(row => row.querySelector('.prim-name span').textContent + ':' + row.querySelector('.prim-type').textContent + ':' + row.querySelector('.prim-eye').getAttribute('aria-pressed')).join(',');
+            })()`);
+            const before = await shot();
+            await evaluate(`['Tri', 'Gaussians'].forEach(name => [...document.querySelectorAll('#stage-panel .prim-row')].find(row => row.querySelector('.prim-name span').textContent === name).querySelector('.prim-eye').click())`);
+            await sleep(600);
+            const after = await shot();
+            const changed = await evaluate(`(async () => {
+                const load = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/jpeg;base64,' + src; });
+                const [x, y] = await Promise.all([load('${before}'), load('${after}')]);
+                const px = img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, c.width, c.height).data; };
+                const p = px(x), q = px(y); let n = 0;
+                for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 40) n++;
+                return n / (p.length / 4);
+            })()`);
+            const parentOff = await evaluate(`(() => {
+                document.querySelector('#stage-panel .prim-row .prim-eye').click();
+                const allOff = [...document.querySelectorAll('#stage-panel .prim-eye')].every(eye => eye.querySelector('line'));
+                document.querySelector('#stage-panel .prim-name').click();
+                return allOff && document.querySelectorAll('#stage-panel .prim-row').length === 1;
+            })()`);
+            state.treeOk = tree === 'World:Xform:true,Tri:Mesh:true,Hidden:Mesh:false,Gaussians:ParticleField3DGaussianSplat:true' && changed > 0.05 && parentOff;
+            camera += ` tree ${tree} hide ${(changed * 100).toFixed(1)}% parentOff ${parentOff}`;
+        }
         if (name === 'rgb.xyz') {
             const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 400, height: 400, scale: 0.25 } })).data;
             state.redOk = await evaluate(`(async () => {
@@ -171,7 +201,23 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
             camera += ` red ${state.redOk}`;
         }
     }
-    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false && state.uiOk !== false && state.redOk !== false;
+    if (process.env.PERF && !state.loading && !state.error) {
+        await evaluate('gc()');
+        const perf = await evaluate(`new Promise(resolve => {
+            const gl = document.querySelector('canvas').getContext('webgl2');
+            const gpu = gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info').UNMASKED_RENDERER_WEBGL);
+            let frames = 0;
+            const start = performance.now();
+            const tick = () => {
+                frames++;
+                if (performance.now() - start < 3000) return requestAnimationFrame(tick);
+                resolve({ fps: Math.round(frames * 1000 / (performance.now() - start)), heapMB: Math.round(performance.memory.usedJSHeapSize / 1e6), gpu });
+            };
+            requestAnimationFrame(tick);
+        })`);
+        camera += ` perf ${JSON.stringify(perf)}`;
+    }
+    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false && state.uiOk !== false && state.redOk !== false && state.treeOk !== false;
     results.push(ok);
     console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${Math.round((Date.now() - started) / 100) / 10}s ${state.error || ''} ${state.csp.join(', ')}${camera}\n  ${String(state.info).replace(/\n/g, ' | ')}`);
     if (shots) {

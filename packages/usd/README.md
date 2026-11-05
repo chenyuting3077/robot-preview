@@ -1,0 +1,14 @@
+# Robot Preview: USD
+
+Open OpenUSD scenes in VS Code as a 3D view.
+
+- `.usd` `.usdc` `.usdz`, and `.usda` through *Reopen Editor With…*
+- Meshes, primitives and UsdPreviewSurface materials, following references, payloads and sublayers to other files.
+- A prim tree to show or hide each prim; prims marked invisible start hidden.
+- Gaussian splats stored as `ParticleField3DGaussianSplat` (OpenUSD 26.03), e.g. scenes exported for Isaac Sim.
+- Solid, wireframe and point display, up-axis selection, and vertex / face / splat counts.
+- Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls.
+
+Part of the Robot Preview series with [Robot Preview: URDF & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) and [Robot Preview: Mesh & Splat](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-mesh-splat).
+
+Built with [three.js](https://threejs.org/) (its USD loader) and [Spark](https://sparkjs.dev/) by World Labs; follows the [OpenUSD](https://openusd.org/) specification.

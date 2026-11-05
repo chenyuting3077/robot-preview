@@ -1,0 +1,79 @@
+{
+  "name": "robot-preview-usd",
+  "displayName": "Robot Preview: USD",
+  "description": "3D viewer for OpenUSD scenes (USD, USDA, USDC, USDZ) with meshes and Gaussian splat particle fields inside VS Code",
+  "version": "0.1.0",
+  "publisher": "chenyuting3077",
+  "icon": "images/icon.png",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chenyuting3077/robot-viewer"
+  },
+  "bugs": {
+    "url": "https://github.com/chenyuting3077/robot-viewer/issues"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "robotPreviewUsd.viewer",
+        "displayName": "Robot Preview: USD",
+        "selector": [
+          {
+            "filenamePattern": "*.usd"
+          },
+          {
+            "filenamePattern": "*.usdc"
+          },
+          {
+            "filenamePattern": "*.usdz"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "robotPreviewUsd.text",
+        "displayName": "Robot Preview: USD",
+        "selector": [
+          {
+            "filenamePattern": "*.usda"
+          }
+        ],
+        "priority": "option"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "../mesh-splat/node_modules/.bin/vite build && cp ../mesh-splat/extension.js dist/",
+    "package": "npm run build && npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-viewer/raw/HEAD/packages/usd"
+  },
+  "keywords": [
+    "usd",
+    "openusd",
+    "usda",
+    "usdc",
+    "usdz",
+    "isaac sim",
+    "omniverse",
+    "gaussian splatting",
+    "3dgs",
+    "preview",
+    "viewer",
+    "3d viewer",
+    "usd viewer"
+  ]
+}

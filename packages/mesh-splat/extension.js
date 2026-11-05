@@ -45,10 +45,8 @@ function activate(context) {
         }
     };
     const options = { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true };
-    context.subscriptions.push(
-        vscode.window.registerCustomEditorProvider('robotPreviewMeshSplat.viewer', provider, options),
-        vscode.window.registerCustomEditorProvider('robotPreviewMeshSplat.textPoints', provider, options)
-    );
+    const { customEditors } = JSON.parse(fs.readFileSync(path.join(context.extensionUri.fsPath, 'package.json'), 'utf8')).contributes;
+    context.subscriptions.push(...customEditors.map(({ viewType }) => vscode.window.registerCustomEditorProvider(viewType, provider, options)));
 }
 
 module.exports = { activate, deactivate() {} };
