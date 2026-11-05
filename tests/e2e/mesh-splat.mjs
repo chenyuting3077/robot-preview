@@ -30,6 +30,7 @@ function fixtures(dir) {
         'quad.mtl': 'newmtl red\nKd 1 0 0\n',
         'square.off': 'OFF\n4 1 0\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n4 0 1 2 3\n',
         'cloud.xyz': Array.from({ length: 500 }, (_, i) => `${Math.cos(i)} ${Math.sin(i)} ${i / 500}`).join('\n'),
+        'rgb.xyz': Array.from({ length: 4000 }, (_, i) => { const r = Math.sqrt(i / 4000), t = i * 2.399; return `${r * Math.cos(t)} ${r * Math.sin(t)} 0 255 0 0`; }).join('\n'),
         'mesh.ply': 'ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n0 0 0 255 0 0\n1 0 0 0 255 0\n0 1 0 0 0 255\n3 0 1 2\n',
         'cloud.ply': `ply\nformat ascii 1.0\nelement vertex 3000\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n${Array.from({ length: 3000 }, (_, i) => { const r = Math.sqrt(i / 3000), t = i * 2.399; return `${r * Math.cos(t)} ${r * Math.sin(t)} 0 255 ${i % 255} 0`; }).join('\n')}\n`,
         'cloud.pcd': `VERSION .7\nFIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\nWIDTH 200\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS 200\nDATA ascii\n${Array.from({ length: 200 }, (_, i) => `${Math.cos(i)} ${i / 200} ${Math.sin(i)}`).join('\n')}\n`,
@@ -142,7 +143,35 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
         camera = ` dblclick ${(moved * 100).toFixed(1)}%, F ${(restored * 100).toFixed(1)}%, W ${(flown * 100).toFixed(1)}%`;
         state.cameraOk = moved > 0.01 && restored < 0.01 && flown > 0.01;
     }
-    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false;
+    if (!state.loading && !state.error) {
+        const ui = await evaluate(`(() => {
+            const visible = el => el && !el.hidden && !el.closest('[hidden]');
+            document.getElementById('help-btn').click();
+            const help = document.getElementById('help-panel');
+            return {
+                help: help.classList.contains('open') && help.querySelectorAll('tr').length === 8 && help.innerText.includes('W A S D'),
+                display: visible(document.getElementById('display-menu-btn')),
+                modes: visible(document.querySelector('[data-mode]')),
+                sizes: visible(document.querySelector('[data-size]'))
+            };
+        })()`);
+        const kind = /gauss|BIG|cube|quad|square|mesh\.ply|gltf/.test(name) ? (/gauss/.test(name) ? 'splat' : 'mesh') : 'points';
+        const expected = { mesh: [true, true, true], points: [true, false, true], splat: [false, false, false] }[kind];
+        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]);
+        camera += ` ui ${JSON.stringify(ui)}`;
+        if (name === 'rgb.xyz') {
+            const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 400, height: 400, scale: 0.25 } })).data;
+            state.redOk = await evaluate(`(async () => {
+                const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
+                const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+                const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0;
+                for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 80 && d[i + 2] < 80) n++;
+                return n > 20;
+            })()`);
+            camera += ` red ${state.redOk}`;
+        }
+    }
+    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false && state.uiOk !== false && state.redOk !== false;
     results.push(ok);
     console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${Math.round((Date.now() - started) / 100) / 10}s ${state.error || ''} ${state.csp.join(', ')}${camera}\n  ${String(state.info).replace(/\n/g, ' | ')}`);
     if (shots) {

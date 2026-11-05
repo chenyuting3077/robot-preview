@@ -16,9 +16,9 @@ import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 
 const STRINGS = {
-    en: { display: 'Display', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
-    'zh-TW': { display: '顯示', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element' },
-    'zh-CN': { display: '显示', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element' }
+    en: { help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
+    'zh-TW': { help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element' },
+    'zh-CN': { help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element' }
 };
 const lang = document.documentElement.lang.toLowerCase();
 const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.startsWith('zh') ? 'zh-CN' : 'en'];
@@ -87,13 +87,15 @@ function meshOf(geometry) {
     }));
 }
 
+let pointSize = 2;
 const pointsOf = geometry => new THREE.Points(geometry, new THREE.PointsMaterial({
-    size: 2, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : 0x9aa7b8, vertexColors: hasColor(geometry)
+    size: pointSize, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : 0x9aa7b8, vertexColors: hasColor(geometry)
 }));
 
-function geometryFrom({ positions, indices }) {
+function geometryFrom({ positions, indices, colors }) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    if (colors) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
     if (indices) geometry.setIndex(indices);
     return geometry;
 }
@@ -133,7 +135,7 @@ async function loadPly(info) {
 }
 
 const loadGltf = async () => (await new GLTFLoader().loadAsync(src)).scene;
-const loadTextPoints = async () => pointsOf(geometryFrom({ positions: parsePointsText(await fetchText()) }));
+const loadTextPoints = async () => pointsOf(geometryFrom(parsePointsText(await fetchText())));
 const loadSplatFile = async info => loadSplat(await fetchBytes(), info);
 
 const LOADERS = {
@@ -246,19 +248,31 @@ function setMode(mode) {
     }
 }
 
-function setupUi(hasMesh, up) {
-    $('display-menu-btn').closest('.control-bar-section').hidden = !hasMesh;
+function setPointSize(size) {
+    pointSize = size;
+    document.querySelectorAll('[data-size]').forEach(button => button.classList.toggle('active', Number(button.dataset.size) === size));
+    root.traverse(child => {
+        if (child.isPoints) child.material.size = size;
+    });
+}
+
+function setupUi(hasMesh, hasPoints, up) {
+    $('display-menu-btn').closest('.control-bar-section').hidden = !hasMesh && !hasPoints;
+    document.querySelectorAll('[data-mode], #size-separator').forEach(element => { element.hidden = !hasMesh; });
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
-    $('display-menu-btn').addEventListener('click', event => {
-        event.stopPropagation();
-        $('display-menu').classList.toggle('open');
-        $('display-menu-btn').classList.toggle('active', $('display-menu').classList.contains('open'));
-    });
-    document.addEventListener('click', event => {
-        if ($('display-menu').contains(event.target)) return;
-        $('display-menu').classList.remove('open');
-        $('display-menu-btn').classList.remove('active');
-    });
+    document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => setPointSize(Number(button.dataset.size))));
+    for (const [button, panel] of [[$('display-menu-btn'), $('display-menu')], [$('help-btn'), $('help-panel')]]) {
+        button.addEventListener('click', () => {
+            panel.classList.toggle('open');
+            button.classList.toggle('active', panel.classList.contains('open'));
+        });
+        document.addEventListener('click', event => {
+            if (panel.contains(event.target) || button.contains(event.target)) return;
+            panel.classList.remove('open');
+            button.classList.remove('active');
+        });
+    }
+    $('help-btn').title = $('help-btn').ariaLabel = t('help');
     $('info-btn').addEventListener('click', () => {
         $('info-panel').hidden = !$('info-panel').hidden;
         $('info-btn').classList.toggle('active', !$('info-panel').hidden);
@@ -285,7 +299,7 @@ async function main() {
         localBox = isSplat ? splatBox(object) : new THREE.Box3().setFromObject(object);
         info.size = localBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
         const up = isSplat ? '-Y' : '+Y';
-        setupUi(counted.faces > 0, up);
+        setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
         showInfo(info);
         $('info-panel').hidden = false;

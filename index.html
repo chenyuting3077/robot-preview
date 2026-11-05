@@ -1683,6 +1683,44 @@
             z-index: 200;
         }
 
+        .control-bar-help {
+            position: relative;
+        }
+
+        #help-panel {
+            display: none;
+            position: absolute;
+            top: calc(100% + 12px);
+            left: -4px;
+            padding: 10px 14px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px) saturate(150%);
+            -webkit-backdrop-filter: blur(20px) saturate(150%);
+            border: 0.5px solid var(--glass-border);
+            border-radius: 14px;
+            box-shadow: var(--glass-shadow);
+            font-size: 11px;
+            white-space: nowrap;
+            z-index: 200;
+        }
+
+        #help-panel.open {
+            display: block;
+        }
+
+        #help-panel table {
+            border-spacing: 12px 3px;
+            margin: -3px -12px;
+        }
+
+        #help-panel td:first-child {
+            color: var(--text-tertiary);
+        }
+
+        #help-panel td:last-child {
+            color: var(--text-primary);
+        }
+
         #display-menu.open {
             display: flex;
         }
@@ -1777,6 +1815,11 @@
                     <button class="tool-button" id="toggle-model-tree">
                         <span class="tool-button-text" data-i18n="structure"></span>
                     </button>
+                </div>
+
+                <div class="control-bar-section control-bar-help">
+                    <button class="tool-button" id="help-btn">?</button>
+                    <div id="help-panel" class="popover-panel"><table><tr><td data-i18n="helpKeyOrbit"></td><td data-i18n="helpOrbit"></td></tr><tr><td data-i18n="helpKeyPan"></td><td data-i18n="helpPan"></td></tr><tr><td data-i18n="helpKeyZoom"></td><td data-i18n="helpZoom"></td></tr><tr><td data-i18n="helpKeyPivot"></td><td data-i18n="helpPivot"></td></tr><tr><td data-i18n="helpKeyFly"></td><td data-i18n="helpFly"></td></tr><tr><td data-i18n="helpKeyTurn"></td><td data-i18n="helpTurn"></td></tr><tr><td data-i18n="helpKeyFast"></td><td data-i18n="helpFast"></td></tr><tr><td data-i18n="helpKeyFrame"></td><td data-i18n="helpFrame"></td></tr><tr><td data-i18n="helpKeySelect"></td><td data-i18n="helpSelect"></td></tr><tr><td data-i18n="helpKeyJoint"></td><td data-i18n="helpJoint"></td></tr></table></div>
                 </div>
             </div>
 

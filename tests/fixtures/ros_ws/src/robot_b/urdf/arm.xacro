@@ -15,6 +15,12 @@
           <mesh filename="package://robot_b/meshes/arm.stl"/>
         </geometry>
       </visual>
+      <visual>
+        <origin xyz="0 0 0.2"/>
+        <geometry>
+          <mesh filename="package://robot_b/meshes/tip.gltf"/>
+        </geometry>
+      </visual>
     </link>
   </xacro:macro>
 </robot>

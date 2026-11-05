@@ -33,7 +33,7 @@ export class FileHandler {
         if (reset) this.fileMap.clear();
         removed.forEach(path => this.fileMap.delete(path));
         entries.forEach(({ path, data }) => this.fileMap.set(path, new File([data], path.split('/').pop())));
-        if (entries.some(({ path }) => /\.(mtl|png|jpe?g)$/i.test(path))) clearMeshCache();
+        if (entries.some(({ path }) => /\.(mtl|bin|png|jpe?g)$/i.test(path))) clearMeshCache();
     }
 
     async loadPrimary(primaryPath, options = {}) {

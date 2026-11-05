@@ -2,6 +2,8 @@
 
 ## 0.2.0
 
+- `?` in the toolbar lists the mouse and keyboard controls.
+- glTF / GLB meshes (with external `.bin` buffers) referenced from URDF and xacro load instead of being reported missing.
 - Moving the text cursor onto a link highlights it without popping up the hover info; the info shows only on mouse hover.
 - STL meshes without valid normals are shaded instead of rendering black.
 - Works in Restricted Mode (untrusted workspaces).

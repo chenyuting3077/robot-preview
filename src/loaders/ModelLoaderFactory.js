@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { URDFAdapter } from '../adapters/URDFAdapter.js';
 import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
-import { resolveFileFromMap } from '../utils/FileUtils.js';
+import { resolveFileFromMap, fileUrlModifier } from '../utils/FileUtils.js';
 import { trackMeshLoads, cachedMeshParse } from '../utils/MeshLoader.js';
 
 export class ModelLoaderFactory {
@@ -171,66 +171,7 @@ export class ModelLoaderFactory {
 
                 loader.packages = packageMap;
 
-                // Set URL Modifier to intercept all URL requests (including textures)
-                // This MUST be set on loader.manager to catch TextureLoader requests
-                const urlModifier = (url) => {
-                    // Check if this is a malformed blob URL (blob:http://host/filename instead of blob:http://host/uuid)
-                    // This can happen when ColladaLoader or other loaders incorrectly create blob URLs
-                    if (url.startsWith('blob:')) {
-                        // Extract the path after blob:http://host/
-                        const blobMatch = url.match(/^blob:[^/]+\/\/[^\/]+\/(.+)$/);
-                        if (blobMatch && blobMatch[1]) {
-                            const fileName = blobMatch[1];
-                            // If it looks like a filename (has extension), it's a malformed blob URL
-                            if (/\.(jpg|jpeg|png|gif|bmp|tga|tiff|webp|dae|stl|obj|gltf|glb)$/i.test(fileName)) {
-                                // Treat it as a regular file path and process it
-                                url = fileName;
-                            } else {
-                                // Valid blob URL format (has UUID), return as-is
-                                return url;
-                            }
-                        } else {
-                            // Valid blob URL format, return as-is
-                            return url;
-                        }
-                    }
-
-                    const isTextureFile = /\.(jpg|jpeg|png|gif|bmp|tga|tiff|webp)$/i.test(url);
-                    const isMeshFile = /\.(dae|stl|obj|gltf|glb)$/i.test(url);
-
-                    // Clean path - handle both absolute URLs and relative paths
-                    let meshPath = url;
-
-                    // Remove http:// or https:// prefix if present (shouldn't happen but be safe)
-                    if (meshPath.startsWith('http://') || meshPath.startsWith('https://')) {
-                        // This is an absolute URL, try to extract path
-                        try {
-                            const urlObj = new URL(meshPath);
-                            meshPath = urlObj.pathname;
-                            // Remove leading slash
-                            if (meshPath.startsWith('/')) {
-                                meshPath = meshPath.substring(1);
-                            }
-                        } catch (e) {
-                            // Invalid URL, use as-is
-                        }
-                    }
-
-                    const matchedFile = resolveFileFromMap(meshPath, fileMap, { baseDir: urdfDir });
-
-                    if (matchedFile) {
-                        // Create Blob URL (don't revoke immediately, let loader finish using it)
-                        const bloburl = URL.createObjectURL(matchedFile);
-                        // IMPORTANT: Return the blob URL directly - TextureLoader will use it as-is
-                        return bloburl;
-                    }
-
-                    // If not found, return original URL - urdf-loader will handle it
-                    return url;
-                };
-
-                // Set the URL modifier on the manager
-                loader.manager.setURLModifier(urlModifier);
+                loader.manager.setURLModifier(fileUrlModifier(fileMap, urdfDir));
 
                 // Custom loadMeshCb to load mesh files from fileMap
                 loader.loadMeshCb = (path, manager, done) => {

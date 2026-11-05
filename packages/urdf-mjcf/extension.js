@@ -2,7 +2,7 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs/promises');
 
-const ASSET_RE = /\.(urdf|xacro|xml|stl|dae|obj|mtl|png|jpe?g|msh|ya?ml)$/i;
+const ASSET_RE = /\.(urdf|xacro|xml|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|msh|ya?ml)$/i;
 const MODEL_RE = /\.(urdf|xacro|xml)$/i;
 const REF_RE = /package:\/\/([^/\s"'<>]+)|\$\(find\s+([^)\s]+)\)/g;
 const INCLUDE_RE = /<(?:xacro:include|include)\b[^>]*?\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;

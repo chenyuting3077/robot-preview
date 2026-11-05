@@ -24,6 +24,7 @@ Measured 2026-11-05 on an RTX PRO 1000 Blackwell Laptop GPU, headless Chrome, 12
 - The camera frames the 2nd–98th percentile of splat centres so floaters far from the scene do not shrink it.
 - `.asc` is an optional editor because the extension is also used by PGP signatures.
 - The URDF & MJCF extension's mesh editor became optional in 0.2.0 so the two extensions do not both claim `.stl` / `.dae` / `.obj`.
+- `.xyz` / `.pts` columns after x y z are read as colors only when every point has integer 0–255 RGB; `x y z nx ny nz` normals would otherwise turn into colors.
 - `customEditors` selectors list only lowercase patterns: VS Code matches them case-insensitively (`foo.STL` opens fine), and listing both `*.stl` and `*.STL` makes it report two default editors for the same file.
 - `retainContextWhenHidden` is on: re-reading a 200 MB splat on every tab switch takes seconds.
 

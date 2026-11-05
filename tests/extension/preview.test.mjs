@@ -35,7 +35,7 @@ const textOf = file => Buffer.from(file.data).toString();
 test('opens beside the editor and sends every referenced package', async () => {
     const { load, panel, primary } = await start();
     const paths = load.files.map(file => file.path);
-    for (const expected of ['/robot_a/urdf/robot_a.urdf.xacro', '/robot_b/urdf/arm.xacro', '/robot_b/meshes/arm.stl']) {
+    for (const expected of ['/robot_a/urdf/robot_a.urdf.xacro', '/robot_b/urdf/arm.xacro', '/robot_b/meshes/arm.stl', '/robot_b/meshes/tip.gltf', '/robot_b/meshes/tip.bin']) {
         assert.ok(paths.includes(expected), expected);
     }
     assert.equal(load.primary, '/robot_a/urdf/robot_a.urdf.xacro');

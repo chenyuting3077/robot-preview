@@ -224,3 +224,23 @@ export function resolveFileFromMap(path, fileMap, options = {}) {
         cleanFilePath(key).split('/').pop()?.toLowerCase() === fileName
     ));
 }
+
+export function fileUrlModifier(fileMap, baseDir) {
+    return url => {
+        if (url.startsWith('blob:')) {
+            const fileName = url.match(/^blob:[^/]+\/\/[^/]+\/(.+)$/)?.[1];
+            if (!fileName || !/\.(jpe?g|png|gif|bmp|tga|tiff|webp|dae|stl|obj|gltf|glb|bin)$/i.test(fileName)) return url;
+            url = fileName;
+        }
+        let path = url;
+        if (/^https?:\/\//.test(path)) {
+            try {
+                path = new URL(path).pathname.replace(/^\//, '');
+            } catch {
+                path = url;
+            }
+        }
+        const file = resolveFileFromMap(path, fileMap, { baseDir });
+        return file ? URL.createObjectURL(file) : url;
+    };
+}

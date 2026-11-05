@@ -22,7 +22,7 @@
  */
 import { XacroParser } from 'xacro-parser';
 import { URDFAdapter } from './URDFAdapter.js';
-import { resolveFileFromMap } from '../utils/FileUtils.js';
+import { resolveFileFromMap, fileUrlModifier } from '../utils/FileUtils.js';
 import { trackMeshLoads } from '../utils/MeshLoader.js';
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
 
@@ -143,52 +143,7 @@ export class XacroAdapter {
 
                     loader.packages = packageMap;
 
-                    // Set URL Modifier (same as URDF loading)
-                    const urlModifier = (url) => {
-                        // Handle blob URLs
-                        if (url.startsWith('blob:')) {
-                            const blobMatch = url.match(/^blob:[^/]+\/\/[^\/]+\/(.+)$/);
-                            if (blobMatch && blobMatch[1]) {
-                                const fileName = blobMatch[1];
-                                if (/\.(jpg|jpeg|png|gif|bmp|tga|tiff|webp|dae|stl|obj|gltf|glb)$/i.test(fileName)) {
-                                    url = fileName;
-                                } else {
-                                    return url;
-                                }
-                            } else {
-                                return url;
-                            }
-                        }
-
-                        const isTextureFile = /\.(jpg|jpeg|png|gif|bmp|tga|tiff|webp)$/i.test(url);
-                        const isMeshFile = /\.(dae|stl|obj|gltf|glb)$/i.test(url);
-
-                        let meshPath = url;
-
-                        // Remove http:// or https:// prefix
-                        if (meshPath.startsWith('http://') || meshPath.startsWith('https://')) {
-                            try {
-                                const urlObj = new URL(meshPath);
-                                meshPath = urlObj.pathname;
-                                if (meshPath.startsWith('/')) {
-                                    meshPath = meshPath.substring(1);
-                                }
-                            } catch (e) {
-                                // Invalid URL, use as-is
-                            }
-                        }
-
-                        const matchedFile = resolveFileFromMap(meshPath, fileMap, { baseDir: urdfDir });
-
-                        if (matchedFile) {
-                            const bloburl = URL.createObjectURL(matchedFile);
-                            return bloburl;
-                        }
-
-                        return url;
-                    };
-
-                    loader.manager.setURLModifier(urlModifier);
+                    loader.manager.setURLModifier(fileUrlModifier(fileMap, urdfDir));
 
                     // Custom loadMeshCb (same as URDF loading)
                     loader.loadMeshCb = (path, manager, done) => {

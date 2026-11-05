@@ -40,6 +40,11 @@ canvas { display: block; }
 .tool-button.active, .control-button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3); }
 #display-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
 #display-menu.open { display: flex; }
+#help-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; white-space: nowrap; z-index: 200; }
+#help-panel.open { display: block; }
+#help-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
+#help-panel td:first-child { color: var(--text-tertiary); }
+#help-panel td:last-child { color: var(--text-primary); }
 .display-menu-separator { height: 1px; margin: 2px 4px; background: var(--glass-border); }
 #up-select { padding: 5px 24px 5px 12px; background-color: rgba(255, 255, 255, 0.08); border: none; border-radius: 12px; color: var(--text-primary); font: 11px inherit; font-family: inherit; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23aaaaaa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 7px center; }
 #up-select:hover, #up-select:focus { outline: none; background-color: rgba(255, 255, 255, 0.12); }
@@ -62,6 +67,10 @@ canvas { display: block; }
       <button class="control-button active" data-mode="solid" data-t="solid"></button>
       <button class="control-button" data-mode="wireframe" data-t="wireframe"></button>
       <button class="control-button" data-mode="points" data-t="points"></button>
+      <div class="display-menu-separator" id="size-separator"></div>
+      <button class="control-button" data-size="1" data-t="pointSmall"></button>
+      <button class="control-button active" data-size="2" data-t="pointMedium"></button>
+      <button class="control-button" data-size="4" data-t="pointLarge"></button>
     </div>
   </div>
   <div class="control-bar-section">
@@ -75,6 +84,10 @@ canvas { display: block; }
     </select>
   </div>
   <button class="tool-button active" id="info-btn" data-t="info"></button>
+  <div class="control-bar-section">
+    <button class="tool-button" id="help-btn">?</button>
+    <div id="help-panel" class="glass"><table><tr><td data-t="helpKeyOrbit"></td><td data-t="helpOrbit"></td></tr><tr><td data-t="helpKeyPan"></td><td data-t="helpPan"></td></tr><tr><td data-t="helpKeyZoom"></td><td data-t="helpZoom"></td></tr><tr><td data-t="helpKeyPivot"></td><td data-t="helpPivot"></td></tr><tr><td data-t="helpKeyFly"></td><td data-t="helpFly"></td></tr><tr><td data-t="helpKeyTurn"></td><td data-t="helpTurn"></td></tr><tr><td data-t="helpKeyFast"></td><td data-t="helpFast"></td></tr><tr><td data-t="helpKeyFrame"></td><td data-t="helpFrame"></td></tr></table></div>
+  </div>
 </div>
 <div id="info-panel" class="glass" hidden><table id="info-table"></table></div>
 <div id="loading-indicator" data-t="loading"></div>

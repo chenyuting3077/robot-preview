@@ -121,17 +121,21 @@ class App {
             this.mujocoSimulationManager = new MujocoSimulationManager(this.sceneManager);
 
             this.setupModelTreePanel();
-            const displayMenu = document.getElementById('display-menu');
-            const displayButton = document.getElementById('display-menu-btn');
-            displayButton.addEventListener('click', () => {
-                displayMenu.classList.toggle('open');
-                displayButton.classList.toggle('active', displayMenu.classList.contains('open'));
-            });
-            document.addEventListener('click', event => {
-                if (displayMenu.contains(event.target) || displayButton.contains(event.target)) return;
-                displayMenu.classList.remove('open');
-                displayButton.classList.remove('active');
-            });
+            const helpButton = document.getElementById('help-btn');
+            helpButton.title = helpButton.ariaLabel = window.i18n.t('help');
+            for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['help-btn', 'help-panel']]) {
+                const button = document.getElementById(buttonId);
+                const panel = document.getElementById(panelId);
+                button.addEventListener('click', () => {
+                    panel.classList.toggle('open');
+                    button.classList.toggle('active', panel.classList.contains('open'));
+                });
+                document.addEventListener('click', event => {
+                    if (panel.contains(event.target) || button.contains(event.target)) return;
+                    panel.classList.remove('open');
+                    button.classList.remove('active');
+                });
+            }
             const toolbar = document.getElementById('top-control-bar');
             new ResizeObserver(() => {
                 document.documentElement.style.setProperty('--toolbar-bottom', `${toolbar.offsetTop + toolbar.offsetHeight}px`);

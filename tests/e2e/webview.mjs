@@ -188,6 +188,7 @@ try {
 
     await ev(`window.postMessage({ type: 'highlight', kind: 'link', pattern: 'lift_link' }, '*')`);
     check('cursor highlight', await waitFor(`window.app.sceneManager.highlightManager.currentHighlightedLink?.name === 'lift_link'`, 3000));
+    check('help lists the controls', await ev(`document.getElementById('help-btn').click(); const panel = document.getElementById('help-panel'); const open = panel.classList.contains('open') && panel.querySelectorAll('tr').length === 10 && panel.innerText.includes('W A S D'); document.body.click(); return open && !panel.classList.contains('open')`));
     check('cursor highlight does not pop up the hover info', await ev(`return !document.getElementById('hover-info').classList.contains('visible')`));
     await ev(`window.postMessage({ type: 'highlight', kind: 'joint', pattern: '.+?_arm_joint' }, '*')`);
     check('joint highlight resolves to child link', await waitFor(`window.app.sceneManager.highlightManager.currentHighlightedLink?.name === 'left_arm'`, 3000));

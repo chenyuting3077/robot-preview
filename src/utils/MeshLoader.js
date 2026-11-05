@@ -306,7 +306,7 @@ export function textureManager(fileMap) {
     const manager = new THREE.LoadingManager();
     const urls = new Map();
     manager.setURLModifier(url => {
-        const file = /\.(png|jpe?g|gif|bmp|tga|tiff?|webp|mtl)$/i.test(url) && resolveFileFromMap(url, fileMap);
+        const file = /\.(png|jpe?g|gif|bmp|tga|tiff?|webp|mtl|bin)$/i.test(url) && resolveFileFromMap(url, fileMap);
         if (!file) return url;
         if (!urls.has(file)) urls.set(file, URL.createObjectURL(file));
         return urls.get(file);
