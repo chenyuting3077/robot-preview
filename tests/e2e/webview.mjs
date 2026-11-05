@@ -144,6 +144,7 @@ try {
 
     await ev(`await window.__send('load', m => { m.settings = { 'show-collision': true, unit: 'deg' }; })`);
     check('model loads with both packages', await waitFor(`window.app.currentModel?.links?.has('left_arm') && window.app.currentModel.links.has('lift_link')`));
+    check('STL without normals is shaded', await ev(`let n; window.app.currentModel.links.get('left_arm').threeObject.traverse(o => { if (!n && o.isMesh) n = o.geometry.attributes.normal; }); return !!n && Array.from(n.array).some(v => v !== 0)`));
     await sleep(800);
     check('loading indicator hidden after load', await ev(`return getComputedStyle(document.getElementById('loading-indicator')).display === 'none'`));
     check('settings applied, panels still closed', await ev(`return document.getElementById('show-collision').classList.contains('active') && window.app.angleUnit === 'deg' && ${panelsHidden}`));
@@ -187,6 +188,7 @@ try {
 
     await ev(`window.postMessage({ type: 'highlight', kind: 'link', pattern: 'lift_link' }, '*')`);
     check('cursor highlight', await waitFor(`window.app.sceneManager.highlightManager.currentHighlightedLink?.name === 'lift_link'`, 3000));
+    check('cursor highlight does not pop up the hover info', await ev(`return !document.getElementById('hover-info').classList.contains('visible')`));
     await ev(`window.postMessage({ type: 'highlight', kind: 'joint', pattern: '.+?_arm_joint' }, '*')`);
     check('joint highlight resolves to child link', await waitFor(`window.app.sceneManager.highlightManager.currentHighlightedLink?.name === 'left_arm'`, 3000));
 

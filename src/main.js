@@ -297,7 +297,7 @@ class App {
             ? Array.from(model.joints.values()).find(joint => regex.test(joint.name))?.child
             : Array.from(model.links.keys()).find(name => regex.test(name));
         const link = linkName && model.links.get(linkName);
-        if (link) highlightManager.highlightLink(link, model);
+        if (link) highlightManager.highlightLink(link, model, { showInfo: false });
     }
 
     handleModelLoaded(model, file) {

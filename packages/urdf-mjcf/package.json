@@ -18,6 +18,12 @@
     "Other"
   ],
   "main": "./extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
   "activationEvents": [
     "onStartupFinished",
     "onWebviewPanel:robotPreviewUrdf.preview"

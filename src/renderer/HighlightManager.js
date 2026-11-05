@@ -20,11 +20,11 @@ export class HighlightManager {
     /**
      * Highlight link (based on link selection, not joint)
      */
-    highlightLink(link, currentModel) {
+    highlightLink(link, currentModel, { showInfo = true } = {}) {
         if (!link) return;
 
-        // If already highlighted the same link, return directly (use name comparison)
         if (this.currentHighlightedLink && this.currentHighlightedLink.name === link.name) {
+            if (showInfo) this.showHoverInfo(link, currentModel);
             return;
         }
 
@@ -41,8 +41,7 @@ export class HighlightManager {
             this.highlightLinkGeometry(link.threeObject, currentModel);
         }
 
-        // Show hover info
-        this.showHoverInfo(link, currentModel);
+        if (showInfo) this.showHoverInfo(link, currentModel);
 
         // Trigger redraw immediately
         this.sceneManager.redraw();

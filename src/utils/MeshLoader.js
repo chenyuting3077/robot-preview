@@ -86,6 +86,7 @@ async function parseMeshFile(file, fileExt, meshPath, fileMap) {
                 geometry = await new Promise((resolve, reject) => {
                     loaders.STLLoader.load(url, resolve, undefined, reject);
                 });
+                geometry.computeVertexNormals();
                 break;
 
             case 'obj':

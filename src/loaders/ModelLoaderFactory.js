@@ -567,6 +567,7 @@ export class ModelLoaderFactory {
                     const stlGeometry = await new Promise((resolve, reject) => {
                         stlLoader.load(blobUrl, resolve, undefined, reject);
                     });
+                    stlGeometry.computeVertexNormals();
                     // Use MeshPhongMaterial to match URDFLoader behavior
                     const stlMaterial = new THREE.MeshPhongMaterial();
                     meshObject = new THREE.Mesh(stlGeometry, stlMaterial);

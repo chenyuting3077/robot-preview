@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- Moving the text cursor onto a link highlights it without popping up the hover info; the info shows only on mouse hover.
+- STL meshes without valid normals are shaded instead of rendering black.
+- Works in Restricted Mode (untrusted workspaces).
 - Camera: middle-drag pans, the wheel zooms toward the cursor, double-click sets the orbit pivot, `F` frames the model, `W` `A` `S` `D` fly and `Q` `E` turn (hold `Shift` for faster).
 - Standalone `.stl` / `.dae` / `.obj` preview is now an optional editor (*Reopen Editor With…*); install Robot Preview: Mesh & Splat for the default mesh viewer.
 
