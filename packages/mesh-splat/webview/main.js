@@ -13,11 +13,12 @@ import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { readPlyHeader, plyKind, addMissingScale } from './ply.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
+import { createFlyKeys } from '../../../src/utils/fly-keys.js';
 
 const STRINGS = {
-    en: { display: 'Display', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file' },
-    'zh-TW': { display: '顯示', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案' },
-    'zh-CN': { display: '显示', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件' }
+    en: { display: 'Display', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
+    'zh-TW': { display: '顯示', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element' },
+    'zh-CN': { display: '显示', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element' }
 };
 const lang = document.documentElement.lang.toLowerCase();
 const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.startsWith('zh') ? 'zh-CN' : 'en'];
@@ -33,7 +34,8 @@ document.body.prepend(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
+controls.zoomToCursor = true;
+controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
 scene.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1.5), camera);
 const sun = new THREE.DirectionalLight(0xffffff, 2);
 sun.position.set(1, 2, 3);
@@ -56,7 +58,9 @@ new ResizeObserver(() => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
 }).observe(document.body);
+const flyKeys = createFlyKeys(camera, controls.target);
 renderer.setAnimationLoop(() => {
+    flyKeys();
     controls.update();
     renderer.render(scene, camera);
 });
@@ -108,8 +112,10 @@ async function loadPly(info) {
     const header = readPlyHeader(bytes);
     const kind = header && plyKind(header);
     if (kind === 'splat') {
+        const names = header.elements[0]?.properties.map(property => property.name) ?? [];
         const patched = addMissingScale(bytes, header);
         if (patched !== bytes) info.format = t('flat');
+        else if (names.includes('scale_1') && !names.includes('scale_2')) throw new Error(t('flatUnsupported'));
         return loadSplat(patched, info);
     }
     const geometry = new PLYLoader().parse(bytes.buffer);
@@ -247,6 +253,27 @@ function setupUi(hasMesh, up) {
     $('up-select').addEventListener('change', () => setUp($('up-select').value));
 }
 
+function setupCameraShortcuts() {
+    const raycaster = new THREE.Raycaster();
+    renderer.domElement.addEventListener('dblclick', event => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        raycaster.setFromCamera(new THREE.Vector2(
+            ((event.clientX - rect.left) / rect.width) * 2 - 1,
+            -((event.clientY - rect.top) / rect.height) * 2 + 1
+        ), camera);
+        raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
+        const hit = raycaster.intersectObject(root, true).find(({ object }) => object.visible);
+        if (!hit) return;
+        controls.target.copy(hit.point);
+        controls.update();
+    });
+    document.addEventListener('keydown', event => {
+        if (event.key.toLowerCase() !== 'f' || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.target.closest?.('input, select, textarea')) return;
+        if (localBox) frame();
+    });
+}
+
 async function main() {
     document.querySelectorAll('[data-t]').forEach(element => {
         (element.querySelector('span') ?? element).textContent = t(element.dataset.t);
@@ -265,6 +292,7 @@ async function main() {
         info.size = localBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
         const up = isSplat ? '-Y' : '+Y';
         setupUi(counted.faces > 0, up);
+        setupCameraShortcuts();
         setUp(up);
         showInfo(info);
         $('info-panel').hidden = false;

@@ -6,6 +6,7 @@ Open meshes, point clouds and Gaussian splats in VS Code as a 3D view.
 - Point clouds: `.ply` `.pcd` `.xyz` `.pts`, and `.asc` through *Reopen Editor With…*
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
 - Solid, wireframe and point display, up-axis selection, and vertex / face / splat counts.
+- Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn.
 
 Part of the Robot Preview series with [Robot Preview: URDF & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf).
 

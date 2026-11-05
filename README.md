@@ -5,8 +5,8 @@ VS Code extensions for previewing robot models, meshes, point clouds and Gaussia
 ## Install
 
 ```bash
-npm install && npm --prefix packages/mesh-splat install
-npm run package
+pnpm install && npm --prefix packages/mesh-splat install
+pnpm run package
 code --install-extension packages/urdf-mjcf/robot-preview-urdf-mjcf-*.vsix
 code --install-extension packages/mesh-splat/robot-preview-mesh-splat-*.vsix
 ```
@@ -16,8 +16,8 @@ code --install-extension packages/mesh-splat/robot-preview-mesh-splat-*.vsix
 Open a `.urdf`, `.xacro` or MJCF `.xml` file for the live robot preview; open a mesh, point cloud or splat file for the 3D view.
 
 ```bash
-npm test
-npm run test:e2e
+pnpm test
+pnpm test:e2e
 ```
 
 ## Contents

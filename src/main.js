@@ -11,6 +11,7 @@ import { MujocoSimulationManager } from './renderer/MujocoSimulationManager.js';
 import { i18n } from './utils/i18n.js';
 import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
+import { createFlyKeys } from './utils/fly-keys.js';
 import './ui/view-gizmo.css';
 
 window.d3 = d3;
@@ -112,6 +113,7 @@ class App {
 
             this.sceneManager.onMeasurementUpdate = () => this.measurementController?.updateMeasurement();
             this.setupCanvasClickHandler(canvas);
+            this.setupCameraShortcuts(canvas);
 
             this.measurementController = new MeasurementController(this.sceneManager);
             this.modelGraphView.setMeasurementController(this.measurementController);
@@ -378,6 +380,41 @@ class App {
         this.modelGraphView.drawModelGraph(model);
     }
 
+    pickMesh(canvas, event) {
+        const rect = canvas.getBoundingClientRect();
+        const mouse = new THREE.Vector2(
+            ((event.clientX - rect.left) / rect.width) * 2 - 1,
+            -((event.clientY - rect.top) / rect.height) * 2 + 1
+        );
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, this.sceneManager.camera);
+        return raycaster.intersectObjects(this.sceneManager.scene.children, true).find(({ object }) => {
+            for (let current = object; current; current = current.parent) {
+                const name = current.name || '';
+                if (name.includes('jointAxis') || name.includes('helper') ||
+                    name.includes('grid') || name.includes('Ground') || name === 'groundPlane') {
+                    return false;
+                }
+            }
+            return object.isMesh && object.visible;
+        });
+    }
+
+    setupCameraShortcuts(canvas) {
+        this.flyKeys = createFlyKeys(this.sceneManager.camera, this.sceneManager.controls.target);
+        canvas.addEventListener('dblclick', event => {
+            const hit = this.pickMesh(canvas, event);
+            if (!hit) return;
+            this.sceneManager.controls.target.copy(hit.point);
+            this.sceneManager.controls.update();
+        });
+        document.addEventListener('keydown', event => {
+            if (event.key.toLowerCase() !== 'f' || event.ctrlKey || event.metaKey || event.altKey) return;
+            if (event.target.closest?.('input, select, textarea, [contenteditable]')) return;
+            if (this.currentModel) this.sceneManager.updateEnvironment(true);
+        });
+    }
+
     setupCanvasClickHandler(canvas) {
         let mouseDownPos = null;
         let mouseDownTime = 0;
@@ -397,24 +434,7 @@ class App {
             mouseDownPos = null;
             if (distance >= 5 || duration >= 300) return;
 
-            const rect = canvas.getBoundingClientRect();
-            const mouse = new THREE.Vector2(
-                ((event.clientX - rect.left) / rect.width) * 2 - 1,
-                -((event.clientY - rect.top) / rect.height) * 2 + 1
-            );
-            const raycaster = new THREE.Raycaster();
-            raycaster.setFromCamera(mouse, this.sceneManager.camera);
-
-            const hit = raycaster.intersectObjects(this.sceneManager.scene.children, true).find(({ object }) => {
-                for (let current = object; current; current = current.parent) {
-                    const name = current.name || '';
-                    if (name.includes('jointAxis') || name.includes('helper') ||
-                        name.includes('grid') || name.includes('Ground') || name === 'groundPlane') {
-                        return false;
-                    }
-                }
-                return object.isMesh && object.visible;
-            });
+            const hit = this.pickMesh(canvas, event);
 
             if (!hit) {
                 this.sceneManager.highlightManager.clearHighlight();
@@ -494,6 +514,7 @@ class App {
         requestAnimationFrame(() => this.animate());
         if (this.sceneManager) {
             this.sceneManager.update();
+            if (this.flyKeys?.()) this.sceneManager.controls.update();
 
             // A running simulation changes scene transforms every frame. A
             // paused or absent simulation leaves the scene clean, allowing the

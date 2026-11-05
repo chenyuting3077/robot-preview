@@ -168,6 +168,22 @@ try {
     check('update never drops meshes or shows a snapshot', !smooth.snapshot && smooth.min >= smooth.steady, JSON.stringify(smooth));
     check('camera kept', await ev(`const p = window.app.sceneManager.camera.position; return [p.x, p.y, p.z].map(v => +v.toFixed(3)).join() === '0.8,-0.6,0.5'`));
     check('joint pose kept', await ev(`return Math.abs(window.app.poseController.getJointValue('lift_joint') - 0.1) < 1e-9`));
+    const pose = `const c = window.app.sceneManager.camera.position, t = window.app.sceneManager.controls.target; return [c.x, c.y, c.z, t.x, t.y, t.z].map(v => +v.toFixed(3)).join()`;
+    const press = async (key, hold) => {
+        await ev(`document.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}' }))`);
+        await sleep(hold);
+        await ev(`document.dispatchEvent(new KeyboardEvent('keyup', { key: '${key}' }))`);
+    };
+    await press('f', 100);
+    const framed = await ev(pose);
+    await press('w', 300);
+    const flown = await ev(pose);
+    await press('q', 300);
+    const turned = await ev(pose);
+    await ev(`const canvas = window.app.sceneManager.renderer.domElement, r = canvas.getBoundingClientRect(); let m; window.app.currentModel.threeObject.traverse(o => { if (!m && o.isMesh && o.visible) m = o; }); const v = m.getWorldPosition(m.position.clone()).project(window.app.sceneManager.camera); canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: r.left + (v.x + 1) / 2 * r.width, clientY: r.top + (1 - v.y) / 2 * r.height }))`);
+    const pivot = await ev(pose);
+    await press('f', 100);
+    check('W flies, Q turns, double-click sets pivot, F frames', flown !== framed && turned !== flown && pivot !== turned && await ev(pose) === framed, JSON.stringify({ framed, flown, turned, pivot }));
 
     await ev(`window.postMessage({ type: 'highlight', kind: 'link', pattern: 'lift_link' }, '*')`);
     check('cursor highlight', await waitFor(`window.app.sceneManager.highlightManager.currentHighlightedLink?.name === 'lift_link'`, 3000));

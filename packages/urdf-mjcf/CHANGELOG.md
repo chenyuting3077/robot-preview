@@ -2,6 +2,7 @@
 
 ## 0.2.0
 
+- Camera: middle-drag pans, the wheel zooms toward the cursor, double-click sets the orbit pivot, `F` frames the model, `W` `A` `S` `D` fly and `Q` `E` turn (hold `Shift` for faster).
 - Standalone `.stl` / `.dae` / `.obj` preview is now an optional editor (*Reopen Editor With…*); install Robot Preview: Mesh & Splat for the default mesh viewer.
 
 ## 0.1.1

@@ -24,7 +24,16 @@ Measured 2026-11-05 on an RTX PRO 1000 Blackwell Laptop GPU, headless Chrome, 12
 - The camera frames the 2nd–98th percentile of splat centres so floaters far from the scene do not shrink it.
 - `.asc` is an optional editor because the extension is also used by PGP signatures.
 - The URDF & MJCF extension's mesh editor became optional in 0.2.0 so the two extensions do not both claim `.stl` / `.dae` / `.obj`.
+- `customEditors` selectors list only lowercase patterns: VS Code matches them case-insensitively (`foo.STL` opens fine), and listing both `*.stl` and `*.STL` makes it report two default editors for the same file.
 - `retainContextWhenHidden` is on: re-reading a 200 MB splat on every tab switch takes seconds.
+
+## Camera controls
+
+Both extensions share `src/utils/fly-keys.js`; it uses only the camera's own `Vector3` methods, so it works with three 0.163 and 0.180 alike.
+
+- Middle-drag pans (RViz, Unity, Fusion 360) instead of OrbitControls' default dolly; the wheel already zooms.
+- `W` `A` `S` `D` follow SuperSplat's fly keys, but `Q` `E` turn in place instead of moving down / up, at the user's request. Speed scales with the distance to the pivot so small parts and room scans feel the same.
+- Damping is off in both, matching the original URDF viewer.
 
 ## Not supported
 

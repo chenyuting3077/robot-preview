@@ -250,7 +250,7 @@ class Preview {
         this.updateTimer = null;
         this.cursorTimer = null;
         this.lastHighlight = null;
-        this.diagnostics = vscode.languages.createDiagnosticCollection('robot-viewer');
+        this.diagnostics = vscode.languages.createDiagnosticCollection('robot-preview');
         this.syntaxDiagnostics = new Map();
     }
 

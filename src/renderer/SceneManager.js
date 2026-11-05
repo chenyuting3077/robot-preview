@@ -53,6 +53,7 @@ export class SceneManager {
         this.controls.enableZoom = true;
         this.controls.enableRotate = true;
         this.controls.screenSpacePanning = true;
+        this.controls.zoomToCursor = true;
         this.controls.target.set(0, 0, 0);
 
         // Mark as needing render on controls change
@@ -61,7 +62,7 @@ export class SceneManager {
         // Set mouse buttons
         if (this.controls.mouseButtons) {
             this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-            this.controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;
+            this.controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
             this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
         }
 
