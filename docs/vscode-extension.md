@@ -48,6 +48,8 @@ The removed USD viewer needed `SharedArrayBuffer`, which requires cross-origin i
 
 The Marketplace README image is excluded from the `.vsix` and loaded from GitHub (`--baseImagesUrl`), so `packages/urdf-mjcf/images` must be pushed before publishing.
 
+Both extensions are published by uploading the `.vsix` at marketplace.visualstudio.com/manage. Global PATs stop working on 2026-12-01, and `vsce publish --azure-credential` needs an Entra ID account: the `chenyuting3077` publisher is a personal Microsoft account, and `az login` with it either returns no identity (`organizations` endpoint) or fails with `scope 'https://management.core.windows.net//.default' does not exist` (consumer tenant).
+
 ## Packaging needs Node 20
 
 `@vscode/vsce` 3.x requires Node 20 and 2.x pulls a Node-20-only `undici`, so the `package` script runs vsce through `npx -p node@20` and works on a Node 18 system.

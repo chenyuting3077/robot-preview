@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Clearer Marketplace description and search keywords.
+
 ## 0.1.0
 
 First release.

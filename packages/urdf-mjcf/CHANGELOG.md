@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Clearer Marketplace description and search keywords.
+
 ## 0.2.0
 
 - `?` in the toolbar lists the mouse and keyboard controls.

@@ -1,8 +1,8 @@
 {
   "name": "robot-preview-mesh-splat",
   "displayName": "Robot Preview: Mesh & Splat",
-  "description": "Preview meshes, point clouds and Gaussian splats inside VS Code",
-  "version": "0.1.0",
+  "description": "3D viewer for STL, PLY, OBJ and glTF meshes, point clouds (PCD, XYZ) and Gaussian splats (3DGS, 2DGS) inside VS Code",
+  "version": "0.1.1",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
   "license": "Apache-2.0",
@@ -114,7 +114,16 @@
     "obj",
     "gltf",
     "meshlab",
-    "preview"
+    "preview",
+    "viewer",
+    "3d viewer",
+    "stl viewer",
+    "ply viewer",
+    "point cloud viewer",
+    "pcd",
+    "glb",
+    "splat",
+    "3d gaussian splatting"
   ],
   "dependencies": {
     "@sparkjsdev/spark": "2.4.0",
