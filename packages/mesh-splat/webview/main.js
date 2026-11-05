@@ -13,7 +13,7 @@ import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { readPlyHeader, plyKind, addMissingScale } from './ply.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
-import { createFlyKeys } from '../../../src/utils/fly-keys.js';
+import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 
 const STRINGS = {
     en: { display: 'Display', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
@@ -58,9 +58,20 @@ new ResizeObserver(() => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
 }).observe(document.body);
-const flyKeys = createFlyKeys(camera, controls.target);
+const raycaster = new THREE.Raycaster();
+const cameraKeys = createCameraKeys({
+    camera,
+    target: controls.target,
+    element: renderer.domElement,
+    pick: ndc => {
+        raycaster.setFromCamera(ndc, camera);
+        raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
+        return raycaster.intersectObject(root, true).find(({ object }) => object.visible)?.point;
+    },
+    frame: () => localBox && frame()
+});
 renderer.setAnimationLoop(() => {
-    flyKeys();
+    cameraKeys();
     controls.update();
     renderer.render(scene, camera);
 });
@@ -112,15 +123,18 @@ async function loadPly(info) {
     const header = readPlyHeader(bytes);
     const kind = header && plyKind(header);
     if (kind === 'splat') {
-        const names = header.elements[0]?.properties.map(property => property.name) ?? [];
         const patched = addMissingScale(bytes, header);
+        if (!patched) throw new Error(t('flatUnsupported'));
         if (patched !== bytes) info.format = t('flat');
-        else if (names.includes('scale_1') && !names.includes('scale_2')) throw new Error(t('flatUnsupported'));
         return loadSplat(patched, info);
     }
     const geometry = new PLYLoader().parse(bytes.buffer);
     return kind === 'mesh' ? meshOf(geometry) : pointsOf(geometry);
 }
+
+const loadGltf = async () => (await new GLTFLoader().loadAsync(src)).scene;
+const loadTextPoints = async () => pointsOf(geometryFrom({ positions: parsePointsText(await fetchText()) }));
+const loadSplatFile = async info => loadSplat(await fetchBytes(), info);
 
 const LOADERS = {
     stl: async () => {
@@ -132,19 +146,19 @@ const LOADERS = {
     obj: loadObj,
     off: async () => meshOf(geometryFrom(parseOff(await fetchText()))),
     dae: async () => (await new ColladaLoader().loadAsync(src)).scene,
-    gltf: async () => (await new GLTFLoader().loadAsync(src)).scene,
-    glb: async () => (await new GLTFLoader().loadAsync(src)).scene,
+    gltf: loadGltf,
+    glb: loadGltf,
     '3mf': () => new ThreeMFLoader().loadAsync(src),
     wrl: () => new VRMLLoader().loadAsync(src),
     '3ds': () => new TDSLoader().loadAsync(src),
     pcd: async () => pointsOf((await new PCDLoader().loadAsync(src)).geometry),
-    xyz: async () => pointsOf(geometryFrom({ positions: parsePointsText(await fetchText()) })),
-    pts: async () => pointsOf(geometryFrom({ positions: parsePointsText(await fetchText()) })),
-    asc: async () => pointsOf(geometryFrom({ positions: parsePointsText(await fetchText()) })),
-    splat: async info => loadSplat(await fetchBytes(), info),
-    ksplat: async info => loadSplat(await fetchBytes(), info),
-    spz: async info => loadSplat(await fetchBytes(), info),
-    sog: async info => loadSplat(await fetchBytes(), info)
+    xyz: loadTextPoints,
+    pts: loadTextPoints,
+    asc: loadTextPoints,
+    splat: loadSplatFile,
+    ksplat: loadSplatFile,
+    spz: loadSplatFile,
+    sog: loadSplatFile
 };
 
 function splatBox(splat) {
@@ -253,26 +267,6 @@ function setupUi(hasMesh, up) {
     $('up-select').addEventListener('change', () => setUp($('up-select').value));
 }
 
-function setupCameraShortcuts() {
-    const raycaster = new THREE.Raycaster();
-    renderer.domElement.addEventListener('dblclick', event => {
-        const rect = renderer.domElement.getBoundingClientRect();
-        raycaster.setFromCamera(new THREE.Vector2(
-            ((event.clientX - rect.left) / rect.width) * 2 - 1,
-            -((event.clientY - rect.top) / rect.height) * 2 + 1
-        ), camera);
-        raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
-        const hit = raycaster.intersectObject(root, true).find(({ object }) => object.visible);
-        if (!hit) return;
-        controls.target.copy(hit.point);
-        controls.update();
-    });
-    document.addEventListener('keydown', event => {
-        if (event.key.toLowerCase() !== 'f' || event.ctrlKey || event.metaKey || event.altKey) return;
-        if (event.target.closest?.('input, select, textarea')) return;
-        if (localBox) frame();
-    });
-}
 
 async function main() {
     document.querySelectorAll('[data-t]').forEach(element => {
@@ -292,7 +286,6 @@ async function main() {
         info.size = localBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
         const up = isSplat ? '-Y' : '+Y';
         setupUi(counted.faces > 0, up);
-        setupCameraShortcuts();
         setUp(up);
         showInfo(info);
         $('info-panel').hidden = false;

@@ -32,10 +32,11 @@ export function plyKind(header) {
 }
 
 export function addMissingScale(bytes, header) {
-    const vertex = header.elements[0];
+    const vertex = header.elements.find(element => element.name === 'vertex');
     const names = vertex?.properties.map(property => property.name) ?? [];
-    if (vertex?.name !== 'vertex' || !names.includes('scale_1') || names.includes('scale_2')) return bytes;
-    if (header.format !== 'binary_little_endian' || vertex.properties.some(property => property.list)) return bytes;
+    if (!names.includes('scale_1') || names.includes('scale_2')) return bytes;
+    if (header.elements[0] !== vertex || header.format !== 'binary_little_endian') return null;
+    if (vertex.properties.some(property => property.list || !TYPE_SIZE[property.type])) return null;
     const sizes = vertex.properties.map(property => TYPE_SIZE[property.type]);
     const at = names.indexOf('scale_1');
     const before = sizes.slice(0, at + 1).reduce((sum, size) => sum + size, 0);

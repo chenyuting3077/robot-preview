@@ -29,10 +29,10 @@ Measured 2026-11-05 on an RTX PRO 1000 Blackwell Laptop GPU, headless Chrome, 12
 
 ## Camera controls
 
-Both extensions share `src/utils/fly-keys.js`; it uses only the camera's own `Vector3` methods, so it works with three 0.163 and 0.180 alike.
+The camera key handling creates vectors only by cloning the camera's own, so one copy runs on three 0.163 (URDF) and 0.180 (Spark) alike.
 
 - Middle-drag pans (RViz, Unity, Fusion 360) instead of OrbitControls' default dolly; the wheel already zooms.
-- `W` `A` `S` `D` follow SuperSplat's fly keys, but `Q` `E` turn in place instead of moving down / up, at the user's request. Speed scales with the distance to the pivot so small parts and room scans feel the same.
+- `W` `S` move along the view direction (Unity / Unreal fly mode) rather than SuperSplat's level forward, `A` `D` strafe level, and `Q` `E` turn in place around the camera's own up axis (perpendicular to the view, so a tilted view sweeps sideways on screen) instead of moving down / up, at the user's request. Speed scales with the distance to the pivot so small parts and room scans feel the same.
 - Damping is off in both, matching the original URDF viewer.
 
 ## Not supported

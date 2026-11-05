@@ -8,7 +8,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenyuting3077/robot-preview"
+    "url": "https://github.com/chenyuting3077/robot-viewer"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -141,11 +141,11 @@
     ]
   },
   "scripts": {
-    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/urdf-mjcf",
-    "publish": "npx --yes -p node@20 -p @vscode/vsce@3 vsce publish --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/urdf-mjcf"
+    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-viewer/raw/HEAD/packages/urdf-mjcf",
+    "publish": "npx --yes -p node@20 -p @vscode/vsce@3 vsce publish --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-viewer/raw/HEAD/packages/urdf-mjcf"
   },
   "bugs": {
-    "url": "https://github.com/chenyuting3077/robot-preview/issues"
+    "url": "https://github.com/chenyuting3077/robot-viewer/issues"
   },
   "keywords": [
     "urdf",

@@ -39,3 +39,14 @@ test('addMissingScale leaves 3DGS files untouched', () => {
     const input = binaryPly(['x', 'scale_0', 'scale_1', 'scale_2'], [[1, 2, 3, 4]]);
     assert.equal(addMissingScale(input, readPlyHeader(input)), input);
 });
+
+test('addMissingScale returns null for 2DGS files it cannot flatten', () => {
+    const ascii = new TextEncoder().encode('ply\nformat ascii 1.0\nelement vertex 1\nproperty float scale_0\nproperty float scale_1\nend_header\n1 2\n');
+    assert.equal(addMissingScale(ascii, readPlyHeader(ascii)), null);
+    const vertexSecond = binaryPly(['scale_0', 'scale_1'], [[1, 2]]);
+    const header = readPlyHeader(vertexSecond);
+    header.elements.unshift({ name: 'camera', count: 0, properties: [] });
+    assert.equal(addMissingScale(vertexSecond, header), null);
+    const oddType = new TextEncoder().encode('ply\nformat binary_little_endian 1.0\nelement vertex 1\nproperty half scale_0\nproperty float scale_1\nend_header\n');
+    assert.equal(addMissingScale(oddType, readPlyHeader(oddType)), null);
+});
