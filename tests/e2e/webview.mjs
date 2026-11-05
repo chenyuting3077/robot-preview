@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { copyFixture, loadExtension, sleep } from '../extension/vscode-mock.mjs';
 
-const dist = new URL('../../vscode-extension/dist/', import.meta.url).pathname;
+const dist = new URL('../../packages/urdf-mjcf/dist/', import.meta.url).pathname;
 const chromeBinary = process.env.CHROME || 'google-chrome';
 const results = [];
 const check = (name, ok, detail = '') => {
@@ -125,7 +125,8 @@ async function connect(port) {
         const exited = new Promise(resolve => chrome.once('exit', resolve));
         chrome.kill();
         await exited;
-        fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 });
+        await sleep(1000);
+        try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
     };
     return { ev, waitFor, close };
 }

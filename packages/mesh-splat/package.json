@@ -1,0 +1,120 @@
+{
+  "name": "robot-preview-mesh-splat",
+  "displayName": "Robot Preview: Mesh & Splat",
+  "description": "Preview meshes, point clouds and Gaussian splats inside VS Code",
+  "version": "0.1.0",
+  "publisher": "chenyuting3077",
+  "icon": "images/icon.png",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chenyuting3077/robot-preview"
+  },
+  "bugs": {
+    "url": "https://github.com/chenyuting3077/robot-preview/issues"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "robotPreviewMeshSplat.viewer",
+        "displayName": "Robot Preview: Mesh & Splat",
+        "selector": [
+          {
+            "filenamePattern": "*.stl"
+          },
+          {
+            "filenamePattern": "*.ply"
+          },
+          {
+            "filenamePattern": "*.obj"
+          },
+          {
+            "filenamePattern": "*.off"
+          },
+          {
+            "filenamePattern": "*.dae"
+          },
+          {
+            "filenamePattern": "*.gltf"
+          },
+          {
+            "filenamePattern": "*.glb"
+          },
+          {
+            "filenamePattern": "*.3mf"
+          },
+          {
+            "filenamePattern": "*.wrl"
+          },
+          {
+            "filenamePattern": "*.3ds"
+          },
+          {
+            "filenamePattern": "*.pcd"
+          },
+          {
+            "filenamePattern": "*.xyz"
+          },
+          {
+            "filenamePattern": "*.pts"
+          },
+          {
+            "filenamePattern": "*.splat"
+          },
+          {
+            "filenamePattern": "*.ksplat"
+          },
+          {
+            "filenamePattern": "*.spz"
+          },
+          {
+            "filenamePattern": "*.sog"
+          }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "robotPreviewMeshSplat.textPoints",
+        "displayName": "Robot Preview: Mesh & Splat",
+        "selector": [
+          {
+            "filenamePattern": "*.asc"
+          }
+        ],
+        "priority": "option"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "vite build",
+    "package": "vite build && npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/mesh-splat"
+  },
+  "keywords": [
+    "mesh",
+    "point cloud",
+    "gaussian splatting",
+    "3dgs",
+    "2dgs",
+    "ply",
+    "stl",
+    "obj",
+    "gltf",
+    "meshlab",
+    "preview"
+  ],
+  "dependencies": {
+    "@sparkjsdev/spark": "2.4.0",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "vite": "5.4.21"
+  }
+}

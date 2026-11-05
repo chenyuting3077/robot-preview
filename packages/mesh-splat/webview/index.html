@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+    --bg-primary: #000000;
+    --glass-bg: rgba(20, 20, 20, 0.5);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+    --text-primary: #ffffff;
+    --text-secondary: #ebebf5;
+    --text-tertiary: #aeaeb2;
+    --accent: #0a84ff;
+    --hover: rgba(255, 255, 255, 0.1);
+    --button-border: rgba(255, 255, 255, 0.1);
+    --spring: cubic-bezier(0.4, 0, 0.2, 1);
+}
+[data-theme="light"] {
+    --bg-primary: #f5f5f7;
+    --glass-bg: rgba(245, 245, 245, 0.85);
+    --glass-border: rgba(0, 0, 0, 0.15);
+    --text-primary: #1d1d1f;
+    --text-secondary: #424245;
+    --text-tertiary: #86868b;
+    --hover: rgba(0, 0, 0, 0.05);
+    --button-border: rgba(0, 0, 0, 0.1);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; overflow: hidden; height: 100vh; background: var(--bg-primary); color: var(--text-primary); -webkit-font-smoothing: antialiased; }
+canvas { display: block; }
+.glass { background: var(--glass-bg); backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); border: 0.5px solid var(--glass-border); box-shadow: var(--glass-shadow); }
+[data-theme="light"] .glass { background: rgba(255, 255, 255, 0.9); }
+#top-control-bar { position: absolute; top: 20px; left: 20px; width: fit-content; max-width: calc(100vw - 40px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; row-gap: 4px; padding: 5px 9px; border-radius: 21px; z-index: 100; }
+.control-bar-section { position: relative; display: flex; align-items: center; }
+.tool-button, .control-button { display: flex; align-items: center; gap: 5px; padding: 5px 12px; background: transparent; border: 1px solid var(--button-border); border-radius: 12px; cursor: pointer; transition: all 0.2s var(--spring); color: var(--text-secondary); font: 500 11px inherit; font-family: inherit; white-space: nowrap; }
+.tool-button:hover, .control-button:hover { background: var(--hover); color: var(--text-primary); transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
+.tool-button:active, .control-button:active { transform: scale(0.98); }
+.tool-button.active, .control-button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3); }
+#display-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
+#display-menu.open { display: flex; }
+.display-menu-separator { height: 1px; margin: 2px 4px; background: var(--glass-border); }
+#up-select { padding: 5px 24px 5px 12px; background-color: rgba(255, 255, 255, 0.08); border: none; border-radius: 12px; color: var(--text-primary); font: 11px inherit; font-family: inherit; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23aaaaaa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 7px center; }
+#up-select:hover, #up-select:focus { outline: none; background-color: rgba(255, 255, 255, 0.12); }
+[data-theme="dark"] #up-select option { background-color: #2a2a2a; color: var(--text-primary); }
+[data-theme="light"] #up-select { background-color: rgba(0, 0, 0, 0.04); border: 1px solid rgba(0, 0, 0, 0.1); }
+#info-panel { position: fixed; top: 20px; right: 20px; padding: 12px 16px; border-radius: 16px; font-size: 11px; z-index: 50; max-width: calc(100vw - 40px); }
+#info-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
+#info-panel td:first-child { color: var(--text-tertiary); }
+#info-panel td:last-child { color: var(--text-primary); overflow-wrap: anywhere; }
+#loading-indicator { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 8px 18px; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-primary); font-size: 12px; pointer-events: none; z-index: 10000; }
+#load-error { position: fixed; left: 16px; bottom: 16px; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 8px; background: rgba(200, 40, 40, 0.9); color: #fff; font: 12px/1.4 monospace; white-space: pre-wrap; z-index: 10000; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div id="top-control-bar" class="glass">
+  <div class="control-bar-section">
+    <button class="tool-button" id="display-menu-btn"><span data-t="display"></span> ▾</button>
+    <div id="display-menu" class="glass">
+      <button class="control-button active" data-mode="solid" data-t="solid"></button>
+      <button class="control-button" data-mode="wireframe" data-t="wireframe"></button>
+      <button class="control-button" data-mode="points" data-t="points"></button>
+    </div>
+  </div>
+  <div class="control-bar-section">
+    <select id="up-select">
+      <option value="+Z">+Z</option>
+      <option value="-Z">-Z</option>
+      <option value="+Y">+Y</option>
+      <option value="-Y">-Y</option>
+      <option value="+X">+X</option>
+      <option value="-X">-X</option>
+    </select>
+  </div>
+  <button class="tool-button active" id="info-btn" data-t="info"></button>
+</div>
+<div id="info-panel" class="glass" hidden><table id="info-table"></table></div>
+<div id="loading-indicator" data-t="loading"></div>
+<div id="load-error" hidden></div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

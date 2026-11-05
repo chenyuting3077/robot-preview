@@ -46,7 +46,7 @@ The removed USD viewer needed `SharedArrayBuffer`, which requires cross-origin i
 
 `pnpm test` runs the viewer and extension tests in Node; the extension runs against a mocked `vscode` module and the two-package workspace in `tests/fixtures/ros_ws`, copied to a temp directory because tests edit files. `pnpm test:e2e` builds the webview and drives it in headless Chrome under the same CSP as the extension; it needs `google-chrome` (or `CHROME=<path>`) and runs on Node 22 for the built-in `WebSocket`. On Node 18 `tests/setup.mjs` supplies the missing global `File`.
 
-The Marketplace README image is excluded from the `.vsix` and loaded from GitHub (`--baseImagesUrl`), so `vscode-extension/images` must be pushed before publishing.
+The Marketplace README image is excluded from the `.vsix` and loaded from GitHub (`--baseImagesUrl`), so `packages/urdf-mjcf/images` must be pushed before publishing.
 
 ## Packaging needs Node 20
 

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
-const extensionPath = new URL('../../vscode-extension/extension.js', import.meta.url).pathname;
+const extensionPath = new URL('../../packages/urdf-mjcf/extension.js', import.meta.url).pathname;
 export const fixtureWorkspace = new URL('../fixtures/ros_ws', import.meta.url).pathname;
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -50,7 +50,7 @@ export async function copyFixture() {
     return dir;
 }
 
-export function loadExtension({ workspace, config = {} }) {
+export function loadExtension({ workspace, config = {}, extension: extensionFile = extensionPath }) {
     const listeners = {};
     const on = name => callback => {
         (listeners[name] ||= []).push(callback);
@@ -107,8 +107,8 @@ export function loadExtension({ workspace, config = {} }) {
 
     const vscode = {
         Uri: {
-            file: fsPath => ({ fsPath, scheme: 'file' }),
-            joinPath: (uri, ...parts) => ({ fsPath: path.join(uri.fsPath, ...parts) })
+            file: fsPath => ({ fsPath, path: fsPath, scheme: 'file' }),
+            joinPath: (uri, ...parts) => ({ fsPath: path.join(uri.fsPath, ...parts), path: path.join(uri.fsPath, ...parts) })
         },
         Range,
         ViewColumn: { One: 1, Beside: -2 },
@@ -135,6 +135,7 @@ export function loadExtension({ workspace, config = {} }) {
             textDocuments: state.docs,
             fs: {
                 readFile: async uri => fsp.readFile(uri.fsPath),
+                stat: async uri => { const s = await fsp.stat(uri.fsPath); return { size: s.size, mtime: s.mtimeMs }; },
                 writeFile: async (uri, data) => fsp.writeFile(uri.fsPath, data)
             },
             createFileSystemWatcher: () => ({ onDidChange() {}, onDidCreate() {}, onDidDelete() {}, dispose() {} }),
@@ -193,12 +194,12 @@ export function loadExtension({ workspace, config = {} }) {
     Module._load = function (request, ...rest) {
         return request === 'vscode' ? vscode : originalLoad.call(this, request, ...rest);
     };
-    delete require.cache[extensionPath];
-    const extension = require(extensionPath);
+    delete require.cache[extensionFile];
+    const extension = require(extensionFile);
     Module._load = originalLoad;
 
     const context = {
-        extensionUri: { fsPath: path.dirname(extensionPath) },
+        extensionUri: { fsPath: path.dirname(extensionFile) },
         subscriptions: [],
         globalState: { get: key => state.globalState.get(key), update: async (key, value) => state.globalState.set(key, value) },
         workspaceState: { get: (key, fallback) => state.workspaceState.get(key) ?? fallback, update: async (key, value) => state.workspaceState.set(key, value) }

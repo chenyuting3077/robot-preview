@@ -9,7 +9,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(version)
   },
   build: {
-    outDir: 'vscode-extension/dist',
+    outDir: 'packages/urdf-mjcf/dist',
     emptyOutDir: true,
     rollupOptions: {
       output: {

@@ -2,13 +2,13 @@
   "name": "robot-preview-urdf-mjcf",
   "displayName": "Robot Preview: URDF & MJCF",
   "description": "Preview URDF, Xacro and MJCF robot models inside VS Code",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenyuting3077/robot-preview-urdf-mjcf"
+    "url": "https://github.com/chenyuting3077/robot-preview"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -130,16 +130,16 @@
             "filenamePattern": "*.OBJ"
           }
         ],
-        "priority": "default"
+        "priority": "option"
       }
     ]
   },
   "scripts": {
-    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview-urdf-mjcf/raw/HEAD/vscode-extension",
-    "publish": "npx --yes -p node@20 -p @vscode/vsce@3 vsce publish --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview-urdf-mjcf/raw/HEAD/vscode-extension"
+    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/urdf-mjcf",
+    "publish": "npx --yes -p node@20 -p @vscode/vsce@3 vsce publish --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/urdf-mjcf"
   },
   "bugs": {
-    "url": "https://github.com/chenyuting3077/robot-preview-urdf-mjcf/issues"
+    "url": "https://github.com/chenyuting3077/robot-preview/issues"
   },
   "keywords": [
     "urdf",

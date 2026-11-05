@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- Standalone `.stl` / `.dae` / `.obj` preview is now an optional editor (*Reopen Editor With…*); install Robot Preview: Mesh & Splat for the default mesh viewer.
+
 ## 0.1.1
 
 - Marketplace page shows a single screenshot.

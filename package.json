@@ -1,14 +1,14 @@
 {
-  "name": "robot-preview-urdf-mjcf",
+  "name": "robot-preview",
   "version": "0.1.1",
-  "description": "VS Code extension for previewing URDF, Xacro and MJCF robot models",
+  "description": "VS Code extensions for previewing robot models, meshes, point clouds and Gaussian splats",
   "type": "module",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "build": "vite build",
-    "package": "vite build && cd vscode-extension && npm run package",
-    "test": "node --import ./tests/setup.mjs --test tests/animation/*.test.js tests/mjcf/*.test.js tests/viewer/*.test.mjs tests/extension/*.test.mjs",
-    "test:e2e": "vite build && npx -y -p node@22 node tests/e2e/webview.mjs"
+    "build": "vite build && npm --prefix packages/mesh-splat run build",
+    "package": "vite build && cd packages/urdf-mjcf && npm run package && cd ../mesh-splat && npm run package",
+    "test": "node --import ./tests/setup.mjs --test tests/animation/*.test.js tests/mjcf/*.test.js tests/viewer/*.test.mjs tests/extension/*.test.mjs tests/mesh-splat/*.test.mjs",
+    "test:e2e": "npm run build && npx -y -p node@22 node tests/e2e/webview.mjs && npx -y -p node@22 node tests/e2e/mesh-splat.mjs"
   },
   "keywords": [
     "robot",
