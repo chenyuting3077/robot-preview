@@ -1,6 +1,6 @@
 {
   "name": "robot-preview-urdf-mjcf",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "VS Code extension for previewing URDF, Xacro and MJCF robot models",
   "type": "module",
   "packageManager": "pnpm@9.0.0",

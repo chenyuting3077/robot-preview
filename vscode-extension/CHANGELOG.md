@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Marketplace page shows a single screenshot.
+
 ## 0.1.0
 
 First Marketplace release.

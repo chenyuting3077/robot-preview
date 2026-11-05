@@ -9,6 +9,4 @@ Live 3D preview of URDF, Xacro and MJCF beside the text editor.
 
 ![preview](images/preview.png)
 
-![preview, light theme](images/preview-light.png)
-
 Based on [fan-ziqi/robot_viewer](https://github.com/fan-ziqi/robot_viewer), with [three.js](https://threejs.org/), [urdf-loader](https://github.com/gkjohnson/urdf-loaders), [xacro-parser](https://github.com/gkjohnson/xacro-parser), [mujoco_wasm](https://github.com/zalo/mujoco_wasm) and [d3](https://d3js.org/).
