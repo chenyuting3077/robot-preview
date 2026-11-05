@@ -5,7 +5,11 @@ import { unzipSync } from 'three/examples/jsm/libs/fflate.module.js';
 import { LoaderUtils } from 'three';
 
 const SH_C0 = 0.28209479177387814;
-const ownBuffer = bytes => (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.slice().buffer);
+const MAX_DEPTH = 16;
+const SPECIFIER = { def: 0, over: 1, class: 2 };
+const SPECIFIER_TYPE = { over: '__usdOver', class: '__usdClass' };
+const USD_FILE = /\.usd[ac]?$/i;
+const arrayBufferOf = bytes => (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.slice().buffer);
 const isCrate = bytes => new TextDecoder().decode(bytes.subarray(0, 8)) === 'PXR-USDC';
 
 class ListOpUSDAParser extends USDAParser {
@@ -24,7 +28,12 @@ class ListOpUSDAParser extends USDAParser {
 
 class LayerUSDAParser extends ListOpUSDAParser {
     parseData(text) {
-        const data = super.parseData(text.replace(/^(\s*)over(\s+")/gm, '$1def$2'));
+        const data = super.parseData(text.replace(/^(\s*)(over|class)(\s+)(?:\w+\s+)?"/gm, (_, indent, specifier, space) => `${indent}def${space}${SPECIFIER_TYPE[specifier]} "`));
+        for (const [path, spec] of Object.entries(data.specsByPath)) {
+            if (path === '/' || path.includes('.')) continue;
+            const specifier = Object.keys(SPECIFIER_TYPE).find(name => SPECIFIER_TYPE[name] === spec.fields.typeName);
+            Object.assign(spec.fields, specifier ? { typeName: '', specifier: SPECIFIER[specifier] } : { specifier: SPECIFIER.def });
+        }
         const header = text.match(/^#usda[^\n]*\s*\(([\s\S]*?)\n\)/)?.[1] ?? '';
         const subLayers = header.match(/subLayers\s*=\s*\[([\s\S]*?)\]/)?.[1].match(/@[^@]+@/g);
         if (subLayers) data.specsByPath['/'].fields.subLayers = subLayers.map(path => path.slice(1, -1));
@@ -32,7 +41,7 @@ class LayerUSDAParser extends ListOpUSDAParser {
     }
 }
 
-const TYPE = { ReferenceListOp: 35, Payload: 47, LayerOffsetVector: 49, StringVector: 50, PayloadListOp: 55 };
+const CRATE_TYPE = { ReferenceListOp: 35, Payload: 47, LayerOffsetVector: 49, StringVector: 50, PayloadListOp: 55 };
 const INLINED_INT8_VECTORS = { 19: 2, 23: 3, 25: 3, 27: 4, 29: 4 };
 
 class ArcUSDCParser extends USDCParser {
@@ -74,7 +83,7 @@ class ArcUSDCParser extends USDCParser {
             const prim = path();
             if (isReference || this.version.major > 0 || this.version.minor >= 8) reader.offset += 16;
             if (isReference) skipDictionary();
-            return asset || prim ? `@${asset}@${prim ? `<${prim}>` : ''}` : null;
+            return asset || prim ? { assetPath: asset, primPath: prim } : null;
         };
         const listOp = read => {
             const flags = reader.readUint8();
@@ -87,29 +96,35 @@ class ArcUSDCParser extends USDCParser {
             return items.filter(Boolean);
         };
         switch (type) {
-            case TYPE.StringVector: return Array.from({ length: reader.readUint64() }, string);
-            case TYPE.LayerOffsetVector: return [];
-            case TYPE.ReferenceListOp: {
-                const references = listOp(() => arc(true));
-                return references.length ? [references.join(', ')] : null;
-            }
-            case TYPE.PayloadListOp: return listOp(() => arc(false))[0] ?? null;
-            case TYPE.Payload: return arc(false);
+            case CRATE_TYPE.StringVector: return Array.from({ length: reader.readUint64() }, string);
+            case CRATE_TYPE.LayerOffsetVector: return [];
+            case CRATE_TYPE.ReferenceListOp: return listOp(() => arc(true));
+            case CRATE_TYPE.PayloadListOp: return listOp(() => arc(false));
+            case CRATE_TYPE.Payload: return arc(false);
             default: return super._readScalarValue(type);
         }
     }
 }
 
-export const parseLayer = bytes => (isCrate(bytes) ? new ArcUSDCParser().parseData(ownBuffer(bytes)) : new LayerUSDAParser().parseData(new TextDecoder().decode(bytes)));
+export const parseLayer = bytes => (isCrate(bytes) ? new ArcUSDCParser().parseData(arrayBufferOf(bytes)) : new LayerUSDAParser().parseData(new TextDecoder().decode(bytes)));
 const assetPath = ref => (typeof ref === 'string' ? ref : ref?.assetPath ?? '');
 const directory = url => url.slice(0, url.lastIndexOf('/') + 1);
 const resolve = (path, base) => LoaderUtils.resolveURL(path.replace(/^\.\//, ''), base.endsWith('/') ? base : `${base}/`);
 const ARCS = ['references', 'payload'];
-const mergeSpec = (weak, strong) => ({ ...weak, ...strong, fields: { ...weak.fields, ...strong?.fields, typeName: strong?.fields.typeName || weak.fields.typeName } });
+const RELATIONSHIPS = ['targetPaths', 'connectionPaths'];
 const within = (path, root) => path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}.`);
 
+function mergeSpec(weak, strong) {
+    if (!strong) return { ...weak, fields: { ...weak.fields } };
+    const fields = { ...weak.fields, ...strong.fields, typeName: strong.fields.typeName || weak.fields.typeName };
+    if (weak.fields.specifier === SPECIFIER.def || strong.fields.specifier === SPECIFIER.def) fields.specifier = SPECIFIER.def;
+    for (const arc of ARCS) if (weak.fields[arc] && strong.fields[arc]) fields[arc] = [strong.fields[arc], weak.fields[arc]].flat();
+    if (weak.fields.variantSelection && strong.fields.variantSelection) fields.variantSelection = { ...weak.fields.variantSelection, ...strong.fields.variantSelection };
+    return { ...weak, ...strong, fields };
+}
+
 const arcsOf = fields => ARCS.flatMap(arc => [fields[arc]].flat(Infinity)).flatMap(ref => (typeof ref === 'string'
-    ? [...ref.matchAll(/@([^@]*)@(?:<([^>]+)>)?/g)].map(match => ({ asset: match[1], prim: match[2] }))
+    ? [...ref.matchAll(/@([^@]*)@(?:<([^>]+)>)?|<([^>]+)>/g)].map(match => ({ asset: match[1] ?? '', prim: match[2] ?? match[3] }))
     : ref?.assetPath !== undefined ? [{ asset: ref.assetPath, prim: ref.primPath }] : []));
 
 function absolutize(specs, base) {
@@ -124,7 +139,7 @@ function absolutize(specs, base) {
 async function flattenSubLayers(data, base, read, missing, depth = 0) {
     absolutize(data.specsByPath, base);
     const subLayers = data.specsByPath['/']?.fields.subLayers ?? [];
-    if (!subLayers.length || depth > 16) return data;
+    if (!subLayers.length || depth > MAX_DEPTH) return data;
     const layers = [];
     for (const path of subLayers.map(assetPath)) {
         const url = resolve(path, base);
@@ -155,16 +170,31 @@ export function applyVariants(specs) {
     return merged;
 }
 
-export function dropGuides(specs) {
-    const guides = new Set(Object.keys(specs).filter(path => path.endsWith('.purpose') && specs[path].fields.default === 'guide').map(path => path.slice(0, -'.purpose'.length)));
-    if (!guides.size) return specs;
+export function dropUndefined(specs) {
+    const prims = Object.keys(specs).filter(path => !path.includes('.') && path !== '/');
+    const typed = new Set();
+    for (const path of prims.filter(path => specs[path].fields.typeName)) {
+        for (let prim = path; prim && !typed.has(prim); prim = prim.slice(0, prim.lastIndexOf('/'))) typed.add(prim);
+    }
+    const undefinedPrims = new Set(prims.filter(path => {
+        const { specifier } = specs[path].fields;
+        return specifier === undefined ? !typed.has(path) : specifier !== SPECIFIER.def;
+    }));
+    if (!undefinedPrims.size) return specs;
     for (const path of Object.keys(specs)) {
         for (let prim = path.split('.')[0]; prim; prim = prim.slice(0, prim.lastIndexOf('/'))) {
-            if (guides.has(prim)) {
+            if (undefinedPrims.has(prim)) {
                 delete specs[path];
                 break;
             }
         }
+    }
+    return specs;
+}
+
+export function hideGuides(specs) {
+    for (const [path, spec] of Object.entries(specs)) {
+        if (path.endsWith('.purpose') && spec.fields.default === 'guide') specs[path.replace(/\.purpose$/, '.visibility')] = { ...spec, fields: { typeName: 'token', default: 'invisible' } };
     }
     return specs;
 }
@@ -182,9 +212,22 @@ function subtree(specs, root, sorted) {
     return paths.map(path => [path, specs[path]]);
 }
 
-export async function expandArcs(specs, layerOf) {
-    for (let pass = 0; pass < 16; pass++) {
-        const work = Object.entries(specs).filter(([, { fields }]) => fields.references || fields.payload).map(([path, spec]) => [path, arcsOf(spec.fields)]);
+function relocate(spec, source, target, layerUrl) {
+    const fields = { ...spec.fields };
+    const move = path => (typeof path === 'string' && within(path, source) ? target + path.slice(source.length) : path);
+    for (const name of RELATIONSHIPS) if (Array.isArray(fields[name])) fields[name] = fields[name].map(move);
+    if (layerUrl && (fields.references || fields.payload)) {
+        const arcs = arcsOf(fields).map(({ asset, prim }) => ({ assetPath: asset || layerUrl, primPath: prim }));
+        delete fields.references;
+        fields.payload = arcs;
+    }
+    return { ...spec, fields };
+}
+
+export async function expandArcs(specs, layerOf, isRoot = true) {
+    for (let pass = 0; pass < MAX_DEPTH; pass++) {
+        if (isRoot) specs = applyVariants(specs);
+        const work = Object.entries(specs).filter(([path, { fields }]) => (fields.references || fields.payload) && !path.includes('{')).map(([path, spec]) => [path, arcsOf(spec.fields)]);
         if (!work.length) break;
         const before = work.some(([, arcs]) => arcs.some(arc => !arc.asset)) ? { ...specs } : specs;
         const sortedKeys = new Map();
@@ -193,12 +236,12 @@ export async function expandArcs(specs, layerOf) {
             const { references, payload, ...fields } = specs[path].fields;
             specs[path] = { ...specs[path], fields };
             for (const { asset, prim } of arcs) {
-                const from = asset ? await layerOf(asset) : before;
-                const source = prim || (from?.['/']?.fields.defaultPrim && `/${from['/'].fields.defaultPrim}`);
-                if (!from || !source) continue;
-                for (const [sourcePath, spec] of subtree(from, source, sorted(from))) {
+                const layer = asset ? await layerOf(asset) : { specs: before };
+                const source = prim || (layer?.specs['/']?.fields.defaultPrim && `/${layer.specs['/'].fields.defaultPrim}`);
+                if (!layer || !source) continue;
+                for (const [sourcePath, spec] of subtree(layer.specs, source, sorted(layer.specs))) {
                     const target = path + sourcePath.slice(source.length);
-                    specs[target] = mergeSpec(spec, specs[target]);
+                    specs[target] = mergeSpec(relocate(spec, source, path, layer.url), specs[target]);
                 }
             }
         }
@@ -214,19 +257,19 @@ async function loadLayer(bytes, url, context, chain = []) {
         if (!context.layers.has(key)) {
             context.layers.set(key, context.read(new URL(key).href)
                 .then(bytes => loadLayer(bytes, key, context, [...chain, key]))
-                .then(layer => layer.specsByPath, () => {
+                .then(layer => ({ specs: layer.specsByPath, url: key }), () => {
                     context.missing.push(key);
                     return null;
                 }));
         }
         return context.layers.get(key);
     };
-    data.specsByPath = dropGuides(await expandArcs(applyVariants(data.specsByPath), layerOf));
+    data.specsByPath = await expandArcs(data.specsByPath, layerOf, chain.length === 0);
     return data;
 }
 
 export function gaussianPly(specs, path) {
-    const value = name => specs[`${path}.${name}`]?.fields.default ?? specs[`${path}.${name}h`]?.fields.default;
+    const value = name => specs[`${path}.${name}`]?.fields.default;
     const positions = value('positions');
     if (!positions?.length) return null;
     const count = positions.length / 3;
@@ -260,24 +303,27 @@ export function gaussianPly(specs, path) {
     return out;
 }
 
-export async function composeUsd(bytes, basePath = '', read = null) {
-    let specs;
+const USDZ_ROOT = 'https://usdz.invalid/';
+const noFile = async url => {
+    throw new Error(`not found: ${url}`);
+};
+
+export async function composeUsd(bytes, basePath = '', read = noFile) {
     const missing = [];
-    let group;
-    const composer = new USDComposer();
+    let assets = {};
     if (bytes[0] === 0x50 && bytes[1] === 0x4b) {
-        const zip = unzipSync(bytes);
-        const assets = {};
-        for (const [file, data] of Object.entries(zip)) assets[file] = /\.usd[ac]?$/i.test(file) ? parseLayer(data) : data;
-        const first = Object.keys(zip)[0];
-        if (!/\.usd[ac]?$/i.test(first ?? '')) throw new Error('USDZ: the first entry must be a USD layer');
-        specs = assets[first].specsByPath;
-        group = composer.compose(assets[first], assets, {}, first.slice(0, first.lastIndexOf('/') + 1));
-    } else {
-        const data = read ? await loadLayer(bytes, basePath, { read, missing, layers: new Map() }) : parseLayer(bytes);
-        specs = data.specsByPath;
-        group = composer.compose(data, {}, {}, basePath);
+        const files = unzipSync(bytes);
+        const first = Object.keys(files)[0];
+        if (!USD_FILE.test(first ?? '')) throw new Error('USDZ: the first entry must be a USD layer');
+        assets = Object.fromEntries(Object.entries(files).filter(([name]) => !USD_FILE.test(name)).map(([name, data]) => [USDZ_ROOT + name, data]));
+        read = async url => files[decodeURIComponent(url.slice(USDZ_ROOT.length))] ?? noFile(url);
+        basePath = directory(USDZ_ROOT + first);
+        bytes = files[first];
     }
+    const data = await loadLayer(bytes, basePath, { read, missing, layers: new Map() });
+    const specs = hideGuides(dropUndefined(data.specsByPath));
+    const composer = new USDComposer();
+    const group = composer.compose(data, assets, {}, basePath);
     await Promise.all(composer.texturePromises);
     const gaussians = [];
     const walk = (object, path) => {
@@ -290,9 +336,9 @@ export async function composeUsd(bytes, basePath = '', read = null) {
         }
     };
     walk(group, '');
-    const shown = url => {
+    const displayPath = url => {
         const href = new URL(url).href;
         return decodeURIComponent(href.startsWith(basePath) ? href.slice(basePath.length) : href.split('/').slice(-2).join('/'));
     };
-    return { group, missing: missing.map(shown), gaussians: gaussians.map(({ object, path }) => ({ object, ply: gaussianPly(specs, path) })).filter(({ ply }) => ply) };
+    return { group, missing: missing.map(displayPath), gaussians: gaussians.map(({ object, path }) => ({ object, ply: gaussianPly(specs, path) })).filter(({ ply }) => ply) };
 }

@@ -54,7 +54,7 @@ canvas { display: block; }
 .prim-type { color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prim-eye { width: 24px; height: 22px; padding: 0; border: none; border-radius: 6px; background: none; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
 .prim-eye:hover { background: var(--hover); color: var(--text-primary); }
-.prim-eye svg { width: 14px; height: 14px; }
+.prim-eye svg, .stage-head svg { width: 14px; height: 14px; }
 .prim-row.off .prim-eye, .prim-row.inherited .prim-eye { color: var(--text-tertiary); opacity: 0.6; }
 .prim-row.inherited .prim-name, .prim-row.inherited .prim-type, .prim-row.off .prim-name, .prim-row.off .prim-type { opacity: 0.45; }
 #help-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; white-space: nowrap; z-index: 200; }
@@ -112,7 +112,7 @@ canvas { display: block; }
 </div>
 <div id="stage-bar" class="glass" hidden><button class="tool-button" id="stage-btn"><span data-t="stage"></span> ▾</button></div>
 <div id="stage-panel" class="glass" hidden>
-  <div class="stage-head"><span data-t="primName"></span><span data-t="primType"></span><span><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span></div>
+  <div class="stage-head"><span data-t="primName"></span><span data-t="primType"></span><span></span></div>
   <div id="stage-rows"></div>
 </div>
 <div id="loading-indicator" data-t="loading"></div>

@@ -156,7 +156,8 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
                 sizes: visible(document.querySelector('[data-size]'))
             };
         })()`);
-        const kind = /\.usd/.test(name) ? (ui.modes ? 'mesh' : 'splat') : /gauss|BIG|cube|quad|square|mesh\.ply|gltf/.test(name) ? (/gauss/.test(name) ? 'splat' : 'mesh') : 'points';
+        const usdKind = ui.modes ? 'mesh' : 'splat';
+        const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|gltf/, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
         const expected = { mesh: [true, true, true], points: [true, false, true], splat: [false, false, false] }[kind];
         state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]);
         camera += ` ui ${JSON.stringify(ui)}`;

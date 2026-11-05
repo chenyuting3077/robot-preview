@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
-import { gaussianPly, composeUsd } from '../../packages/mesh-splat/webview/usd.mjs';
+import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined } from '../../packages/mesh-splat/webview/usd.mjs';
 
 function rows(ply) {
     const header = readPlyHeader(ply);
@@ -93,8 +93,7 @@ test('composeUsd follows references and merges sublayers with overs', async () =
     assert.deepEqual(lost, ['none.usda']);
 });
 
-test('applyVariants keeps only the selected variant under its prim', async () => {
-    const { applyVariants } = await import('../../packages/mesh-splat/webview/usd.mjs');
+test('applyVariants keeps only the selected variant under its prim', () => {
     const specs = applyVariants({
         '/R': { specType: 1, fields: { typeName: 'Xform', variantSelection: { Physics: 'On' } } },
         '/R/{Physics=On}': { specType: 1, fields: { payload: '@./on.usd@' } },
@@ -109,7 +108,6 @@ test('applyVariants keeps only the selected variant under its prim', async () =>
 });
 
 test('expandArcs copies internal and external reference targets', async () => {
-    const { expandArcs } = await import('../../packages/mesh-splat/webview/usd.mjs');
     const external = {
         '/': { specType: 1, fields: { defaultPrim: 'Lib' } },
         '/Lib': { specType: 1, fields: { typeName: 'Scope' } },
@@ -120,10 +118,45 @@ test('expandArcs copies internal and external reference targets', async () => {
         '/Robot/base': { specType: 1, fields: { typeName: 'Xform', payload: '@./geo.usd@' } },
         '/Prototypes/link/mesh': { specType: 1, fields: { typeName: 'Mesh' } },
         '/Prototypes/link/mesh.points': { specType: 2, fields: { default: [0, 0, 0] } }
-    }, async asset => (asset === './geo.usd' ? external : null));
+    }, async asset => (asset === './geo.usd' ? { specs: external, url: 'http://x/geo.usd' } : null));
     assert.equal(specs['/Robot/link'].fields.typeName, 'Xform');
     assert.equal(specs['/Robot/link'].fields.references, undefined);
     assert.equal(specs['/Robot/link/mesh'].fields.typeName, 'Mesh');
     assert.deepEqual(specs['/Robot/link/mesh.points'].fields.default, [0, 0, 0]);
     assert.equal(specs['/Robot/base/visuals/link'].fields.typeName, 'Mesh');
+});
+
+test('expandArcs relocates material bindings and honours variant selections from the referencing prim', async () => {
+    const asset = {
+        '/': { specType: 1, fields: { defaultPrim: 'Part' } },
+        '/Part': { specType: 1, fields: { typeName: 'Xform', variantSelection: { Look: 'Red' } } },
+        '/Part/{Look=Red}/Mesh': { specType: 1, fields: { typeName: 'Mesh' } },
+        '/Part/{Look=Blue}/Mesh': { specType: 1, fields: { typeName: 'Cube' } },
+        '/Part/Mesh.material:binding': { specType: 1, fields: { targetPaths: ['/Part/Looks/Mat'] } }
+    };
+    const specs = await expandArcs({
+        '/World/A': { specType: 1, fields: { typeName: 'Xform', references: [{ assetPath: './part.usd' }], variantSelection: { Look: 'Blue' } } }
+    }, async () => ({ specs: asset, url: 'http://x/part.usd' }));
+    assert.equal(specs['/World/A/Mesh'].fields.typeName, 'Cube');
+    assert.deepEqual(specs['/World/A/Mesh.material:binding'].fields.targetPaths, ['/World/A/Looks/Mat']);
+});
+
+test('hideGuides marks guide prims invisible instead of removing them', () => {
+    const specs = hideGuides({
+        '/R/collider': { specType: 1, fields: { typeName: 'Cube' } },
+        '/R/collider.purpose': { specType: 1, fields: { typeName: 'token', default: 'guide' } }
+    });
+    assert.equal(specs['/R/collider'].fields.typeName, 'Cube');
+    assert.equal(specs['/R/collider.visibility'].fields.default, 'invisible');
+});
+
+test('dropUndefined removes over and class prims that no layer defines', () => {
+    const specs = dropUndefined({
+        '/R': { specType: 1, fields: { typeName: 'Xform', specifier: 0 } },
+        '/R/gripper': { specType: 1, fields: { specifier: 1 } },
+        '/R/gripper/joint': { specType: 1, fields: { specifier: 1 } },
+        '/R/gripper/joint.state': { specType: 1, fields: { default: 0 } },
+        '/__class__': { specType: 1, fields: { specifier: 2 } }
+    });
+    assert.deepEqual(Object.keys(specs), ['/R']);
 });
