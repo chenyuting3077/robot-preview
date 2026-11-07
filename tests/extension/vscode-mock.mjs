@@ -45,7 +45,7 @@ function makeDocument(fsPath) {
 }
 
 export async function copyFixture() {
-    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'robot-viewer-'));
+    const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'robot-preview-'));
     await fsp.cp(fixtureWorkspace, dir, { recursive: true });
     return dir;
 }

@@ -8,10 +8,10 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenyuting3077/robot-viewer"
+    "url": "https://github.com/chenyuting3077/robot-preview"
   },
   "bugs": {
-    "url": "https://github.com/chenyuting3077/robot-viewer/issues"
+    "url": "https://github.com/chenyuting3077/robot-preview/issues"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -59,7 +59,7 @@
   },
   "scripts": {
     "build": "../mesh-splat/node_modules/.bin/vite build && cp ../mesh-splat/extension.js dist/",
-    "package": "npm run build && npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-viewer/raw/HEAD/packages/usd"
+    "package": "npm run build && npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/usd"
   },
   "keywords": [
     "usd",

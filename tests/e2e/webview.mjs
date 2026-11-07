@@ -77,7 +77,7 @@ window.__send = async (name, patch) => {
 }
 
 async function connect(port) {
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'robot-viewer-chrome-'));
+    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-chrome-'));
     const chrome = spawn(chromeBinary, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--enable-unsafe-swiftshader', '--window-size=1400,900', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
     const wsUrl = await new Promise((resolve, reject) => {
         chrome.stderr.on('data', chunk => {
