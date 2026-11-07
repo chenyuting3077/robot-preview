@@ -9,6 +9,10 @@ import { ModelGraphView } from './views/ModelGraphView.js';
 import { MeasurementController } from './controllers/MeasurementController.js';
 import { MujocoSimulationManager } from './renderer/MujocoSimulationManager.js';
 import { i18n } from './utils/i18n.js';
+import { checkModel, linkGeometrySizes } from './utils/ModelChecks.js';
+
+// What a load tells the extension for the Problems panel.
+const emptyLoadReport = () => ({ loadError: null, loadErrorLocation: null, missingMeshes: [], guessedMeshes: [], checks: [] });
 import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
 import { createCameraKeys, pointerNdc } from './utils/camera-keys.js';
@@ -61,10 +65,9 @@ class App {
         this.currentMJCFFile = null;
         this.currentMJCFModel = null;
         this.angleUnit = 'rad';
-        this.lastLoadError = null;
+        this.loadReport = emptyLoadReport();
         this.lastSettings = null;
         this.lastHighlight = null;
-        this.lastMissingMeshes = [];
         this.xacroArgs = {};
         this.env = {};
         this.pendingSyntax = {};
@@ -88,8 +91,8 @@ class App {
             this.fileHandler = new FileHandler();
             this.fileHandler.onModelLoaded = (model, file) => this.handleModelLoaded(model, file);
             this.fileHandler.onLoadError = error => {
-                this.lastLoadError = error.message;
-                this.lastLoadErrorLocation = error.location ?? null;
+                this.loadReport.loadError = error.message;
+                this.loadReport.loadErrorLocation = error.location ?? null;
                 this.showError(error.message);
             };
 
@@ -252,16 +255,16 @@ class App {
             const primary = this.pendingPrimary;
             const syntax = this.pendingSyntax;
             this.isUpdate = this.pendingIsUpdate && this.currentModel !== null;
-            Object.assign(this, { pendingPrimary: null, pendingSyntax: {}, pendingIsUpdate: null, lastLoadError: null, lastLoadErrorLocation: null, lastMissingMeshes: [], lastGuessedMeshes: [] });
+            Object.assign(this, { pendingPrimary: null, pendingSyntax: {}, pendingIsUpdate: null, loadReport: emptyLoadReport() });
 
             const pose = this.isUpdate ? this.poseController.getPose() : null;
             const previousModel = this.currentModel;
             await this.fileHandler.loadPrimary(primary, { xacroArgs: this.xacroArgs, env: this.env });
-            if (!this.lastLoadError) this.showError('');
+            if (!this.loadReport.loadError) this.showError('');
             if (pose && this.currentModel !== previousModel) this.poseController.applyPose(pose, { source: 'user' });
             if (this.lastHighlight) this.highlightByPattern(this.lastHighlight.kind, this.lastHighlight.pattern);
 
-            vscode.postMessage({ type: 'diagnostics', syntax, loadError: this.lastLoadError, loadErrorLocation: this.lastLoadErrorLocation, missingMeshes: this.lastMissingMeshes, guessedMeshes: this.lastGuessedMeshes });
+            vscode.postMessage({ type: 'diagnostics', syntax, ...this.loadReport });
         }
     }
 
@@ -280,7 +283,7 @@ class App {
                 return this.loadFiles(message, false);
             },
             exportUrdf: async ({ requestId }) => {
-                vscode.postMessage({ type: 'urdf', requestId, text: this.lastLoadError ? null : this.currentModel?.expandedUrdf ?? null });
+                vscode.postMessage({ type: 'urdf', requestId, text: this.loadReport.loadError ? null : this.currentModel?.expandedUrdf ?? null });
             },
             highlight: async ({ kind, pattern }) => {
                 this.lastHighlight = pattern ? { kind, pattern } : null;
@@ -311,9 +314,12 @@ class App {
     }
 
     handleModelLoaded(model, file) {
-        this.lastMissingMeshes = model.missingMeshes || [];
-        this.lastGuessedMeshes = model.guessedMeshes || [];
         const isMJCF = file.name.toLowerCase().endsWith('.xml') && model?.userData?.type === 'mjcf';
+        Object.assign(this.loadReport, {
+            missingMeshes: model.missingMeshes || [],
+            guessedMeshes: model.guessedMeshes || [],
+            checks: model.expandedUrdf && !isMJCF ? checkModel(model.expandedUrdf, { sizes: linkGeometrySizes(model, THREE.Box3) }) : []
+        });
 
         if (this.mujocoSimulationManager?.hasScene()) {
             this.mujocoSimulationManager.clearScene();

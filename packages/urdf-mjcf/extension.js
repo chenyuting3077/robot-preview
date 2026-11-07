@@ -338,6 +338,59 @@ function missingPackageMessage(name, isModel) {
 
 const fixKey = (fsPath, range) => `${fsPath}:${range.start.line}:${range.start.character}`;
 
+function insideMacro(text, index) {
+    const before = text.slice(0, index);
+    return (before.match(/<xacro:macro\b/g) || []).length > (before.match(/<\/xacro:macro\s*>/g) || []).length;
+}
+
+function jointParts(doc, target) {
+    if (target.tag.endsWith('/>')) return null;
+    const text = doc.getText();
+    const bodyStart = target.index + target.tag.length;
+    const close = text.indexOf('</joint>', bodyStart);
+    if (close === -1) return null;
+    const limit = /<limit\b[^>]*>/.exec(text.slice(bodyStart, close));
+    const textEdit = (start, end, replacement) => ({ range: new vscode.Range(doc.positionAt(start), doc.positionAt(end)), text: replacement });
+    const limitStart = limit && bodyStart + limit.index;
+    return {
+        text, bodyStart, close, limit: limit?.[0],
+        limitAttribute: name => limit?.[0].match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`))?.[1],
+        replaceLimit: replacement => textEdit(limitStart, limitStart + limit[0].length, replacement),
+        textEdit
+    };
+}
+
+const JOINT_FIXES = {
+    'inverted-limit': (doc, target) => {
+        const joint = jointParts(doc, target);
+        if (!joint?.limit || joint.limitAttribute('lower') === undefined || joint.limitAttribute('upper') === undefined) return [];
+        const swapped = joint.limit.replace(/\b(lower|upper)(\s*=\s*["'])([^"']*)(["'])/g,
+            (whole, name, open, current, end) => `${name}${open}${joint.limitAttribute(name === 'lower' ? 'upper' : 'lower')}${end}`);
+        return [{ title: 'Swap lower and upper', edits: [joint.replaceLimit(swapped)] }];
+    },
+    'continuous-with-limits': (doc, target) => {
+        const joint = jointParts(doc, target);
+        if (!joint?.limit) return [];
+        const actions = [{ title: 'Drop lower and upper', edits: [joint.replaceLimit(joint.limit.replace(/\s+(lower|upper)\s*=\s*["'][^"']*["']/g, ''))] }];
+        const type = /\btype\s*=\s*["']continuous["']/.exec(target.tag);
+        if (type) actions.unshift({ title: 'Make it a revolute joint', edits: [joint.textEdit(target.index + type.index, target.index + type.index + type[0].length, 'type="revolute"')] });
+        return actions;
+    },
+    // docs/vscode-extension.md, "Model checks": why placeholder values and the TODO.
+    'missing-limit': (doc, target) => {
+        const joint = jointParts(doc, target);
+        if (!joint || joint.limit) return [];
+        const placeholder = '<!-- TODO: set real limits --><limit lower="-3.14" upper="3.14" effort="1" velocity="1"/>';
+        const lineStart = joint.text.lastIndexOf('\n', joint.close) + 1;
+        if (lineStart <= joint.bodyStart) {
+            return [{ title: 'Insert a placeholder <limit>', edits: [joint.textEdit(joint.close, joint.close, placeholder)] }];
+        }
+        const indent = /^\s*/.exec(joint.text.slice(joint.bodyStart, lineStart).trimEnd().split('\n').pop())[0];
+        const lines = placeholder.replace('--><', `-->\n${indent}<`);
+        return [{ title: 'Insert a placeholder <limit>', edits: [joint.textEdit(lineStart, lineStart, `${indent}${lines}\n`)] }];
+    }
+};
+
 function withCaseOf(reference, resolved) {
     const parts = reference.split('/');
     const actual = resolved.split('/');
@@ -457,7 +510,7 @@ class Preview {
         this.diagnostics.clear();
     }
 
-    async onDiagnostics({ syntax, loadError, loadErrorLocation, missingMeshes, guessedMeshes }) {
+    async onDiagnostics({ syntax, loadError, loadErrorLocation, missingMeshes, guessedMeshes, checks }) {
         const token = this.diagnosticsToken = (this.diagnosticsToken || 0) + 1;
         const make = (range, message, severity) => {
             const diagnostic = new vscode.Diagnostic(range, message, severity);
@@ -506,10 +559,10 @@ class Preview {
             for (const reference of await this.findPackageReferences(bare, isModel)) {
                 add(reference.fsPath, make(reference.range, missingPackageMessage(bare, isModel), vscode.DiagnosticSeverity.Warning));
                 if (!isModel) {
-                    fixes.set(fixKey(reference.fsPath, reference.range), {
+                    fixes.set(fixKey(reference.fsPath, reference.range), [{
                         title: `Choose the folder of package "${bare}"…`,
                         command: { title: 'Choose folder', command: 'robotPreviewUrdf.locatePackage', arguments: [bare] }
-                    });
+                    }]);
                 }
             }
         }
@@ -524,12 +577,14 @@ class Preview {
             for (const reference of await this.findMeshReferences(guess.path)) {
                 if (guess.match === 'case') {
                     add(reference.fsPath, make(reference.range, `"${reference.value}" matches ${shown} only when ignoring case; ROS on Linux will not find it.`, vscode.DiagnosticSeverity.Warning));
-                    fixes.set(fixKey(reference.fsPath, reference.range), { title: `Change to the file's actual case`, text: withCaseOf(reference.value, guess.resolved) });
+                    fixes.set(fixKey(reference.fsPath, reference.range), [{ title: `Change to the file's actual case`, edits: [{ range: reference.range, text: withCaseOf(reference.value, guess.resolved) }] }]);
                 } else {
                     add(reference.fsPath, make(reference.range, `"${reference.value}" was not found; the preview shows ${shown}, the only file with that name. ROS will not find it.`, vscode.DiagnosticSeverity.Warning));
                 }
             }
         }
+
+        await this.addCheckDiagnostics(checks || [], { make, add, fixes });
 
         if (token !== this.diagnosticsToken) return;
         this.fixes = fixes;
@@ -537,20 +592,64 @@ class Preview {
         for (const [fsPath, diagnostics] of byFile) this.diagnostics.set(vscode.Uri.file(fsPath), diagnostics);
     }
 
+    // docs/vscode-extension.md, "Model checks": why macro elements are reported once and get no fix.
+    async addCheckDiagnostics(checks, report) {
+        const disabled = new Set(vscode.workspace.getConfiguration('robotPreviewUrdf').get('checks.disabled') || []);
+        const groups = new Map();
+        for (const check of checks) {
+            if (disabled.has(check.rule)) continue;
+            const { exact, fuzzy } = await this.findDefinitions(check.kind, check.name);
+            const inModel = candidates => candidates.filter(candidate => this.contains(candidate.fsPath));
+            const exactInModel = inModel(exact);
+            const targets = exactInModel.length
+                ? (check.rule === 'duplicate-name' ? exactInModel : exactInModel.slice(0, 1))
+                : inModel(fuzzy).slice(0, 1);
+            for (const target of targets.length ? targets : [null]) {
+                const key = target ? `${check.rule}:${target.fsPath}:${target.index}` : `${check.rule}:${check.name}`;
+                const group = groups.get(key) || { check, target, names: [] };
+                if (!group.names.includes(check.name)) group.names.push(check.name);
+                groups.set(key, group);
+            }
+        }
+        for (const { check, target, names } of groups.values()) {
+            const severity = check.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning;
+            const others = names.slice(1);
+            const message = others.length ? `${check.message} (also ${others.join(', ')})` : check.message;
+            let fsPath = this.primary?.fsPath;
+            let range = new vscode.Range(0, 0, 0, 0);
+            let doc = null;
+            if (target) {
+                doc = await vscode.workspace.openTextDocument(target.fsPath);
+                const nameAttribute = /\bname\s*=\s*["']/.exec(target.tag);
+                const nameAt = target.index + nameAttribute.index + nameAttribute[0].length;
+                fsPath = target.fsPath;
+                range = new vscode.Range(doc.positionAt(nameAt), doc.positionAt(nameAt + target.name.length));
+            }
+            if (!fsPath) continue;
+            const diagnostic = report.make(range, message, severity);
+            diagnostic.code = check.rule;
+            report.add(fsPath, diagnostic);
+            const editable = target && target.name === check.name && !insideMacro(doc.getText(), target.index);
+            const actions = editable ? (JOINT_FIXES[check.rule]?.(doc, target) || []) : [];
+            if (actions.length) report.fixes.set(fixKey(fsPath, range), actions);
+        }
+    }
+
     provideCodeActions(document, range, context) {
         return context.diagnostics.flatMap(diagnostic => {
-            const fix = this.fixes?.get(fixKey(document.uri.fsPath, diagnostic.range));
-            if (!fix) return [];
-            const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
-            if (fix.command) {
-                action.command = fix.command;
-            } else {
-                action.edit = new vscode.WorkspaceEdit();
-                action.edit.replace(document.uri, diagnostic.range, fix.text);
-            }
-            action.diagnostics = [diagnostic];
-            action.isPreferred = true;
-            return [action];
+            const actions = this.fixes?.get(fixKey(document.uri.fsPath, diagnostic.range)) || [];
+            return actions.map(fix => {
+                const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
+                if (fix.command) {
+                    action.command = fix.command;
+                } else {
+                    action.edit = new vscode.WorkspaceEdit();
+                    for (const edit of fix.edits) action.edit.replace(document.uri, edit.range, edit.text);
+                }
+                action.diagnostics = [diagnostic];
+                action.isPreferred = actions.length === 1;
+                return action;
+            });
         });
     }
 

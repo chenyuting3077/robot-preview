@@ -117,6 +117,49 @@
           },
           "default": {},
           "markdownDescription": "Package name to folder, for `package://` and `$(find)` packages without a `package.xml` in the workspace or a sourced ROS environment. Takes priority over automatic discovery. Supports `${workspaceFolder}`, `${workspaceFolder:name}`, `${env:VAR}` and `~`; relative paths start at the first workspace folder."
+        },
+        "robotPreviewUrdf.checks.disabled": {
+          "type": "array",
+          "uniqueItems": true,
+          "default": [],
+          "items": {
+            "type": "string",
+            "enum": [
+              "unknown-link",
+              "multiple-parents",
+              "kinematic-loop",
+              "duplicate-name",
+              "multiple-roots",
+              "missing-limit",
+              "missing-mass",
+              "missing-inertial",
+              "nonpositive-mass",
+              "invalid-inertia",
+              "zero-axis",
+              "inverted-limit",
+              "zero-effort-velocity",
+              "continuous-with-limits",
+              "collision-scale-mismatch"
+            ],
+            "enumDescriptions": [
+              "A joint names a link that does not exist (error).",
+              "A link is the child of more than one joint (error).",
+              "Joints form a loop instead of a tree (error).",
+              "Two links or two joints share a name (error).",
+              "More than one link has no parent (error).",
+              "A revolute or prismatic joint has no <limit>, or a <limit> lacks effort or velocity (error).",
+              "An <inertial> has no <mass> (error).",
+              "A non-root link with geometry has no <inertial>.",
+              "A link has a mass of zero or less.",
+              "An inertia is not positive definite or breaks the triangle inequality.",
+              "A moving joint has a zero axis.",
+              "A joint limit has lower > upper.",
+              "A joint limit has zero effort or velocity.",
+              "A continuous joint sets lower/upper, which are ignored.",
+              "Visual and collision sizes differ 100x or more (likely mm vs m)."
+            ]
+          },
+          "markdownDescription": "Model checks to skip. Each Problems entry shows its rule id as the code."
         }
       }
     },

@@ -239,3 +239,23 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         allOf: type => state.posted.filter(message => message.type === type)
     };
 }
+
+export async function waitFor(predicate, ms = 5000) {
+    const start = Date.now();
+    while (Date.now() - start < ms) {
+        const value = predicate();
+        if (value) return value;
+        await sleep(20);
+    }
+    throw new Error('timed out');
+}
+
+// Opens `primary` in a mocked VS Code and returns once the webview got its first load.
+export async function startPreview(workspace, primary, config = {}) {
+    const env = loadExtension({ workspace, config });
+    env.open(primary);
+    env.activate();
+    const panel = await waitFor(() => env.state.panels[0]?.webview.html && env.state.panels[0]);
+    panel.receive({ type: 'ready' });
+    return { env, panel, load: await waitFor(() => env.lastOf('load')) };
+}

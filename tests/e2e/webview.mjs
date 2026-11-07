@@ -304,6 +304,12 @@ try {
         return hidden;`);
     check('the ground plane never hides grid lines', hidden === 0, `${hidden} grid pixels hidden`);
 
+    const flawed = '<robot name="f"><link name="base"/><link name="arm"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link><joint name="j" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 0 1"/></joint></robot>';
+    await ev(`window.__out.length = 0; window.postMessage({ type: 'load', files: [{ path: '/f/f.urdf', data: new TextEncoder().encode(${JSON.stringify(flawed)}) }], primary: '/f/f.urdf' }, '*')`);
+    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 10000);
+    const checks = await ev(`return window.__out.find(m => m.type === 'diagnostics').checks.map(c => c.rule + ':' + c.name).sort()`);
+    check('model checks run on the loaded robot', JSON.stringify(checks) === JSON.stringify(['missing-inertial:arm', 'missing-limit:j']), JSON.stringify(checks));
+
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));
 } finally {

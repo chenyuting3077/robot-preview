@@ -38,6 +38,16 @@ Display toggles, up axis, angle unit and panel visibility are stored in the exte
 
 The viewer UI follows VS Code's theme and display language. `zh-TW`, `zh-HK` and `zh-Hant` show Traditional Chinese, other `zh-*` Simplified Chinese, everything else English.
 
+## Model checks
+
+Checks run in the webview because only there is xacro expanded and the mesh sizes known. Severity follows consequence: an error is something ROS's URDF parser rejects (urdfdom also refuses a `<limit>` without effort or velocity and an `<inertial>` without `<mass>`), a warning something that breaks simulation or planning. Only the first root link is exempt from the inertia rule: KDL and robot_state_publisher ignore the root's inertia and fixed arms often omit it, but an extra root is a mistake, not a base. A joint with an unknown parent still gives its child a parent, so one typo does not also report a second root.
+
+The inertia test uses a relative tolerance: a point mass is exactly singular, yet its determinant can round to a tiny positive value (+5e-25 for 1 kg at 3 cm/4 cm), which a strict `> 0` accepted.
+
+The scale rule fires only when a link's visual and collision sizes differ 100x or more: a mm/m mistake is 1000x, a simplified collision shape a few x, and a mistake in the visual is already obvious in the preview. The collision is usually hidden, which is why its mistakes reach Gazebo or MoveIt unnoticed.
+
+Elements written inside a `<xacro:macro>` are reported once, at that line, listing the instances, and get no quick fix, since an edit there changes every instance; this holds for literal names inside a macro too. Results are only placed in files that belong to the loaded model, so a same-named link in an unrelated file of the package is not marked. The missing-limit fix inserts placeholder values with a TODO comment because they look real; its effort and velocity are not 0 so it does not trigger the zero-effort rule at once. Rules are disabled by id in `robotPreviewUrdf.checks.disabled`; the id is each Problems entry's code. MJCF is not checked: MuJoCo's compiler already reports these errors.
+
 ## Xacro compatibility
 
 Expansion uses xacro-parser 0.3.11 with a local patch (`patches/xacro-parser@0.3.11.patch`), checked against ROS 2 xacro's own output for the UR5e (`tests/fixtures/xacro/`, regenerated with `generate-golden.sh`). Upstream differs from ROS xacro in ways `ur_description` depends on: child scopes copied their parent, so a `scope="parent"` property set later was invisible; `^` macro defaults threw; dictionaries were inlined into expressions as `[object Object]`; whitespace inside quoted strings and commas between arguments broke tokens. The previous workaround defined `True` / `False` as the strings `"True"` / `"False"`, which made `xacro:if value="False"` and `x if False else y` take the true branch; they are now booleans and print as Python does. The patch also exposes the current file's directory (`$(dirname)`, relative `load_yaml`) and the argument defaults (`$(eval)` sees args declared in included files). These are candidates for an upstream PR.
