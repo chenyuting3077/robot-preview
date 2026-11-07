@@ -115,6 +115,14 @@ test('a "True" argument compares equal to True, as xacro reads literals', async 
     assert.deepEqual(links(await expand(body)), ['off']);
 });
 
+test('a yaml syntax error carries the yaml file and line', async () => {
+    const extra = { '/pkg/config/bad.yaml': 'arm:\n  name: elbow\n  upper: [1, 2\n' };
+    await assert.rejects(
+        expand(`<xacro:property name="cfg" value="\${xacro.load_yaml('$(find pkg)/config/bad.yaml')}"/><link name="\${cfg['arm']['name']}"/>`, { extra }),
+        error => error.location?.key === '/pkg/config/bad.yaml' && error.location.line >= 2 && /yaml/i.test(error.message)
+    );
+});
+
 test('Python conditionals nest inside parentheses and leave strings alone', async () => {
     const props = '<xacro:property name="radius" value="3"/><xacro:property name="double" value="true"/><xacro:property name="p" value="false"/>';
     assert.equal(linkName(await expand(`${props}<link name="l\${radius * (2 if double else 1)}"/>`)), 'l6');
@@ -142,4 +150,11 @@ test('yaml files are not read when nothing calls load_yaml', async () => {
     map.set('/pkg/config/big.yaml', { text: async () => { reads++; return 'a: 1\n'; } });
     await XacroAdapter.expand(robot('<link name="a"/>'), '/pkg/urdf/robot.urdf.xacro', map, {});
     assert.equal(reads, 0);
+});
+
+test('a missing yaml file is reported plainly, with the path it was looked up under', async () => {
+    await assert.rejects(
+        expand(`<xacro:property name="u" value="\${xacro.load_yaml('$(find pkg)/config/missing.yaml')}"/><link name="\${u['m']}"/>`),
+        error => error.message === 'load_yaml: cannot find /pkg/config/missing.yaml' && error.location?.missing === '/pkg/config/missing.yaml'
+    );
 });

@@ -316,6 +316,18 @@ async function listFiles(fileUri, live) {
     return { entries, paths, packages, models, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes, env };
 }
 
+// Lists every place searched and flags unset variables: VS Code started from
+// the dock rather than a sourced shell sees no ROS environment at all.
+function missingPackageMessage(name, isModel) {
+    const variable = name => (process.env[name] ? name : `${name} (not set)`);
+    if (isModel) {
+        return `Gazebo model "${name}" not found. Searched: ${['GZ_SIM_RESOURCE_PATH', 'IGN_GAZEBO_RESOURCE_PATH', 'GAZEBO_MODEL_PATH'].map(variable).join(', ')}, ~/.gazebo/models.`;
+    }
+    const sourced = process.env.ROS_PACKAGE_PATH || process.env.AMENT_PREFIX_PATH;
+    return `ROS package "${name}" not found. Searched: robotPreviewUrdf.packages, package.xml in the workspace, ${variable('ROS_PACKAGE_PATH')}, ${variable('AMENT_PREFIX_PATH')}, /opt/ros/*/share.`
+        + (sourced ? '' : ' VS Code sees ROS variables only when started from a sourced shell.');
+}
+
 const fixKey = (fsPath, range) => `${fsPath}:${range.start.line}:${range.start.character}`;
 
 // Rewrites the trailing segments of a reference that equal the resolved file's
@@ -370,7 +382,6 @@ class Preview {
         this.sent = new Map();
         this.ready = false;
         this.dismissed = new Set();
-        this.warned = new Set();
         this.watchers = [];
         this.watchedRoots = '';
         this.updateTimer = null;
@@ -440,7 +451,7 @@ class Preview {
         this.diagnostics.clear();
     }
 
-    async onDiagnostics({ syntax, loadError, missingMeshes, guessedMeshes }) {
+    async onDiagnostics({ syntax, loadError, loadErrorLocation, missingMeshes, guessedMeshes }) {
         const token = this.diagnosticsToken = (this.diagnosticsToken || 0) + 1;
         const make = (range, message, severity) => {
             const diagnostic = new vscode.Diagnostic(range, message, severity);
@@ -465,12 +476,19 @@ class Preview {
             hasSyntaxError ||= diagnostics.length > 0;
         }
         if (loadError && !hasSyntaxError && this.primary) {
-            add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), loadError, vscode.DiagnosticSeverity.Error));
+            const located = loadErrorLocation?.key && this.listing?.entries.get(loadErrorLocation.key)?.fsPath;
+            const { line = 0, column = 0 } = located ? loadErrorLocation : {};
+            // The webview only knows its own keys; show a missing file where it would be on disk.
+            const missingOnDisk = loadErrorLocation?.missing && this.diskPathOfKey(loadErrorLocation.missing);
+            const message = missingOnDisk ? loadError.replace(loadErrorLocation.missing, vscode.workspace.asRelativePath(missingOnDisk)) : loadError;
+            add(located || this.primary.fsPath, make(new vscode.Range(line, column, line, column + 1), message, vscode.DiagnosticSeverity.Error));
         }
         for (const meshPath of new Set(missingMeshes || [])) {
             const references = await this.findMeshReferences(meshPath);
             for (const reference of references) {
-                add(reference.fsPath, make(reference.range, `Mesh not found: ${reference.value}`, vscode.DiagnosticSeverity.Warning));
+                const expected = this.expectedPath(reference);
+                const where = expected ? ` (looked for ${vscode.workspace.asRelativePath(expected)})` : '';
+                add(reference.fsPath, make(reference.range, `Mesh not found: ${reference.value}${where}`, vscode.DiagnosticSeverity.Warning));
             }
             if (!references.length && this.primary) {
                 add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), `Mesh not found: ${meshPath}`, vscode.DiagnosticSeverity.Warning));
@@ -478,6 +496,17 @@ class Preview {
         }
 
         const fixes = new Map();
+        for (const { name: bare, isModel } of this.listing?.missing || []) {
+            for (const reference of await this.findPackageReferences(bare, isModel)) {
+                add(reference.fsPath, make(reference.range, missingPackageMessage(bare, isModel), vscode.DiagnosticSeverity.Warning));
+                if (!isModel) {
+                    fixes.set(fixKey(reference.fsPath, reference.range), {
+                        title: `Choose the folder of package "${bare}"…`,
+                        command: { title: 'Choose folder', command: 'robotPreviewUrdf.locatePackage', arguments: [bare] }
+                    });
+                }
+            }
+        }
 
         // The webview still shows a guessed mesh, but ROS will not: case only
         // matters on Linux, so a model that looks fine on macOS breaks on the robot.
@@ -507,8 +536,12 @@ class Preview {
             const fix = this.fixes?.get(fixKey(document.uri.fsPath, diagnostic.range));
             if (!fix) return [];
             const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
-            action.edit = new vscode.WorkspaceEdit();
-            action.edit.replace(document.uri, diagnostic.range, fix.text);
+            if (fix.command) {
+                action.command = fix.command;
+            } else {
+                action.edit = new vscode.WorkspaceEdit();
+                action.edit.replace(document.uri, diagnostic.range, fix.text);
+            }
             action.diagnostics = [diagnostic];
             action.isPreferred = true;
             return [action];
@@ -517,13 +550,69 @@ class Preview {
 
     // Where a reference points on disk, or null when only xacro can tell
     // (an expression) or its package / model is unknown.
+    expectedPath({ value }) {
+        if (/\$[({]/.test(value)) return null;
+        const scheme = value.match(/^(package|model):\/\/([^/]+)\/(.*)$/);
+        if (scheme) {
+            const dir = (scheme[1] === 'model' ? this.listing.models : this.listing.packages).get(scheme[2]);
+            return dir ? path.join(dir, scheme[3]) : null;
+        }
+        if (value.startsWith('file://')) {
+            try { return url.fileURLToPath(value); } catch { return null; }
+        }
+        // The webview resolves a relative mesh from the opened file, wherever it is written.
+        return path.resolve(path.dirname(this.primary.fsPath), value);
+    }
 
+    diskPathOfKey(key) {
+        const [, name, rest] = key.match(/^\/([^/]+)\/(.*)$/) || [];
+        const dir = this.listing?.packages.get(name) ?? this.listing?.models.get(name);
+        return dir ? path.join(dir, rest) : null;
+    }
 
+    async findPackageReferences(name, isModel) {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = isModel ? new RegExp(`model://(${escaped})(?=/)`, 'g') : new RegExp(`package://(${escaped})(?=/)|\\$\\(find\\s+(${escaped})\\)`, 'g');
+        const found = [];
+        for (const fsPath of this.listing.paths) {
+            if (!MODEL_RE.test(fsPath)) continue;
+            const version = await versionOf(fsPath);
+            if (!version) continue;
+            const { text } = await modelInfo(fsPath, version);
+            const matches = Array.from(text.matchAll(re));
+            if (!matches.length) continue;
+            // Opening every file would turn its version from disk:* into doc:* and resend it.
+            const doc = await vscode.workspace.openTextDocument(fsPath);
+            for (const match of matches) {
+                const start = match.index + match[0].lastIndexOf(name);
+                found.push({ fsPath, range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + name.length)) });
+            }
+        }
+        return found;
+    }
 
+    async locatePackage(name) {
+        const [folder] = await vscode.window.showOpenDialog({ canSelectFolders: true, canSelectFiles: false, openLabel: `Use for ${name}` }) || [];
+        if (!folder) return;
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const relative = root && path.relative(root, folder.fsPath);
+        const value = relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+            ? `\${workspaceFolder}/${relative.split(path.sep).join('/')}`
+            : folder.fsPath;
+        // Merge into the one layer written; get() would copy user entries into the workspace.
+        // Without a folder there are no workspace settings to write.
+        const config = vscode.workspace.getConfiguration('robotPreviewUrdf');
+        const layers = config.inspect('packages') || {};
+        const [target, current] = root
+            ? [vscode.ConfigurationTarget.Workspace, layers.workspaceValue]
+            : [vscode.ConfigurationTarget.Global, layers.globalValue];
+        await config.update('packages', { ...(current || {}), [name]: value }, target);
+    }
 
     async findMeshReferences(meshPath) {
         if (!this.listing) return [];
         const found = [];
+        const keyOf = new Map(Array.from(this.listing.entries, ([key, entry]) => [entry.fsPath, key]));
         const normalize = value => value.replace(/^package:\/\//, '').replace(/^(\.\/|\/)+/, '');
         const target = normalize(meshPath);
         for (const fsPath of this.listing.paths) {
@@ -531,9 +620,13 @@ class Preview {
             const version = await versionOf(fsPath);
             if (!version) continue;
             const { text } = await modelInfo(fsPath, version);
+            // A relative reference is compared as resolved from its file's key,
+            // since the webview reports '../parts/a.stl' as 'pkg/parts/a.stl'.
+            const key = keyOf.get(fsPath) ?? '';
             for (const match of text.matchAll(/\bfilename\s*=\s*["']([^"']+)["']/g)) {
-                const value = normalize(match[1]);
-                if (value !== target && !target.endsWith(`/${value}`) && !value.endsWith(`/${target}`)) continue;
+                const forms = [normalize(match[1])];
+                if (!/^[a-z]+:\/\/|^[/\\$]/i.test(match[1])) forms.push(normalize(path.posix.join(path.posix.dirname(key), match[1])));
+                if (!forms.some(value => value === target || target.endsWith(`/${value}`) || value.endsWith(`/${target}`))) continue;
                 const doc = await vscode.workspace.openTextDocument(fsPath);
                 const start = match.index + match[0].indexOf(match[1]);
                 found.push({ fsPath, value: match[1], range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + match[1].length)) });
@@ -625,13 +718,6 @@ class Preview {
             this.listing = listing;
             this.watchRoots(listing.roots);
 
-            const newMissing = listing.missing
-                .map(({ name, isModel }) => (isModel ? `model://${name}` : name))
-                .filter(name => !this.warned.has(name));
-            if (newMissing.length) {
-                newMissing.forEach(name => this.warned.add(name));
-                vscode.window.showWarningMessage(`Robot Preview: ROS package or Gazebo model not found: ${newMissing.join(', ')}`);
-            }
 
             const changed = Array.from(listing.entries).filter(([key, entry]) => full || this.sent.get(key) !== entry.version);
             const removed = full ? [] : Array.from(this.sent.keys()).filter(key => !listing.entries.has(key));
@@ -854,6 +940,7 @@ exports.activate = context => {
             { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context) },
             { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
         ),
+        vscode.commands.registerCommand('robotPreviewUrdf.locatePackage', name => preview.locatePackage(name)),
         vscode.commands.registerCommand('robotPreviewUrdf.setXacroArgs', uri => {
             uri = uri || vscode.window.activeTextEditor?.document.uri;
             return uri && preview.setXacroArgs(uri);

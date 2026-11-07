@@ -151,6 +151,59 @@ test('a mesh found only by its file name is a warning naming the file the previe
     assert.match(warning.message, /src\/pkg\/meshes\/hand\.stl/);
 });
 
+test('a missing mesh says where it was looked for', async () => {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-missing-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf');
+    write(primary, '<robot name="r">\n<link name="a"><visual><geometry><mesh filename="package://pkg/meshes/gone.stl"/></geometry></visual></link>\n'
+        + '<link name="b"><visual><geometry><mesh filename="../parts/gone2.stl"/></geometry></visual></link>\n</robot>\n');
+    const { env } = await startIn(ws, primary, {});
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: ['pkg/meshes/gone.stl', 'pkg/parts/gone2.stl'], guessedMeshes: [] });
+    const diagnostics = await waitFor(() => env.state.diagnostics.get(primary)?.length === 2 && env.state.diagnostics.get(primary));
+    assert.match(diagnostics[0].message, /looked for src\/pkg\/meshes\/gone\.stl/);
+    assert.match(diagnostics[1].message, /looked for src\/pkg\/parts\/gone2\.stl/);
+});
+
+test('an unknown package is a diagnostic listing where it was searched, fixed by choosing its folder', async () => {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-ghost-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    const ghost = path.join(ws, 'vendor/ghost');
+    write(path.join(ghost, 'meshes/a.stl'));
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf');
+    write(primary, '<robot name="r">\n<link name="a"><visual><geometry><mesh filename="package://ghost/meshes/a.stl"/></geometry></visual></link>\n</robot>\n');
+    delete process.env.ROS_PACKAGE_PATH;
+    const { env } = await startIn(ws, primary, {});
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [], guessedMeshes: [] });
+    const [diagnostic] = await waitFor(() => env.state.diagnostics.get(primary)?.length && env.state.diagnostics.get(primary));
+    assert.match(diagnostic.message, /ROS package "ghost" not found/);
+    assert.match(diagnostic.message, /ROS_PACKAGE_PATH \(not set\)/);
+    const line = fs.readFileSync(primary, 'utf8').split('\n')[diagnostic.range.start.line];
+    assert.equal(line.slice(diagnostic.range.start.character, diagnostic.range.end.character), 'ghost');
+    assert.ok(!env.state.status.some(message => /not found/.test(message)), 'no popup');
+
+    const doc = await env.vscode.workspace.openTextDocument(primary);
+    const [action] = env.state.codeActions.provideCodeActions(doc, diagnostic.range, { diagnostics: [diagnostic] });
+    env.state.openDialogResult = [env.vscode.Uri.file(ghost)];
+    await env.state.commands[action.command.command](...action.command.arguments);
+    assert.equal(env.state.config.packages.ghost, '${workspaceFolder}/vendor/ghost');
+    await waitFor(() => env.state.posted.some(m => (m.type === 'load' || m.type === 'update') && m.files?.some(file => file.path === '/ghost/meshes/a.stl')), 3000);
+});
+
+test('a load error with a location is reported in that file and line', async () => {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-yaml-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    const yamlFile = path.join(ws, 'src/pkg/config/bad.yaml');
+    write(yamlFile, 'arm:\n  upper: [1, 2\n');
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf.xacro');
+    write(primary, '<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro"><link name="a"/></robot>\n');
+    const { env } = await startIn(ws, primary, {});
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: 'YAML error in bad.yaml: unexpected end', loadErrorLocation: { key: '/pkg/config/bad.yaml', line: 2, column: 0 }, missingMeshes: [], guessedMeshes: [] });
+    const [diagnostic] = await waitFor(() => env.state.diagnostics.get(yamlFile)?.length && env.state.diagnostics.get(yamlFile));
+    assert.equal(diagnostic.range.start.line, 2);
+    assert.equal(diagnostic.severity, 0);
+    assert.ok(!env.state.diagnostics.get(primary)?.length);
+});
+
 test('packages referenced from an included file outside every package are sent too', async () => {
     const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-shared-')));
     write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
@@ -160,8 +213,11 @@ test('packages referenced from an included file outside every package are sent t
     write(path.join(shared, 'common.xacro'), '<robot xmlns:xacro="http://www.ros.org/wiki/xacro"><link name="c"><visual><geometry><mesh filename="package://other_pkg/meshes/a.stl"/></geometry></visual></link><link name="g"><visual><geometry><mesh filename="package://ghost_pkg/m.stl"/></geometry></visual></link></robot>');
     const primary = path.join(ws, 'src/pkg/urdf/robot.urdf.xacro');
     write(primary, `<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:include filename="${path.join(shared, 'common.xacro')}"/></robot>`);
-    const { load } = await startIn(ws, primary, {});
+    const { env, load } = await startIn(ws, primary, {});
     assert.ok(load.files.some(file => file.path === '/other_pkg/meshes/a.stl'), load.files.map(file => file.path).join(', '));
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [], guessedMeshes: [] });
+    const diagnostics = await waitFor(() => env.state.diagnostics.get(path.join(shared, 'common.xacro'))?.length && env.state.diagnostics.get(path.join(shared, 'common.xacro')));
+    assert.match(diagnostics[0].message, /ghost_pkg/);
 });
 
 test('a relative mesh in an included file resolves from the opened file, as the webview does', async () => {
@@ -172,8 +228,43 @@ test('a relative mesh in an included file resolves from the opened file, as the 
     write(arm, '<robot xmlns:xacro="http://www.ros.org/wiki/xacro">\n<link name="a"><visual><geometry><mesh filename="../../assets/a.stl"/></geometry></visual></link>\n<link name="b"><visual><geometry><mesh filename="../../assets/gone.stl"/></geometry></visual></link>\n</robot>');
     const primary = path.join(ws, 'src/pkg/urdf/robot.urdf.xacro');
     write(primary, '<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:include filename="inc/arm.xacro"/></robot>');
-    const { load } = await startIn(ws, primary, {});
+    const { env, load } = await startIn(ws, primary, {});
     assert.ok(load.files.some(file => file.path === path.join(ws, 'src/assets/a.stl')), load.files.map(file => file.path).join(', '));
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: ['/pkg/urdf/../../assets/gone.stl'], guessedMeshes: [] });
+    const [diagnostic] = await waitFor(() => env.state.diagnostics.get(arm)?.length && env.state.diagnostics.get(arm));
+    assert.equal(diagnostic.range.start.line, 2);
+    assert.match(diagnostic.message, /looked for src\/assets\/gone\.stl/);
+});
+
+async function ghostWorkspace() {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-ghost2-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    write(path.join(ws, 'src/pkg/urdf/unrelated.urdf'), '<robot name="u"><link name="u"/></robot>');
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf');
+    write(primary, '<robot name="r">\n<link name="a"><visual><geometry><mesh filename="package://ghost/meshes/a.stl"/></geometry></visual></link>\n</robot>\n');
+    const { env } = await startIn(ws, primary, {});
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [], guessedMeshes: [] });
+    const [diagnostic] = await waitFor(() => env.state.diagnostics.get(primary)?.length && env.state.diagnostics.get(primary));
+    return { ws, env, primary, diagnostic };
+}
+
+test('looking for package references opens only files that contain one', async () => {
+    const { ws, env } = await ghostWorkspace();
+    assert.ok(!env.state.docs.some(doc => doc.uri.fsPath === path.join(ws, 'src/pkg/urdf/unrelated.urdf')));
+});
+
+test('choosing a package folder writes only the workspace value, or user settings without a folder', async () => {
+    const { ws, env } = await ghostWorkspace();
+    env.state.globalConfig = { packages: { user_pkg: '/opt/user_pkg' } };
+    env.state.config.packages = { user_pkg: '/opt/user_pkg' };
+    env.state.openDialogResult = [env.vscode.Uri.file(path.join(ws, 'vendor/ghost'))];
+    await env.state.commands['robotPreviewUrdf.locatePackage']('ghost');
+    assert.deepEqual(env.state.configWrites.at(-1), { key: 'packages', value: { ghost: '${workspaceFolder}/vendor/ghost' }, target: 2 });
+
+    env.vscode.workspace.workspaceFolders = undefined;
+    env.state.openDialogResult = [env.vscode.Uri.file('/elsewhere/ghost')];
+    await env.state.commands['robotPreviewUrdf.locatePackage']('ghost');
+    assert.deepEqual(env.state.configWrites.at(-1), { key: 'packages', value: { user_pkg: '/opt/user_pkg', ghost: '/elsewhere/ghost' }, target: 1 });
 });
 
 test('a guessed mesh used twice gets one warning per reference, each with its fix', async () => {
@@ -192,6 +283,18 @@ test('a guessed mesh used twice gets one warning per reference, each with its fi
     for (const diagnostic of diagnostics) {
         assert.equal(env.state.codeActions.provideCodeActions(doc, diagnostic.range, { diagnostics: [diagnostic] }).length, 1);
     }
+});
+
+test('a missing yaml file is reported on the opened file with its path on disk', async () => {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-noyaml-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf.xacro');
+    write(primary, '<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro"><link name="a"/></robot>\n');
+    const { env } = await startIn(ws, primary, {});
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: 'load_yaml: cannot find /pkg/config/missing.yaml', loadErrorLocation: { missing: '/pkg/config/missing.yaml' }, missingMeshes: [], guessedMeshes: [] });
+    const [diagnostic] = await waitFor(() => env.state.diagnostics.get(primary)?.length && env.state.diagnostics.get(primary));
+    assert.equal(diagnostic.message, 'load_yaml: cannot find src/pkg/config/missing.yaml');
+    assert.equal(diagnostic.range.start.line, 0);
 });
 
 test('packages setting paths accept ${workspaceFolder:name} and ~', async () => {

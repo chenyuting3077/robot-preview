@@ -89,6 +89,7 @@ class App {
             this.fileHandler.onModelLoaded = (model, file) => this.handleModelLoaded(model, file);
             this.fileHandler.onLoadError = error => {
                 this.lastLoadError = error.message;
+                this.lastLoadErrorLocation = error.location ?? null;
                 this.showError(error.message);
             };
 
@@ -251,7 +252,7 @@ class App {
             const primary = this.pendingPrimary;
             const syntax = this.pendingSyntax;
             this.isUpdate = this.pendingIsUpdate && this.currentModel !== null;
-            Object.assign(this, { pendingPrimary: null, pendingSyntax: {}, pendingIsUpdate: null, lastLoadError: null, lastMissingMeshes: [], lastGuessedMeshes: [] });
+            Object.assign(this, { pendingPrimary: null, pendingSyntax: {}, pendingIsUpdate: null, lastLoadError: null, lastLoadErrorLocation: null, lastMissingMeshes: [], lastGuessedMeshes: [] });
 
             const pose = this.isUpdate ? this.poseController.getPose() : null;
             const previousModel = this.currentModel;
@@ -260,7 +261,7 @@ class App {
             if (pose && this.currentModel !== previousModel) this.poseController.applyPose(pose, { source: 'user' });
             if (this.lastHighlight) this.highlightByPattern(this.lastHighlight.kind, this.lastHighlight.pattern);
 
-            vscode.postMessage({ type: 'diagnostics', syntax, loadError: this.lastLoadError, missingMeshes: this.lastMissingMeshes, guessedMeshes: this.lastGuessedMeshes });
+            vscode.postMessage({ type: 'diagnostics', syntax, loadError: this.lastLoadError, loadErrorLocation: this.lastLoadErrorLocation, missingMeshes: this.lastMissingMeshes, guessedMeshes: this.lastGuessedMeshes });
         }
     }
 

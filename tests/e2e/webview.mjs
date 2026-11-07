@@ -264,6 +264,11 @@ try {
     check('UR5e with load_yaml loads in the webview', await waitFor(`window.app.currentModel?.links?.has('wrist_3_link') && window.app.currentModel.joints.has('shoulder_pan_joint')`, 15000));
     check('UR5e joint limit read from yaml (!degrees)', await ev(`return Math.abs(window.app.currentModel.joints.get('shoulder_pan_joint').limits.upper - 2 * Math.PI) < 1e-6`), JSON.stringify(await ev(`return window.app.currentModel.joints.get('shoulder_pan_joint')?.limits`)));
 
+    await ev(`window.__out.length = 0; await window.__send('ur', m => { const f = m.files.find(f => f.path.endsWith('ur5e/joint_limits.yaml')); f.data = btoa('joint_limits:\\n  a: [1, 2\\n'); })`);
+    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 15000);
+    const yamlDiagnostics = await ev(`return window.__out.find(m => m.type === 'diagnostics')`);
+    check('a yaml syntax error points at the yaml file', yamlDiagnostics?.loadErrorLocation?.key === '/ur_description/config/ur5e/joint_limits.yaml' && yamlDiagnostics.loadErrorLocation.line >= 1, JSON.stringify(yamlDiagnostics?.loadErrorLocation));
+
     await ev(`document.body.classList.add('vscode-light')`);
     check('theme follows VS Code', await waitFor(`document.documentElement.getAttribute('data-theme') === 'light'`, 3000));
     await ev(`document.body.classList.remove('vscode-light')`);

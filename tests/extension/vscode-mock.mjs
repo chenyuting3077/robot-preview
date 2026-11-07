@@ -119,6 +119,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         },
         Diagnostic: class { constructor(range, message, severity) { Object.assign(this, { range, message, severity }); } },
         DiagnosticSeverity: { Error: 0, Warning: 1 },
+        ConfigurationTarget: { Global: 1, Workspace: 2 },
         CodeAction: class { constructor(title, kind) { Object.assign(this, { title, kind }); } },
         CodeActionKind: { QuickFix: 'quickfix' },
         env: { language: 'zh-tw' },
@@ -150,7 +151,13 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             onDidSaveTextDocument: on('save'),
             onDidChangeConfiguration: on('config'),
             getConfiguration: () => ({
-                get: key => state.config[key]
+                get: key => state.config[key],
+                inspect: key => ({ globalValue: state.globalConfig?.[key], workspaceValue: state.workspaceConfig?.[key] }),
+                update: async (key, value, target) => {
+                    state.config[key] = value;
+                    state.configWrites = [...(state.configWrites || []), { key, value, target }];
+                    fire('config', { affectsConfiguration: name => name === `robotPreviewUrdf.${key}` });
+                }
             }),
             openTextDocument: async fsPath => openDocument(fsPath),
             asRelativePath: fsPath => path.relative(workspace, fsPath),
@@ -189,7 +196,8 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             setStatusBarMessage: message => state.status.push(message),
             showQuickPick: async items => items[0],
             showInputBox: async () => state.inputBoxValue,
-            showSaveDialog: async ({ defaultUri }) => defaultUri
+            showSaveDialog: async ({ defaultUri }) => defaultUri,
+            showOpenDialog: async () => state.openDialogResult
         },
         commands: {
             registerCommand: (id, callback) => {

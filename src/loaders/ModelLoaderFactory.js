@@ -247,7 +247,7 @@ export class ModelLoaderFactory {
             return model;
         } catch (error) {
             console.error('Xacro parsing error:', error);
-            throw new Error('Xacro parsing failed: ' + error.message);
+            throw Object.assign(new Error('Xacro parsing failed: ' + error.message), { location: error.location });
         }
     }
 

@@ -171,13 +171,25 @@ export class XacroAdapter {
             construct: value => Number(parser.expressionParser.evaluate(String(value))) * factor
         }));
         const schema = yaml.DEFAULT_SCHEMA.extend(units);
+        // xacro-parser rewraps errors as text, so a yaml error's position is
+        // kept here and reattached once parse() fails.
+        let yamlError = null;
         parser.expressionParser.functions.__load_yaml__ = filename => {
             const target = /^[/\\]/.test(filename) ? filename : `${parser.currentWorkingPath}${filename}`;
             // Exact only: the mesh resolver's case/tail/basename guesses would
             // load a different file where ROS fails.
-            const found = resolveFileMatch(cleanFilePath(target), yamlTexts);
-            if (found?.match !== 'exact') throw new Error(`load_yaml: cannot find ${filename}`);
-            return yaml.load(found.file, { schema, filename });
+            const key = `/${cleanFilePath(target)}`;
+            const found = resolveFileMatch(key, yamlTexts);
+            if (found?.match !== 'exact') {
+                yamlError = { message: `load_yaml: cannot find ${key}`, location: { missing: key } };
+                throw new Error(yamlError.message);
+            }
+            try {
+                return yaml.load(found.file, { schema, filename });
+            } catch (error) {
+                yamlError = { message: `YAML error in ${filename}: ${error.reason || error.message}`, location: { key: found.key, line: error.mark?.line ?? 0, column: error.mark?.column ?? 0 } };
+                throw error;
+            }
         };
         const renameLoadYaml = text => rewritePythonExpressions(text.replace(/\b(?:xacro\.)?load_yaml\s*\(/g, '__load_yaml__('));
         xacroContent = await readYamlOnce(renameLoadYaml(xacroContent));
@@ -190,7 +202,13 @@ export class XacroAdapter {
         }
 
         // Parse xacro to URDF XML
-        const urdfXML = await parser.parse(xacroContent);
+        let urdfXML;
+        try {
+            urdfXML = await parser.parse(xacroContent);
+        } catch (error) {
+            if (!yamlError) throw error;
+            throw Object.assign(new Error(yamlError.message), { location: yamlError.location });
+        }
 
         // Convert XMLDocument to string
         const serializer = new XMLSerializer();
@@ -329,7 +347,7 @@ export class XacroAdapter {
             });
         } catch (error) {
             console.error('[XacroAdapter] Xacro parsing error:', error);
-            throw new Error('Xacro parsing failed: ' + error.message);
+            throw Object.assign(new Error('Xacro parsing failed: ' + error.message), { location: error.location });
         }
     }
 
