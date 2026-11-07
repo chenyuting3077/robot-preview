@@ -22,7 +22,7 @@
  */
 import { XacroParser } from 'xacro-parser';
 import { URDFAdapter } from './URDFAdapter.js';
-import { resolveFileFromMap, fileUrlModifier } from '../utils/FileUtils.js';
+import { resolveFileFromMap, resolveMeshFile, fileUrlModifier } from '../utils/FileUtils.js';
 import { trackMeshLoads } from '../utils/MeshLoader.js';
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
 
@@ -125,6 +125,7 @@ export class XacroAdapter {
             return new Promise((resolve, reject) => {
                 const loader = new URDFLoader();
                 loader.parseCollision = true;
+                const guessedMeshes = [];
 
                 // Extract directory where URDF file is located
                 const urdfDir = workingPath;
@@ -147,7 +148,7 @@ export class XacroAdapter {
 
                     // Custom loadMeshCb (same as URDF loading)
                     loader.loadMeshCb = (path, manager, done) => {
-                        this.findFileInMapByPath(path, fileMap, urdfDir).then(file => {
+                        this.findFileInMapByPath(path, fileMap, urdfDir, guessedMeshes).then(file => {
                             if (file) {
                                 const ext = (file.name || path).toLowerCase().split('.').pop();
                                 ModelLoaderFactory.loadMeshFileAsync(file, ext, manager).then(meshObject => {
@@ -183,6 +184,7 @@ export class XacroAdapter {
                         const model = URDFAdapter.convert(robot, finalUrdfString);
                         model.meshesReady = meshes.ready();
                         model.missingMeshes = meshes.missing;
+                        model.guessedMeshes = guessedMeshes;
                         model.expandedUrdf = urdfString;
                         resolve(model);
                     } catch (error) {
@@ -336,8 +338,8 @@ export class XacroAdapter {
      * @param {string} urdfDir - URDF directory
      * @returns {Promise<File|null>}
      */
-    static async findFileInMapByPath(path, fileMap, urdfDir) {
-        return resolveFileFromMap(path, fileMap, { baseDir: urdfDir });
+    static async findFileInMapByPath(path, fileMap, urdfDir, guessed) {
+        return resolveMeshFile(path, fileMap, urdfDir, guessed);
     }
 
     /**

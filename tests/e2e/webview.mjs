@@ -242,12 +242,13 @@ try {
     check('missing mesh reported', missing.length === 1 && missing[0].endsWith('arm.stl'), JSON.stringify(missing));
 
     await ev(`window.__out.length = 0; await window.__send('matrix')`);
-    check('path matrix model loads', await waitFor(`window.app.currentModel?.links?.has('l8')`, 10000));
+    check('path matrix model loads', await waitFor(`window.app.currentModel?.links?.has('l9')`, 10000));
     await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 15000);
     const matrixDiagnostics = await ev(`return window.__out.find(m => m.type === 'diagnostics')`);
     const expectedMissing = messages.matrix.expectedMissing;
     const unexpected = (matrixDiagnostics?.missingMeshes || []).filter(mesh => !expectedMissing.some(path => mesh.endsWith(path)));
     check('every path form resolves to its mesh', matrixDiagnostics?.loadError === null && unexpected.length === 0, JSON.stringify(unexpected));
+    check('a case-mismatched mesh is reported as a guess', JSON.stringify(matrixDiagnostics?.guessedMeshes) === JSON.stringify([{ path: 'pkg/meshes/case.STL', resolved: '/pkg/meshes/Case.stl', match: 'case' }]), JSON.stringify(matrixDiagnostics?.guessedMeshes));
 
 
     await ev(`document.body.classList.add('vscode-light')`);

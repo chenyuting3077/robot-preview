@@ -26,6 +26,8 @@ Clicking a link in the 3D view or the structure graph selects its definition in 
 
 Missing meshes are reported as warnings on the `filename` attribute that references them; when the path was built by a xacro expression and does not appear literally, the warning goes to line 1 of the opened file. Only URDF and xacro track missing meshes; MJCF reports them as a load error.
 
+A mesh the preview found only by ignoring case, or only by its file name, still displays but gets a warning: macOS and Windows file systems ignore case, so the model looks fine on the desktop and fails on the robot. The case warning has a quick fix that rewrites the reference to the file's actual case.
+
 Xacro arguments are entered per file in launch-file syntax (`name:=value`, no spaces inside values) and override the `<xacro:arg>` defaults. **Export Expanded URDF** saves the xacro output before the viewer strips `<gazebo>` and `<transmission>`, so the file matches what `xacro` would produce for those arguments.
 
 `.stl`, `.dae` and `.obj` can open in a separate read-only preview with the `.mtl` and textures from the same directory; its panel toggles are not saved, so they never change the robot preview's settings. Since 0.2.0 it is an optional editor (*Reopen Editor With…*) so it does not compete with Robot Preview: Mesh & Splat for the default.

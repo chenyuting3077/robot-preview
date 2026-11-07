@@ -305,6 +305,19 @@ async function listFiles(fileUri, live) {
     return { entries, paths, packages, models, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes };
 }
 
+const fixKey = (fsPath, range) => `${fsPath}:${range.start.line}:${range.start.character}`;
+
+// Rewrites the trailing segments of a reference that equal the resolved file's
+// ignoring case, keeping the reference's own prefix (package://, ../, ...).
+function withCaseOf(reference, resolved) {
+    const parts = reference.split('/');
+    const actual = resolved.split('/');
+    for (let i = parts.length - 1, j = actual.length - 1; i >= 0 && j >= 0 && parts[i].toLowerCase() === actual[j].toLowerCase(); i--, j--) {
+        parts[i] = actual[j];
+    }
+    return parts.join('/');
+}
+
 function closingEnd(text, tag, from) {
     const re = new RegExp(`<(/?)${tag}\\b[^>]*?(/?)>`, 'g');
     re.lastIndex = from;
@@ -416,7 +429,7 @@ class Preview {
         this.diagnostics.clear();
     }
 
-    async onDiagnostics({ syntax, loadError, missingMeshes }) {
+    async onDiagnostics({ syntax, loadError, missingMeshes, guessedMeshes }) {
         const token = this.diagnosticsToken = (this.diagnosticsToken || 0) + 1;
         const make = (range, message, severity) => {
             const diagnostic = new vscode.Diagnostic(range, message, severity);
@@ -444,24 +457,62 @@ class Preview {
             add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), loadError, vscode.DiagnosticSeverity.Error));
         }
         for (const meshPath of new Set(missingMeshes || [])) {
-            const reference = await this.findMeshReference(meshPath);
-            if (reference) {
+            const references = await this.findMeshReferences(meshPath);
+            for (const reference of references) {
                 add(reference.fsPath, make(reference.range, `Mesh not found: ${reference.value}`, vscode.DiagnosticSeverity.Warning));
-            } else if (this.primary) {
+            }
+            if (!references.length && this.primary) {
                 add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), `Mesh not found: ${meshPath}`, vscode.DiagnosticSeverity.Warning));
             }
         }
 
+        const fixes = new Map();
+
+        // The webview still shows a guessed mesh, but ROS will not: case only
+        // matters on Linux, so a model that looks fine on macOS breaks on the robot.
+        // A mesh used by both visual and collision is reported once per load.
+        const guesses = new Map((guessedMeshes || []).map(guess => [guess.path, guess]));
+        for (const guess of guesses.values()) {
+            const fsPath = this.listing?.entries.get(guess.resolved)?.fsPath;
+            const shown = fsPath ? vscode.workspace.asRelativePath(fsPath) : guess.resolved;
+            for (const reference of await this.findMeshReferences(guess.path)) {
+                if (guess.match === 'case') {
+                    add(reference.fsPath, make(reference.range, `"${reference.value}" matches ${shown} only when ignoring case; ROS on Linux will not find it.`, vscode.DiagnosticSeverity.Warning));
+                    fixes.set(fixKey(reference.fsPath, reference.range), { title: `Change to the file's actual case`, text: withCaseOf(reference.value, guess.resolved) });
+                } else {
+                    add(reference.fsPath, make(reference.range, `"${reference.value}" was not found; the preview shows ${shown}, the only file with that name. ROS will not find it.`, vscode.DiagnosticSeverity.Warning));
+                }
+            }
+        }
+
         if (token !== this.diagnosticsToken) return;
+        this.fixes = fixes;
         this.diagnostics.clear();
         for (const [fsPath, diagnostics] of byFile) this.diagnostics.set(vscode.Uri.file(fsPath), diagnostics);
+    }
+
+    provideCodeActions(document, range, context) {
+        return context.diagnostics.flatMap(diagnostic => {
+            const fix = this.fixes?.get(fixKey(document.uri.fsPath, diagnostic.range));
+            if (!fix) return [];
+            const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
+            action.edit = new vscode.WorkspaceEdit();
+            action.edit.replace(document.uri, diagnostic.range, fix.text);
+            action.diagnostics = [diagnostic];
+            action.isPreferred = true;
+            return [action];
+        });
     }
 
     // Where a reference points on disk, or null when only xacro can tell
     // (an expression) or its package / model is unknown.
 
-    async findMeshReference(meshPath) {
-        if (!this.listing) return null;
+
+
+
+    async findMeshReferences(meshPath) {
+        if (!this.listing) return [];
+        const found = [];
         const normalize = value => value.replace(/^package:\/\//, '').replace(/^(\.\/|\/)+/, '');
         const target = normalize(meshPath);
         for (const fsPath of this.listing.paths) {
@@ -474,10 +525,10 @@ class Preview {
                 if (value !== target && !target.endsWith(`/${value}`) && !value.endsWith(`/${target}`)) continue;
                 const doc = await vscode.workspace.openTextDocument(fsPath);
                 const start = match.index + match[0].indexOf(match[1]);
-                return { fsPath, value: match[1], range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + match[1].length)) };
+                found.push({ fsPath, value: match[1], range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + match[1].length)) });
             }
         }
-        return null;
+        return found;
     }
 
     xacroArgsFor(fsPath) {
@@ -787,6 +838,11 @@ exports.activate = context => {
 
     context.subscriptions.push(
         packageWatcher,
+        vscode.languages.registerCodeActionsProvider(
+            [{ scheme: 'file', pattern: '**/*.{urdf,xacro,xml}' }],
+            { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context) },
+            { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
+        ),
         vscode.commands.registerCommand('robotPreviewUrdf.setXacroArgs', uri => {
             uri = uri || vscode.window.activeTextEditor?.document.uri;
             return uri && preview.setXacroArgs(uri);

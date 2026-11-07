@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveFileFromMap } from '../../src/utils/FileUtils.js';
+import { resolveFileFromMap, resolveFileMatch } from '../../src/utils/FileUtils.js';
 
 const KEYS = [
     '/pkg/meshes/a.stl',
@@ -41,6 +41,20 @@ for (const [name, reference, baseDir, expected] of ROWS) {
         assert.equal(resolveFileFromMap(reference, fileMap, { baseDir })?.key, expected);
     });
 }
+
+test('the resolver reports how a path matched, so guesses can be flagged', () => {
+    const kind = (reference, baseDir = '/pkg/urdf/') => resolveFileMatch(reference, fileMap, { baseDir })?.match;
+    assert.equal(kind('package://pkg/meshes/a.stl'), 'exact');
+    assert.equal(kind('../meshes/a.stl'), 'exact');
+    assert.equal(kind('package://pkg/meshes/my%20part.stl'), 'exact');
+    assert.equal(kind('file:///home/u/outside/d.stl'), 'exact');
+    assert.equal(kind('package://pkg/meshes/b.stl'), 'case');
+    assert.equal(kind('package://pkg/meshes/A.STL'), 'case');
+    assert.equal(kind('model://model_x/meshes/e.dae'), 'exact');
+    assert.equal(kind('package://renamed/x/model_x/meshes/e.dae'), 'tail');
+    assert.equal(kind('package://pkg/old/e3.dae'), undefined);
+    assert.equal(resolveFileMatch('package://pkg/old/g.obj', new Map([['/x/g.obj', { key: 'g' }]]))?.match, 'basename');
+});
 
 // MJCF resolves assets through its <compiler> directories and textual <include>s.
 const { DOMParser } = await import('linkedom');

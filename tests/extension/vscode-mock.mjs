@@ -119,13 +119,19 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         },
         Diagnostic: class { constructor(range, message, severity) { Object.assign(this, { range, message, severity }); } },
         DiagnosticSeverity: { Error: 0, Warning: 1 },
+        CodeAction: class { constructor(title, kind) { Object.assign(this, { title, kind }); } },
+        CodeActionKind: { QuickFix: 'quickfix' },
         env: { language: 'zh-tw' },
         languages: {
             createDiagnosticCollection: () => ({
                 clear: () => state.diagnostics.clear(),
                 set: (uri, list) => state.diagnostics.set(uri.fsPath, list),
                 dispose() {}
-            })
+            }),
+            registerCodeActionsProvider: (selector, provider) => {
+                state.codeActions = provider;
+                return { dispose() {} };
+            }
         },
         workspace: {
             getWorkspaceFolder: () => ({ uri: { fsPath: workspace } }),

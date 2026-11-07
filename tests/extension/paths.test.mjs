@@ -109,6 +109,44 @@ test('a relative packages entry starts at the workspace folder, and editing the 
     assert.ok(reload);
 });
 
+async function guessWorkspace() {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-guess-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    write(path.join(ws, 'src/pkg/meshes/arm.stl'));
+    write(path.join(ws, 'src/pkg/meshes/hand.stl'));
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf');
+    write(primary, '<robot name="r">\n<link name="a"><visual><geometry><mesh filename="package://pkg/meshes/ARM.STL"/></geometry></visual></link>\n'
+        + '<link name="b"><visual><geometry><mesh filename="package://pkg/old/hand.stl"/></geometry></visual></link>\n</robot>\n');
+    const { env } = await startIn(ws, primary, {});
+    env.state.panels[0].receive({
+        type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [],
+        guessedMeshes: [
+            { path: 'pkg/meshes/ARM.STL', resolved: '/pkg/meshes/arm.stl', match: 'case' },
+            { path: 'pkg/old/hand.stl', resolved: '/pkg/meshes/hand.stl', match: 'basename' }
+        ]
+    });
+    const diagnostics = await waitFor(() => env.state.diagnostics.get(primary)?.length === 2 && env.state.diagnostics.get(primary));
+    return { env, primary, diagnostics };
+}
+
+test('a mesh found only by ignoring case is a warning on its reference, with a quick fix', async () => {
+    const { env, primary, diagnostics } = await guessWorkspace();
+    const warning = diagnostics.find(d => /case/i.test(d.message));
+    assert.equal(warning.severity, 1);
+    const line = fs.readFileSync(primary, 'utf8').split('\n')[warning.range.start.line];
+    assert.equal(line.slice(warning.range.start.character, warning.range.end.character), 'package://pkg/meshes/ARM.STL');
+    const doc = await env.vscode.workspace.openTextDocument(primary);
+    const [fix] = env.state.codeActions.provideCodeActions(doc, warning.range, { diagnostics: [warning] });
+    assert.equal(fix.edit.edits[0].text, 'package://pkg/meshes/arm.stl');
+});
+
+test('a mesh found only by its file name is a warning naming the file the preview used', async () => {
+    const { diagnostics } = await guessWorkspace();
+    const warning = diagnostics.find(d => d.message.includes('hand.stl') && !/case/i.test(d.message));
+    assert.equal(warning.severity, 1);
+    assert.match(warning.message, /src\/pkg\/meshes\/hand\.stl/);
+});
+
 test('packages referenced from an included file outside every package are sent too', async () => {
     const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-shared-')));
     write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
@@ -132,6 +170,24 @@ test('a relative mesh in an included file resolves from the opened file, as the 
     write(primary, '<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:include filename="inc/arm.xacro"/></robot>');
     const { load } = await startIn(ws, primary, {});
     assert.ok(load.files.some(file => file.path === path.join(ws, 'src/assets/a.stl')), load.files.map(file => file.path).join(', '));
+});
+
+test('a guessed mesh used twice gets one warning per reference, each with its fix', async () => {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-twice-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    write(path.join(ws, 'src/pkg/meshes/Base.STL'));
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf');
+    write(primary, '<robot name="r">\n<link name="a">\n<visual><geometry><mesh filename="package://pkg/meshes/base.stl"/></geometry></visual>\n<collision><geometry><mesh filename="package://pkg/meshes/base.stl"/></geometry></collision>\n</link>\n</robot>\n');
+    const { env } = await startIn(ws, primary, {});
+    const guess = { path: 'pkg/meshes/base.stl', resolved: '/pkg/meshes/Base.STL', match: 'case' };
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [], guessedMeshes: [guess, guess] });
+    const diagnostics = await waitFor(() => env.state.diagnostics.get(primary)?.length && env.state.diagnostics.get(primary));
+    await sleep(100);
+    assert.deepEqual(env.state.diagnostics.get(primary).map(d => d.range.start.line), [2, 3]);
+    const doc = await env.vscode.workspace.openTextDocument(primary);
+    for (const diagnostic of diagnostics) {
+        assert.equal(env.state.codeActions.provideCodeActions(doc, diagnostic.range, { diagnostics: [diagnostic] }).length, 1);
+    }
 });
 
 test('packages setting paths accept ${workspaceFolder:name} and ~', async () => {

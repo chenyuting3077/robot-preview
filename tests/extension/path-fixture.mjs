@@ -37,6 +37,7 @@ export function createPathMatrix() {
 
     write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
     write(path.join(ws, 'src/pkg/meshes/a.stl'));
+    write(path.join(ws, 'src/pkg/meshes/Case.stl'));
     write(path.join(ws, 'src/other/meshes/c.stl'));
     write(path.join(outside, 'd.stl'));
     write(path.join(outside, 'd2.stl'));
@@ -62,15 +63,17 @@ export function createPathMatrix() {
         path.join(outside, 'g.obj'),
         'model://model_x/meshes/e.stl',
         'package://ext_pkg/meshes/f.stl',
-        '$(env PATH_MATRIX_DIR)/h.stl'
+        '$(env PATH_MATRIX_DIR)/h.stl',
+        'package://pkg/meshes/case.STL'
     ];
-    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf');
+    // xacro, because only xacro expands $(env); a plain URDF passes it through.
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf.xacro');
     const links = references.map((filename, i) => `  <link name="l${i}"><visual><geometry><mesh filename="${filename}"/></geometry></visual></link>`);
     const joints = references.slice(1).map((_, i) => `  <joint name="j${i + 1}" type="fixed"><parent link="l0"/><child link="l${i + 1}"/></joint>`);
     // Not meshes: a plugin pointing at a recording and a mesh pointing at a
     // directory must neither be sent nor break the listing.
     const extras = `  <gazebo><plugin name="replay" filename="${path.join(outside, 'recording.bag')}"/></gazebo>\n  <link name="dir"><visual><geometry><mesh filename="${path.join(outside, 'env')}"/></geometry></visual></link>\n  <link name="dae"><visual><geometry><mesh filename="${path.join(outside, 'k.dae')}"/></geometry></visual></link>`;
-    write(primary, `<robot name="r">\n${links.join('\n')}\n${joints.join('\n')}\n${extras}\n</robot>\n`);
+    write(primary, `<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro">\n${links.join('\n')}\n${joints.join('\n')}\n${extras}\n</robot>\n`);
 
     return {
         root,

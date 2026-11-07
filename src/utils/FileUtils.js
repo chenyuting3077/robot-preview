@@ -65,18 +65,18 @@ function addCandidate(candidates, path) {
     });
 }
 
-function getUniqueFileByPredicate(fileMap, predicate) {
-    let matchedFile = null;
+function getUniqueEntryByPredicate(fileMap, predicate) {
+    let matched = null;
     let matchCount = 0;
 
-    for (const [key, file] of fileMap.entries()) {
-        if (predicate(key)) {
-            matchedFile = file;
+    for (const entry of fileMap.entries()) {
+        if (predicate(entry[0])) {
+            matched = entry;
             matchCount++;
         }
     }
 
-    return matchCount === 1 ? matchedFile : null;
+    return matchCount === 1 ? matched : null;
 }
 
 function countMatchingPathTail(leftPath, rightPath, caseSensitive) {
@@ -101,7 +101,7 @@ function countMatchingPathTail(leftPath, rightPath, caseSensitive) {
 function findUniqueFileByLongestPathTail(candidates, fileMap) {
     let bestPathScore = 1; // One segment is only a basename and carries no directory identity.
     let bestCaseScore = 0;
-    const bestFiles = new Set();
+    const bestFiles = new Map();
 
     for (const [key, file] of fileMap.entries()) {
         let pathScore = 0;
@@ -128,17 +128,19 @@ function findUniqueFileByLongestPathTail(candidates, fileMap) {
             bestPathScore = pathScore;
             bestCaseScore = caseScore;
             bestFiles.clear();
-            bestFiles.add(file);
+            bestFiles.set(key, file);
         } else if (
             pathScore === bestPathScore &&
             caseScore === bestCaseScore &&
             pathScore > 1
         ) {
-            bestFiles.add(file);
+            bestFiles.set(key, file);
         }
     }
 
-    return bestFiles.size === 1 ? bestFiles.values().next().value : null;
+    if (bestFiles.size !== 1) return null;
+    const [[key, file]] = bestFiles;
+    return { key, file, exactCase: bestCaseScore === bestPathScore };
 }
 
 /**
@@ -147,6 +149,15 @@ function findUniqueFileByLongestPathTail(candidates, fileMap) {
  * when exactly one file matches.
  */
 export function resolveFileFromMap(path, fileMap, options = {}) {
+    return resolveFileMatch(path, fileMap, options)?.file ?? null;
+}
+
+/**
+ * Like resolveFileFromMap, plus how the file was found: 'exact', 'tail' (the
+ * path ends like a unique file), or the guesses 'case' (only when ignoring
+ * case, which fails on Linux) and 'basename' (only the file name matched).
+ */
+export function resolveFileMatch(path, fileMap, options = {}) {
     if (!path || !fileMap) {
         return null;
     }
@@ -156,9 +167,13 @@ export function resolveFileFromMap(path, fileMap, options = {}) {
     const rawPath = stripBlobPath(path);
 
     addCandidate(candidates, rawPath);
+    if (rawPath.startsWith('file://')) {
+        addCandidate(candidates, rawPath.replace(/^file:\/\/(localhost)?/, ''));
+    }
 
-    if (rawPath.startsWith('package://')) {
-        const packagePath = rawPath.replace(/^package:\/\//, '');
+    // model:// names a Gazebo model directory the way package:// names a package.
+    if (/^(package|model):\/\//.test(rawPath)) {
+        const packagePath = rawPath.replace(/^(package|model):\/\//, '');
         addCandidate(candidates, packagePath);
 
         const parts = packagePath.split('/');
@@ -167,7 +182,7 @@ export function resolveFileFromMap(path, fileMap, options = {}) {
         }
     }
 
-    const normalizedPath = normalizePath(rawPath.replace(/^package:\/\//, ''));
+    const normalizedPath = normalizePath(rawPath.replace(/^(package|model):\/\//, ''));
     const normalizedParts = normalizedPath.split('/');
     if (normalizedParts.length > 1) {
         addCandidate(candidates, normalizedParts.slice(1).join('/'));
@@ -192,24 +207,24 @@ export function resolveFileFromMap(path, fileMap, options = {}) {
 
     for (const candidate of candidates) {
         if (fileMap.has(candidate)) {
-            return fileMap.get(candidate);
+            return { key: candidate, file: fileMap.get(candidate), match: 'exact' };
         }
     }
 
     const normalizedCandidates = new Set(candidates.map(candidate => cleanFilePath(candidate)));
-    const exactNormalizedMatch = getUniqueFileByPredicate(fileMap, key => (
+    const exactNormalizedMatch = getUniqueEntryByPredicate(fileMap, key => (
         normalizedCandidates.has(cleanFilePath(key))
     ));
     if (exactNormalizedMatch) {
-        return exactNormalizedMatch;
+        return { key: exactNormalizedMatch[0], file: exactNormalizedMatch[1], match: 'exact' };
     }
 
     const lowerCandidates = new Set(Array.from(normalizedCandidates, candidate => candidate.toLowerCase()));
-    const exactCaseInsensitiveMatch = getUniqueFileByPredicate(fileMap, key => (
+    const exactCaseInsensitiveMatch = getUniqueEntryByPredicate(fileMap, key => (
         lowerCandidates.has(cleanFilePath(key).toLowerCase())
     ));
     if (exactCaseInsensitiveMatch) {
-        return exactCaseInsensitiveMatch;
+        return { key: exactCaseInsensitiveMatch[0], file: exactCaseInsensitiveMatch[1], match: 'case' };
     }
 
     // A dragged subtree may omit leading package directories. Preserve file
@@ -222,7 +237,7 @@ export function resolveFileFromMap(path, fileMap, options = {}) {
         fileMap
     );
     if (pathTailMatch) {
-        return pathTailMatch;
+        return { key: pathTailMatch.key, file: pathTailMatch.file, match: pathTailMatch.exactCase ? 'tail' : 'case' };
     }
 
     const fileName = cleanFilePath(rawPath).split('/').pop()?.toLowerCase();
@@ -230,9 +245,22 @@ export function resolveFileFromMap(path, fileMap, options = {}) {
         return null;
     }
 
-    return getUniqueFileByPredicate(fileMap, key => (
+    const byName = getUniqueEntryByPredicate(fileMap, key => (
         cleanFilePath(key).split('/').pop()?.toLowerCase() === fileName
     ));
+    return byName ? { key: byName[0], file: byName[1], match: 'basename' } : null;
+}
+
+/**
+ * Resolve a mesh reference, recording guesses ('case', 'basename') in
+ * `guessed` so the extension can warn that ROS would not find the file.
+ */
+export function resolveMeshFile(path, fileMap, baseDir, guessed) {
+    const found = resolveFileMatch(path, fileMap, { baseDir });
+    if (found && guessed && (found.match === 'case' || found.match === 'basename')) {
+        guessed.push({ path, resolved: found.key, match: found.match });
+    }
+    return found?.file ?? null;
 }
 
 export function fileUrlModifier(fileMap, baseDir) {
