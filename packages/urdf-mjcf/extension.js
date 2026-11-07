@@ -1,5 +1,6 @@
 const vscode = require('vscode');
 const path = require('path');
+const os = require('os');
 const fs = require('fs/promises');
 
 const ASSET_RE = /\.(urdf|xacro|xml|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|msh|ya?ml)$/i;
@@ -89,8 +90,23 @@ async function listDir(dir) {
     }
 }
 
+// ${workspaceFolder}, ${workspaceFolder:name}, ${env:VAR} and ~ as in VS Code's
+// own settings; a relative path is taken from the first workspace folder.
+function settingPath(value) {
+    const folders = vscode.workspace.workspaceFolders || [];
+    const first = folders[0]?.uri.fsPath ?? '';
+    const expanded = String(value)
+        .replace(/\$\{workspaceFolder:([^}]+)\}/g, (match, name) => folders.find(folder => folder.name === name)?.uri.fsPath ?? match)
+        .replace(/\$\{workspaceFolder\}/g, first)
+        .replace(/\$\{env:([^}]+)\}/g, (match, name) => process.env[name] ?? '')
+        .replace(/^~(?=$|[\\/])/, os.homedir());
+    return path.resolve(first, expanded);
+}
+
 async function buildPackageIndex() {
     const index = new Map();
+    const configured = vscode.workspace.getConfiguration('robotPreviewUrdf').get('packages') || {};
+    for (const [name, dir] of Object.entries(configured)) index.set(name, settingPath(dir));
     const add = async dir => {
         const name = await readPackageName(dir);
         if (name && !index.has(name)) index.set(name, dir);
@@ -696,7 +712,8 @@ exports.activate = context => {
         vscode.workspace.onDidChangeTextDocument(event => preview.onDocumentChanged(event)),
         vscode.workspace.onDidSaveTextDocument(doc => preview.onDocumentSaved(doc)),
         vscode.workspace.onDidChangeConfiguration(event => {
-            if (event.affectsConfiguration('robotPreviewUrdf.updateOn')) preview.scheduleUpdate();
+            if (event.affectsConfiguration('robotPreviewUrdf.packages')) packageIndex = null;
+            if (event.affectsConfiguration('robotPreviewUrdf.updateOn') || event.affectsConfiguration('robotPreviewUrdf.packages')) preview.scheduleUpdate();
         }),
         vscode.window.onDidChangeTextEditorSelection(event => preview.onSelectionChanged(event))
     );

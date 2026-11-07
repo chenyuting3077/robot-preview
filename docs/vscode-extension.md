@@ -4,7 +4,7 @@
 
 The webview cannot read the disk, so the extension sends files to it. It starts from the nearest ancestor directory containing `package.xml`; without one, the whole workspace folder is used (so the `urdf/` + `meshes/` sibling layout still works). Every `package://NAME/` and `$(find NAME)` found in the sent URDF / Xacro / XML files pulls in package `NAME` as well, recursively.
 
-Packages are looked up in this order, first match wins: `package.xml` anywhere in the workspace, `ROS_PACKAGE_PATH`, `AMENT_PREFIX_PATH`, then `/opt/ros/*/share`. VS Code only sees `ROS_PACKAGE_PATH` / `AMENT_PREFIX_PATH` when launched from a sourced shell; `/opt/ros` is scanned so installed packages resolve either way. A package that cannot be found produces a warning.
+Packages are looked up in this order, first match wins: the `robotPreviewUrdf.packages` setting, `package.xml` anywhere in the workspace, `ROS_PACKAGE_PATH`, `AMENT_PREFIX_PATH`, then `/opt/ros/*/share`. VS Code only sees `ROS_PACKAGE_PATH` / `AMENT_PREFIX_PATH` when launched from a sourced shell; `/opt/ros` is scanned so installed packages resolve either way. The setting comes first because it is the only fix for a package with no `package.xml` (CAD exporter output) or one shadowed by another checkout. A package that cannot be found produces a warning.
 
 Limits:
 

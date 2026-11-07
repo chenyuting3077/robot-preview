@@ -109,6 +109,14 @@
             "Rebuild the preview only when a file is saved."
           ],
           "description": "When the preview picks up edits made in VS Code. Changes made outside VS Code always update immediately."
+        },
+        "robotPreviewUrdf.packages": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "markdownDescription": "Package name to folder, for `package://` and `$(find)` packages without a `package.xml` in the workspace or a sourced ROS environment. Takes priority over automatic discovery. Supports `${workspaceFolder}`, `${workspaceFolder:name}`, `${env:VAR}` and `~`; relative paths start at the first workspace folder."
         }
       }
     },

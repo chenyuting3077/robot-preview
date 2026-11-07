@@ -129,6 +129,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         },
         workspace: {
             getWorkspaceFolder: () => ({ uri: { fsPath: workspace } }),
+            workspaceFolders: [{ uri: { fsPath: workspace }, name: path.basename(workspace) }],
             findFiles: async () => (await fsp.readdir(workspace, { recursive: true }))
                 .filter(file => file.endsWith('package.xml'))
                 .map(file => ({ fsPath: path.join(workspace, file) })),
