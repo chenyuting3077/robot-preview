@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { URDFAdapter } from '../adapters/URDFAdapter.js';
 import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
-import { resolveFileFromMap, resolveMeshFile, fileUrlModifier } from '../utils/FileUtils.js';
+import { resolveFileFromMap, resolveMeshFile, fileUrlModifier, directoryOf } from '../utils/FileUtils.js';
 import { trackMeshLoads, cachedMeshParse } from '../utils/MeshLoader.js';
 
 export class ModelLoaderFactory {
@@ -114,7 +114,7 @@ export class ModelLoaderFactory {
             case 'urdf':
                 return await this.loadURDF(content, fileName, fileMap, file);
             case 'xacro':
-                return await this.loadXacro(content, fileName, fileMap, file, xacroArgs, env);
+                return await XacroAdapter.parse(content, fileName, fileMap, { args: xacroArgs, env });
             case 'mjcf':
                 return await this.loadMJCF(content, fileMap, basePath);
             default:
@@ -147,7 +147,7 @@ export class ModelLoaderFactory {
 
             // Extract directory where URDF file is located (workingPath)
             // fileName might be "e3.urdf" or "e3_v2/e3.urdf"
-            const urdfDir = fileName.includes('/') ? fileName.substring(0, fileName.lastIndexOf('/') + 1) : '';
+            const urdfDir = directoryOf(fileName);
 
             const guessedMeshes = [];
 
@@ -178,7 +178,7 @@ export class ModelLoaderFactory {
                 // Custom loadMeshCb to load mesh files from fileMap
                 loader.loadMeshCb = (path, manager, done) => {
                     // Use Promise but don't await, let loading happen in background
-                    this.findFileInMapByPath(path, fileMap, urdfDir, guessedMeshes).then(file => {
+                    Promise.resolve(resolveMeshFile(path, fileMap, urdfDir, guessedMeshes)).then(file => {
                         if (file) {
                             // Directly use Three.js loaders to load mesh file
 
@@ -232,23 +232,6 @@ export class ModelLoaderFactory {
                 reject(new Error('URDF loading failed: ' + (error.message || error)));
             });
         });
-    }
-
-    /**
-     * Load Xacro
-     * @param {string} content - Xacro content
-     * @param {string} fileName - Xacro file key in fileMap (includes path)
-     * @param {Map} fileMap - File map
-     * @param {File} file - Original file object (optional)
-     */
-    static async loadXacro(content, fileName, fileMap = null, file = null, xacroArgs = {}, env = {}) {
-        try {
-            const model = await XacroAdapter.parse(content, fileName, fileMap, file, xacroArgs, { env });
-            return model;
-        } catch (error) {
-            console.error('Xacro parsing error:', error);
-            throw Object.assign(new Error('Xacro parsing failed: ' + error.message), { location: error.location });
-        }
     }
 
     /**
@@ -374,17 +357,6 @@ export class ModelLoaderFactory {
                 return acc;
             }, [])
             .join('/');
-    }
-
-    /**
-     * Find file in fileMap based on URDF directory
-     * @param {string} path - File path (path passed by urdf-loader)
-     * @param {Map} fileMap - File map
-     * @param {string} urdfDir - Directory where URDF file is located
-     * @returns {Promise<File|null>}
-     */
-    static async findFileInMapByPath(path, fileMap, urdfDir, guessed) {
-        return resolveMeshFile(path, fileMap, urdfDir, guessed);
     }
 
     /**

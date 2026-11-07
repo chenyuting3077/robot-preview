@@ -14,6 +14,8 @@ export function readFileContent(file) {
     });
 }
 
+export const directoryOf = fileName => (fileName.includes('/') ? fileName.slice(0, fileName.lastIndexOf('/') + 1) : '');
+
 /**
  * Normalize path
  */

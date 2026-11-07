@@ -100,8 +100,6 @@ async function listDir(dir) {
     }
 }
 
-// ${workspaceFolder}, ${workspaceFolder:name}, ${env:VAR} and ~ as in VS Code's
-// own settings; a relative path is taken from the first workspace folder.
 function settingPath(value) {
     const folders = vscode.workspace.workspaceFolders || [];
     const first = folders[0]?.uri.fsPath ?? '';
@@ -137,9 +135,11 @@ async function buildPackageIndex() {
     return index;
 }
 
-// Gazebo looks up model://NAME as NAME/ under each of these, Harmonic first.
+// Where Gazebo looks up model://NAME as NAME/, Harmonic first.
+const GAZEBO_MODEL_VARIABLES = ['GZ_SIM_RESOURCE_PATH', 'IGN_GAZEBO_RESOURCE_PATH', 'GAZEBO_MODEL_PATH'];
+
 async function findModel(name) {
-    const dirs = ['GZ_SIM_RESOURCE_PATH', 'IGN_GAZEBO_RESOURCE_PATH', 'GAZEBO_MODEL_PATH']
+    const dirs = GAZEBO_MODEL_VARIABLES
         .flatMap(variable => (process.env[variable] || '').split(path.delimiter).filter(Boolean));
     dirs.push(path.join(os.homedir(), '.gazebo', 'models'));
     for (const dir of dirs) {
@@ -209,17 +209,24 @@ async function modelInfo(fsPath, version, live = true) {
 // also what the webview's resolver gets from an absolute or file:// reference.
 const absoluteKey = fsPath => '/' + fsPath.split(path.sep).join('/').replace(/^\/+/, '');
 
-// Candidate paths for a local reference, literal first: a name may contain a
-// real '%', so the URL-decoded form is only a fallback.
+const hasExpression = text => /\$[({]/.test(text);
+
+function fromFileUrl(value) {
+    try { return url.fileURLToPath(value); } catch { return null; }
+}
+
+// A literal '%' is legal in a file name, so the URL-decoded form comes second.
 function localCandidates(ref, fromFiles) {
     if (/^(package|model):\/\//.test(ref)) return [];
     const expanded = ref
         .replace(/\$\(optenv\s+([\w]+)(?:\s+([^)]*))?\)/g, (match, name, fallback = '') => process.env[name] ?? fallback)
         .replace(/\$\(env\s+([\w]+)\)/g, (match, name) => process.env[name] ?? match);
-    if (/\$[({]/.test(expanded)) return [];
+    if (hasExpression(expanded)) return [];
     const forms = [];
     if (expanded.startsWith('file://')) {
-        try { forms.push(url.fileURLToPath(expanded)); } catch { return []; }
+        const file = fromFileUrl(expanded);
+        if (!file) return [];
+        forms.push(file);
     } else {
         forms.push(expanded);
         try { forms.push(decodeURIComponent(expanded)); } catch {}
@@ -317,12 +324,12 @@ async function listFiles(fileUri, live) {
     return { entries, paths, packages, models, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes, env };
 }
 
-// Lists every place searched and flags unset variables: VS Code started from
-// the dock rather than a sourced shell sees no ROS environment at all.
+// VS Code started from the dock rather than a sourced shell sees no ROS
+// environment, so unset variables are named.
 function missingPackageMessage(name, isModel) {
     const variable = name => (process.env[name] ? name : `${name} (not set)`);
     if (isModel) {
-        return `Gazebo model "${name}" not found. Searched: ${['GZ_SIM_RESOURCE_PATH', 'IGN_GAZEBO_RESOURCE_PATH', 'GAZEBO_MODEL_PATH'].map(variable).join(', ')}, ~/.gazebo/models.`;
+        return `Gazebo model "${name}" not found. Searched: ${GAZEBO_MODEL_VARIABLES.map(variable).join(', ')}, ~/.gazebo/models.`;
     }
     const sourced = process.env.ROS_PACKAGE_PATH || process.env.AMENT_PREFIX_PATH;
     return `ROS package "${name}" not found. Searched: robotPreviewUrdf.packages, package.xml in the workspace, ${variable('ROS_PACKAGE_PATH')}, ${variable('AMENT_PREFIX_PATH')}, /opt/ros/*/share.`
@@ -331,8 +338,6 @@ function missingPackageMessage(name, isModel) {
 
 const fixKey = (fsPath, range) => `${fsPath}:${range.start.line}:${range.start.character}`;
 
-// Rewrites the trailing segments of a reference that equal the resolved file's
-// ignoring case, keeping the reference's own prefix (package://, ../, ...).
 function withCaseOf(reference, resolved) {
     const parts = reference.split('/');
     const actual = resolved.split('/');
@@ -549,18 +554,14 @@ class Preview {
         });
     }
 
-    // Where a reference points on disk, or null when only xacro can tell
-    // (an expression) or its package / model is unknown.
     expectedPath({ value }) {
-        if (/\$[({]/.test(value)) return null;
+        if (hasExpression(value)) return null;
         const scheme = value.match(/^(package|model):\/\/([^/]+)\/(.*)$/);
         if (scheme) {
             const dir = (scheme[1] === 'model' ? this.listing.models : this.listing.packages).get(scheme[2]);
             return dir ? path.join(dir, scheme[3]) : null;
         }
-        if (value.startsWith('file://')) {
-            try { return url.fileURLToPath(value); } catch { return null; }
-        }
+        if (value.startsWith('file://')) return fromFileUrl(value);
         // The webview resolves a relative mesh from the opened file, wherever it is written.
         return path.resolve(path.dirname(this.primary.fsPath), value);
     }
@@ -572,7 +573,7 @@ class Preview {
     }
 
     async findPackageReferences(name, isModel) {
-        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const escaped = escapeRegex(name);
         const re = isModel ? new RegExp(`model://(${escaped})(?=/)`, 'g') : new RegExp(`package://(${escaped})(?=/)|\\$\\(find\\s+(${escaped})\\)`, 'g');
         const found = [];
         for (const fsPath of this.listing.paths) {
@@ -718,7 +719,6 @@ class Preview {
             if (primary !== this.primary || !this.panel) return;
             this.listing = listing;
             this.watchRoots(listing.roots);
-
 
             const changed = Array.from(listing.entries).filter(([key, entry]) => full || this.sent.get(key) !== entry.version);
             const removed = full ? [] : Array.from(this.sent.keys()).filter(key => !listing.entries.has(key));

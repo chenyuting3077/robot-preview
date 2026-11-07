@@ -13,7 +13,7 @@ const { XacroAdapter } = await import('../../src/adapters/XacroAdapter.js');
 
 const robot = body => `<?xml version="1.0"?>\n<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro">\n${body}\n</robot>`;
 const files = entries => new Map(Object.entries(entries).map(([key, text]) => [key, new File([text], key.split('/').pop())]));
-const expand = (body, { extra = {}, args = {}, env = {} } = {}) => XacroAdapter.expand(robot(body), '/pkg/urdf/robot.urdf.xacro', files({ '/pkg/urdf/robot.urdf.xacro': robot(body), ...extra }), args, { env });
+const expand = (body, { extra = {}, args = {}, env = {} } = {}) => XacroAdapter.expand(robot(body), '/pkg/urdf/robot.urdf.xacro', files({ '/pkg/urdf/robot.urdf.xacro': robot(body), ...extra }), { args, env });
 const linkName = urdf => urdf.match(/<link name="([^"]*)"/)?.[1];
 
 test('plain xacro expands', async () => {

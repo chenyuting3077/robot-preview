@@ -6,9 +6,7 @@
  */
 import { XacroParser } from 'xacro-parser';
 import yaml from 'js-yaml';
-import { URDFAdapter } from './URDFAdapter.js';
-import { resolveFileFromMap, resolveFileMatch, resolveMeshFile, fileUrlModifier, cleanFilePath } from '../utils/FileUtils.js';
-import { trackMeshLoads } from '../utils/MeshLoader.js';
+import { resolveFileMatch, cleanFilePath, directoryOf } from '../utils/FileUtils.js';
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
 
 // ROS xacro's yaml unit tags, converted to radians and metres.
@@ -103,19 +101,13 @@ export class XacroAdapter {
      * Expand xacro to URDF text, before anything the viewer strips for display.
      * @returns {Promise<string>}
      */
-    static async expand(xacroContent, fileName, fileMap = null, userArgs = {}, { env = {} } = {}) {
-        // Create xacro parser
+    static async expand(xacroContent, fileName, fileMap = null, { args = {}, env = {} } = {}) {
         const parser = new XacroParser();
-
-        // Configure parser for ROS Jade and later (default settings)
+        // ROS Jade and later semantics.
         parser.inOrder = true;
         parser.requirePrefix = true;
         parser.localProperties = true;
-
-        // Set working path (directory where xacro file is located)
-        const workingPath = fileName.includes('/')
-            ? fileName.substring(0, fileName.lastIndexOf('/') + 1)
-            : '';
+        const workingPath = directoryOf(fileName);
         parser.workingPath = workingPath;
         // The webview has no process.env; the extension sends the variables
         // the model files reference.
@@ -137,12 +129,8 @@ export class XacroAdapter {
             return null;
         };
 
-
-        // Extract and set xacro arguments with their default values
-        // Also add common ROS arguments that might be used without definition
+        // DEBUG and SELF_COLLIDE are used without a declaration by older ROS models.
         const xacroArgs = this.extractXacroArguments(xacroContent);
-
-        // Add common ROS arguments with sensible defaults if not already defined
         if (!xacroArgs.hasOwnProperty('DEBUG')) {
             xacroArgs.DEBUG = 'false';
         }
@@ -150,14 +138,12 @@ export class XacroAdapter {
             xacroArgs.SELF_COLLIDE = 'false';
         }
 
-        parser.arguments = { ...xacroArgs, ...userArgs };
+        parser.arguments = { ...xacroArgs, ...args };
 
-        // load_yaml is synchronous inside an expression, which is why upstream
-        // xacro-parser lacks it (issue #91); every yaml the extension sent is
-        // read up front instead. Relative paths start at the file being
-        // processed, as in ROS xacro.
-        // Read only once some file calls load_yaml: a package often carries
-        // many config yaml files and this runs on every keystroke.
+        // load_yaml is synchronous inside an expression (why upstream lacks it,
+        // issue #91), so the yaml files are read beforehand, and only once some
+        // file calls it: a package carries many config yaml files and this runs
+        // on every keystroke.
         const yamlTexts = new Map();
         const readYamlOnce = async text => {
             if (yamlTexts.size || !text.includes('__load_yaml__')) return text;
@@ -194,14 +180,12 @@ export class XacroAdapter {
         const renameLoadYaml = text => rewritePythonExpressions(text.replace(/\b(?:xacro\.)?load_yaml\s*\(/g, '__load_yaml__('));
         xacroContent = await readYamlOnce(renameLoadYaml(xacroContent));
 
-        // If fileMap provided, setup custom file loader
         if (fileMap) {
             parser.getFileContents = async (path) => {
                 return readYamlOnce(renameLoadYaml(await this.loadFileFromMap(path, fileMap, workingPath)));
             };
         }
 
-        // Parse xacro to URDF XML
         let urdfXML;
         try {
             urdfXML = await parser.parse(xacroContent);
@@ -210,143 +194,27 @@ export class XacroAdapter {
             throw Object.assign(new Error(yamlError.message), { location: yamlError.location });
         }
 
-        // Convert XMLDocument to string
-        const serializer = new XMLSerializer();
-        let urdfString = serializer.serializeToString(urdfXML);
-
-        // Clean up the XML string - remove empty xmlns attributes that might cause issues
-        urdfString = urdfString.replace(/\sxmlns=""/g, '');
-        return urdfString;
+        return new XMLSerializer().serializeToString(urdfXML).replace(/\sxmlns=""/g, '');
     }
 
     /**
-     * Parse xacro content and convert to unified model
-     * @param {string} xacroContent - Xacro file content
-     * @param {string} fileName - Xacro file name (for working path)
-     * @param {Map} fileMap - File map (path -> File object)
-     * @param {File} file - Original file object (optional)
-     * @returns {Promise<UnifiedRobotModel>}
+     * Expand xacro and load it as a model. <gazebo>, <transmission> and empty
+     * geometry are stripped for urdf-loader; expandedUrdf keeps the full text
+     * for export.
      */
-    static async parse(xacroContent, fileName, fileMap = null, file = null, userArgs = {}, { env = {} } = {}) {
+    static async parse(xacroContent, fileName, fileMap = null, { args = {}, env = {} } = {}) {
         try {
-            const urdfString = await this.expand(xacroContent, fileName, fileMap, userArgs, { env });
-            const workingPath = fileName.includes('/')
-                ? fileName.substring(0, fileName.lastIndexOf('/') + 1)
-                : '';
-            const serializer = new XMLSerializer();
-
-            // Re-parse the URDF string with DOMParser to create a clean XMLDocument
-            // This removes any xacro-specific nodes that urdf-loader might not handle
-            const domParser = new DOMParser();
-            const cleanUrdfXML = domParser.parseFromString(urdfString, 'text/xml');
-
-            // Check for parsing errors
-            const parseError = cleanUrdfXML.querySelector('parsererror');
-            if (parseError) {
-                console.error('[XacroAdapter] XML parsing error:', parseError.textContent);
-                throw new Error('Generated URDF has invalid XML: ' + parseError.textContent);
-            }
-
-            // Remove problematic elements that urdf-loader might not handle well
-            // Remove gazebo elements (plugins, sensors, etc.)
-            const gazeboElements = cleanUrdfXML.querySelectorAll('gazebo');
-            gazeboElements.forEach(el => el.parentNode?.removeChild(el));
-
-            // Remove transmission elements (these are for Gazebo/ROS control)
-            const transmissionElements = cleanUrdfXML.querySelectorAll('transmission');
-            transmissionElements.forEach(el => el.parentNode?.removeChild(el));
-
-            // Remove visual/collision elements with empty geometry tags
-            this.removeEmptyGeometry(cleanUrdfXML);
-
-            // Clean up empty text nodes and comments that might cause issues
-            this.cleanXMLNodes(cleanUrdfXML.documentElement);
-
-            // Convert the clean XMLDocument back to string for URDFLoader
-            const finalUrdfString = serializer.serializeToString(cleanUrdfXML);
-
-            // Now use existing URDF loading infrastructure
-            // Import URDFLoader dynamically
-            const urdfModule = await import('urdf-loader');
-            const URDFLoader = urdfModule.URDFLoader || urdfModule.default || urdfModule;
-
-            return new Promise((resolve, reject) => {
-                const loader = new URDFLoader();
-                loader.parseCollision = true;
-                const guessedMeshes = [];
-
-                // Extract directory where URDF file is located
-                const urdfDir = workingPath;
-
-                // If file map provided, setup resource loader (same as URDF loading)
-                if (fileMap) {
-                    // Parse URDF content, find all used package names
-                    const packages = this.extractPackagesFromURDF(finalUrdfString);
-
-                    // Build package map
-                    const packageMap = {};
-                    packages.forEach(pkg => {
-                        packageMap[pkg] = pkg;
-                    });
-                    packageMap[''] = '';
-
-                    loader.packages = packageMap;
-
-                    loader.manager.setURLModifier(fileUrlModifier(fileMap, urdfDir));
-
-                    // Custom loadMeshCb (same as URDF loading)
-                    loader.loadMeshCb = (path, manager, done) => {
-                        this.findFileInMapByPath(path, fileMap, urdfDir, guessedMeshes).then(file => {
-                            if (file) {
-                                const ext = (file.name || path).toLowerCase().split('.').pop();
-                                ModelLoaderFactory.loadMeshFileAsync(file, ext, manager).then(meshObject => {
-                                    if (meshObject) {
-                                        done(meshObject, null);
-                                    } else {
-                                        done(null, new Error(`Failed to load mesh file: ${path}`));
-                                    }
-                                }).catch(err => {
-                                    console.error(`Failed to load mesh: ${path}`, err);
-                                    done(null, err);
-                                });
-                            } else {
-                                done(null, new Error(`Mesh not found: ${path}`));
-                            }
-                        }).catch(error => {
-                            console.error(`Failed to find file: ${path}`, error);
-                            done(null, new Error(`Mesh not found: ${path}`));
-                        });
-                    };
-                }
-
-                // Create temporary URL for URDF content
-                const blob = new Blob([finalUrdfString], { type: 'text/xml' });
-                const url = URL.createObjectURL(blob);
-                const meshes = trackMeshLoads(loader);
-
-                loader.load(url, (robot) => {
-                    URL.revokeObjectURL(url);
-
-                    // Convert to unified model using URDFAdapter
-                    try {
-                        const model = URDFAdapter.convert(robot, finalUrdfString);
-                        model.meshesReady = meshes.ready();
-                        model.missingMeshes = meshes.missing;
-                        model.guessedMeshes = guessedMeshes;
-                        model.expandedUrdf = urdfString;
-                        resolve(model);
-                    } catch (error) {
-                        console.error('[XacroAdapter] URDF conversion error:', error);
-                        reject(new Error('URDF conversion failed: ' + error.message));
-                    }
-                }, undefined, (error) => {
-                    URL.revokeObjectURL(url);
-                    console.error('[XacroAdapter] URDF loading error:', error);
-                    reject(new Error('URDF loading failed: ' + (error.message || error)));
-                });
-            });
+            const urdfString = await this.expand(xacroContent, fileName, fileMap, { args, env });
+            const doc = new DOMParser().parseFromString(urdfString, 'text/xml');
+            const parseError = doc.querySelector('parsererror');
+            if (parseError) throw new Error('Generated URDF has invalid XML: ' + parseError.textContent);
+            doc.querySelectorAll('gazebo, transmission').forEach(el => el.parentNode?.removeChild(el));
+            this.removeEmptyGeometry(doc);
+            this.cleanXMLNodes(doc.documentElement);
+            const model = await ModelLoaderFactory.loadURDF(new XMLSerializer().serializeToString(doc), fileName, fileMap);
+            model.expandedUrdf = urdfString;
+            return model;
         } catch (error) {
-            console.error('[XacroAdapter] Xacro parsing error:', error);
             throw Object.assign(new Error('Xacro parsing failed: ' + error.message), { location: error.location });
         }
     }
@@ -462,32 +330,6 @@ export class XacroAdapter {
         nodesToRemove.forEach(node => {
             element.removeChild(node);
         });
-    }
-
-    /**
-     * Extract package names from URDF content
-     * @param {string} urdfContent - URDF content
-     * @returns {Set<string>}
-     */
-    static extractPackagesFromURDF(urdfContent) {
-        const packages = new Set();
-        const packageRegex = /package:\/\/([^\/]+)/g;
-        let match;
-        while ((match = packageRegex.exec(urdfContent)) !== null) {
-            packages.add(match[1]);
-        }
-        return packages;
-    }
-
-    /**
-     * Find file in fileMap by path
-     * @param {string} path - File path
-     * @param {Map} fileMap - File map
-     * @param {string} urdfDir - URDF directory
-     * @returns {Promise<File|null>}
-     */
-    static async findFileInMapByPath(path, fileMap, urdfDir, guessed) {
-        return resolveMeshFile(path, fileMap, urdfDir, guessed);
     }
 
     /**

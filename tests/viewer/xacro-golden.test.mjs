@@ -65,6 +65,6 @@ function assertSameUrdf(actual, expected) {
 test('UR5e from ur_description 4.4.1 expands like ROS 2 xacro', async () => {
     const files = packageFiles('ur_description');
     const primary = '/ur_description/urdf/ur.urdf.xacro';
-    const urdf = await XacroAdapter.expand(await files.get(primary).text(), primary, files, { ur_type: 'ur5e', name: 'ur5e' });
+    const urdf = await XacroAdapter.expand(await files.get(primary).text(), primary, files, { args: { ur_type: 'ur5e', name: 'ur5e' } });
     assertSameUrdf(urdf, fs.readFileSync(path.join(fixtures, 'ur5e.urdf'), 'utf8'));
 });
