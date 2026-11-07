@@ -38,6 +38,23 @@ Display toggles, up axis, angle unit and panel visibility are stored in the exte
 
 The viewer UI follows VS Code's theme and display language. `zh-TW`, `zh-HK` and `zh-Hant` show Traditional Chinese, other `zh-*` Simplified Chinese, everything else English.
 
+## Xacro compatibility
+
+Expansion uses xacro-parser 0.3.11 with a local patch (`patches/xacro-parser@0.3.11.patch`), checked against ROS 2 xacro's own output for the UR5e (`tests/fixtures/xacro/`). The patch fixes behaviour where xacro-parser differs from ROS xacro; each item was needed for `ur_description`:
+
+- Child property scopes inherit from their parent instead of copying it, so a `scope="parent"` property set later is still visible in the macro body.
+- Macro defaults `name:=^` and `name:=^|default` take the caller's property.
+- `True` / `False` are booleans, `'true'`/`'True'`/`'false'`/`'False'` strings read as booleans in expressions, and booleans print as `True` / `False`. The earlier workaround defined them as the strings `"True"` / `"False"`, which made `xacro:if value="False"` and `x if False else y` take the true branch.
+- Dictionaries (from `load_yaml`) survive substitution into an expression; xacro-parser inlined them as `[object Object]`.
+- Commas split tokens, so `f(a, b)` substitutes `a`.
+- The parser exposes the directory of the file being processed, for `$(dirname)` and relative `load_yaml` paths.
+
+`load_yaml` is missing upstream because an expression cannot wait for a file read ([issue #91](https://github.com/gkjohnson/xacro-parser/issues/91)); here every `.yaml` the extension sent is read before expansion. Unit tags (`!degrees`, `!millimeters`, ...) follow ROS xacro. Python's `a if c else b` and `d['k']` are rewritten before parsing because xacro-parser only handles a lookup at the end of an expression and expr-eval's `[]` turns a string key into index 0.
+
+`$(env)` / `$(optenv)` values come from the extension, which sends only the variables the model files reference: the webview has no `process.env`, and the full environment can contain tokens.
+
+`<xacro:arg>` defaults containing `$(...)` or `${...}` are left to the parser to evaluate; prefilling them as text (the previous behaviour) passed `$(find x)` through verbatim, and an empty default became `false`.
+
 ## Content Security Policy needs `unsafe-eval`
 
 The webview only loads the extension's own files plus `blob:` / `data:` (meshes and the embedded WASM). `script-src` still includes `'unsafe-eval'` because mujoco-js (embind) builds its bindings with `new Function` when the module starts; without it MuJoCo simulation fails.

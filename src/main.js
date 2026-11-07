@@ -66,6 +66,7 @@ class App {
         this.lastHighlight = null;
         this.lastMissingMeshes = [];
         this.xacroArgs = {};
+        this.env = {};
         this.pendingSyntax = {};
         this.pendingPrimary = null;
         this.pendingIsUpdate = null;
@@ -254,7 +255,7 @@ class App {
 
             const pose = this.isUpdate ? this.poseController.getPose() : null;
             const previousModel = this.currentModel;
-            await this.fileHandler.loadPrimary(primary, { xacroArgs: this.xacroArgs });
+            await this.fileHandler.loadPrimary(primary, { xacroArgs: this.xacroArgs, env: this.env });
             if (!this.lastLoadError) this.showError('');
             if (pose && this.currentModel !== previousModel) this.poseController.applyPose(pose, { source: 'user' });
             if (this.lastHighlight) this.highlightByPattern(this.lastHighlight.kind, this.lastHighlight.pattern);
@@ -268,11 +269,15 @@ class App {
             load: async (message) => {
                 vscode.setState({ sourcePath: message.sourcePath });
                 this.xacroArgs = message.xacroArgs || {};
+                this.env = message.env || {};
                 if (this.lastSettings === null) this.applyPanelSettings(message.settings || {});
                 await this.loadFiles(message, true);
                 if (this.lastSettings === null) this.applySettings(message.settings || {});
             },
-            update: (message) => this.loadFiles(message, false),
+            update: (message) => {
+                if (message.env) this.env = message.env;
+                return this.loadFiles(message, false);
+            },
             exportUrdf: async ({ requestId }) => {
                 vscode.postMessage({ type: 'urdf', requestId, text: this.lastLoadError ? null : this.currentModel?.expandedUrdf ?? null });
             },

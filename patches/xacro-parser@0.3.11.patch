@@ -1,0 +1,327 @@
+diff --git a/src/XacroParser.js b/src/XacroParser.js
+index d67b6771e073f692ec4b8475c52b5b1c5cc22d51..10c6d9a3788a064317583395d318b543bba03d92 100644
+--- a/src/XacroParser.js
++++ b/src/XacroParser.js
+@@ -96,6 +96,9 @@ export class XacroParser {
+                         stack.push(contents);
+ 
+                         const operators = /([()/*+!\-%|&=])+/g;
++                        // Objects (load_yaml dictionaries) cannot be inlined into the expression
++                        // text, so they are passed by placeholder name through the evaluation scope.
++                        const objects = {};
+                         const expr = tokenize(contents)
+                             .map(t => {
+                                 operators.lastIndex = 0;
+@@ -105,9 +108,17 @@ export class XacroParser {
+ 
+                                 if (t in properties) {
+                                     const arg = unpackParams(properties[t], properties);
++                                    if (typeof arg === 'boolean' || /^(?:true|True|false|False)$/.test(arg)) {
++                                        return String(arg === true || /^(?:true|True)$/.test(arg));
++                                    }
+                                     if (!isNumber(arg) && typeof arg !== 'object') {
+                                         return `"${ arg.toString().replace(/\\/g, '\\\\').replace(/"/g, '\\"') }"`;
+                                     } else {
++                                        if (arg !== null && typeof arg === 'object') {
++                                            const name = `__object${ Object.keys(objects).length }__`;
++                                            objects[name] = arg;
++                                            return name;
++                                        }
+                                         return arg;
+                                     }
+                                 } else {
+@@ -132,7 +143,7 @@ export class XacroParser {
+                             return expr;
+                         } else {
+                             const cleanExpr = normalizeExpression(expr);
+-                            return expressionParser.evaluate(cleanExpr, properties);
++                            return expressionParser.evaluate(cleanExpr, Object.assign(Object.create(properties), objects));
+                         }
+                     }
+                 });
+@@ -148,7 +159,7 @@ export class XacroParser {
+                 if (trimmedRes.length === 1) {
+                     return trimmedRes[0];
+                 } else {
+-                    return res.join('');
++                    return res.map(t => (typeof t === 'boolean' ? (t ? 'True' : 'False') : t)).join('');
+                 }
+             }
+ 
+@@ -158,6 +169,9 @@ export class XacroParser {
+                 // fix the escaped dollar signs only at the end to prevent double evaluation and only
+                 // if the value is not an intermediate value like a computed property.
+                 let result = unpackParams(str, allProps);
++                if (typeof result === 'boolean') {
++                    result = result ? 'True' : 'False';
++                }
+                 if (finalValue && typeof result === 'string') {
+                     result = result.replace(/\${2}([({])/g, (val, brace) => `$${ brace }`);
+                 }
+@@ -203,6 +217,10 @@ export class XacroParser {
+                     blockCount++;
+                 } else if (param.type === 'MULTI_BLOCK') {
+                     properties[p] = [...children.filter(c => c.tagName === p)[0].childNodes];
++                } else if (param.inherit && p in ogProperties) {
++                    properties[p] = evaluateAttribute(`${ '${' }${ p }}`, ogProperties);
++                } else if (param.inherit && param.def === null) {
++                    throw new Error(`XacroParser: macro parameter "${ p }" inherits with ^ but the caller defines no "${ p }"`);
+                 } else {
+                     properties[p] = evaluateAttribute(macro.params[p].def, ogProperties);
+                 }
+@@ -241,9 +259,13 @@ export class XacroParser {
+             if (/:?=/.test(param)) {
+                 const [name, def] = param.split(/:?=/);
+ 
+-                // TODO: Support caret and default syntax
+-                if (/^\^/.test(def) || /\|/.test(def)) {
+-                    throw new Error(`XacroParser: ROS Jade pass-through notation not supported in macro defaults: ${ def }`);
++                // name:=^ takes the caller's property of the same name; name:=^|x falls
++                // back to x when the caller has none.
++                if (/^\^/.test(def)) {
++                    obj.name = name;
++                    obj.inherit = true;
++                    obj.def = /^\^\|/.test(def) ? def.substring(2) : null;
++                    return obj;
+                 }
+ 
+                 obj.name = name;
+@@ -392,8 +414,8 @@ export class XacroParser {
+                     let bool = null;
+                     if (!isNaN(parseFloat(value))) {
+                         bool = !!parseFloat(value);
+-                    } else if (value === 'true' || value === 'false') {
+-                        bool = value === 'true';
++                    } else if (/^(?:true|True|false|False)$/.test(value)) {
++                        bool = /^(?:true|True)$/.test(value);
+                     } else {
+                         bool = value;
+                     }
+@@ -422,6 +444,7 @@ export class XacroParser {
+ 
+                     const prevWorkingPath = currWorkingPath;
+                     currWorkingPath = getUrlBase(filePath);
++                    scope.currentWorkingPath = currWorkingPath;
+ 
+                     const includeContent = await loadInclude(filePath);
+                     const childNodes = [...includeContent.children[0].childNodes];
+@@ -430,6 +453,7 @@ export class XacroParser {
+                     }
+ 
+                     currWorkingPath = prevWorkingPath;
++                    scope.currentWorkingPath = currWorkingPath;
+                     return;
+                 }
+                 case 'xacro:arg': {
+@@ -555,7 +579,9 @@ export class XacroParser {
+         const globalMacros = {};
+         const includeMap = {};
+         const argumentDefaults = {};
+-        const globalProperties = { True: 1, False: 0 };
++        // Exposed so $(eval) can see defaults declared in included files.
++        this.argumentDefaults = argumentDefaults;
++        const globalProperties = { True: true, False: false };
+         globalProperties[PARENT_SCOPE] = globalProperties;
+ 
+         const handleRospackCommand = (stem, ...args) => {
+@@ -592,6 +618,8 @@ export class XacroParser {
+         const expressionParser = this.expressionParser;
+         let localProperties = this.localProperties;
+         let currWorkingPath = workingPath;
++        // Exposed so rospackCommands can implement $(dirname) and relative load_yaml paths.
++        this.currentWorkingPath = currWorkingPath;
+         let content = new DOMParser().parseFromString(data, 'text/xml');
+ 
+         if (localProperties && !inOrder) {
+diff --git a/src/utils.js b/src/utils.js
+index a751a7e1234e0cda4d68293042b6f7cc4bb2bb00..ea31d4a099a46099f65cbef808432ea8d8bcbf0f 100644
+--- a/src/utils.js
++++ b/src/utils.js
+@@ -67,12 +67,9 @@ export function isNumber(str) {
+ 
+ // TODO: this needs to tokenize numbers together
+ export function tokenize(str) {
+-    // split text within quotes (', ", `) or operators
+-    const regexp = /(('[^']*?')|("[^"]*?")|(`[^`]*?`)|([()/*+\-%|!&=]+?))/g;
+-    return str
+-        .replace(regexp, m => ` ${ m } `)
+-        .trim()
+-        .split(/\s+/g);
++    // Quoted strings stay whole (they may contain spaces); operators and
++    // commas split; everything else splits on whitespace.
++    return str.match(/'[^']*'|"[^"]*"|`[^`]*`|[()/*+\-%|!&=,]|[^\s()/*+\-%|!&=,'"`]+/g) || [];
+ }
+ 
+ export function normalizeExpression(str) {
+@@ -112,7 +109,9 @@ export function mergePropertySets(...args) {
+ 
+ // Copies a property set and creates a link to the original set as a parent scope
+ export function createNewPropertyScope(properties) {
+-    const res = mergePropertySets(properties);
++    // Inherit instead of copying: ROS xacro looks names up through the parent
++    // scope at use time, so scope="parent" assignments made later are seen.
++    const res = Object.create(properties);
+     res[PARENT_SCOPE] = properties;
+     return res;
+ }
+diff --git a/umd/index.cjs b/umd/index.cjs
+index bcca586f8a6e00c829b93b3a856c742ba07cb9fb..e85e09ba4aec526ae9f88e9d2f03658f95673a18 100644
+--- a/umd/index.cjs
++++ b/umd/index.cjs
+@@ -72,12 +72,9 @@
+ 
+     // TODO: this needs to tokenize numbers together
+     function tokenize(str) {
+-        // split text within quotes (', ", `) or operators
+-        const regexp = /(('[^']*?')|("[^"]*?")|(`[^`]*?`)|([()/*+\-%|!&=]+?))/g;
+-        return str
+-            .replace(regexp, m => ` ${ m } `)
+-            .trim()
+-            .split(/\s+/g);
++        // Quoted strings stay whole (they may contain spaces); operators and
++        // commas split; everything else splits on whitespace.
++        return str.match(/'[^']*'|"[^"]*"|`[^`]*`|[()/*+\-%|!&=,]|[^\s()/*+\-%|!&=,'"`]+/g) || [];
+     }
+ 
+     function normalizeExpression(str) {
+@@ -117,7 +114,9 @@
+ 
+     // Copies a property set and creates a link to the original set as a parent scope
+     function createNewPropertyScope(properties) {
+-        const res = mergePropertySets(properties);
++        // Inherit instead of copying: ROS xacro looks names up through the parent
++        // scope at use time, so scope="parent" assignments made later are seen.
++        const res = Object.create(properties);
+         res[PARENT_SCOPE] = properties;
+         return res;
+     }
+@@ -2162,6 +2161,9 @@
+                             stack.push(contents);
+ 
+                             const operators = /([()/*+!\-%|&=])+/g;
++                            // Objects (load_yaml dictionaries) cannot be inlined into the expression
++                            // text, so they are passed by placeholder name through the evaluation scope.
++                            const objects = {};
+                             const expr = tokenize(contents)
+                                 .map(t => {
+                                     operators.lastIndex = 0;
+@@ -2171,9 +2173,17 @@
+ 
+                                     if (t in properties) {
+                                         const arg = unpackParams(properties[t], properties);
++                                        if (typeof arg === 'boolean' || /^(?:true|True|false|False)$/.test(arg)) {
++                                            return String(arg === true || /^(?:true|True)$/.test(arg));
++                                        }
+                                         if (!isNumber(arg) && typeof arg !== 'object') {
+                                             return `"${ arg.toString().replace(/\\/g, '\\\\').replace(/"/g, '\\"') }"`;
+                                         } else {
++                                            if (arg !== null && typeof arg === 'object') {
++                                                const name = `__object${ Object.keys(objects).length }__`;
++                                                objects[name] = arg;
++                                                return name;
++                                            }
+                                             return arg;
+                                         }
+                                     } else {
+@@ -2198,7 +2208,7 @@
+                                 return expr;
+                             } else {
+                                 const cleanExpr = normalizeExpression(expr);
+-                                return expressionParser.evaluate(cleanExpr, properties);
++                                return expressionParser.evaluate(cleanExpr, Object.assign(Object.create(properties), objects));
+                             }
+                         }
+                     });
+@@ -2214,7 +2224,7 @@
+                     if (trimmedRes.length === 1) {
+                         return trimmedRes[0];
+                     } else {
+-                        return res.join('');
++                        return res.map(t => (typeof t === 'boolean' ? (t ? 'True' : 'False') : t)).join('');
+                     }
+                 }
+ 
+@@ -2224,6 +2234,9 @@
+                     // fix the escaped dollar signs only at the end to prevent double evaluation and only
+                     // if the value is not an intermediate value like a computed property.
+                     let result = unpackParams(str, allProps);
++                    if (typeof result === 'boolean') {
++                        result = result ? 'True' : 'False';
++                    }
+                     if (finalValue && typeof result === 'string') {
+                         result = result.replace(/\${2}([({])/g, (val, brace) => `$${ brace }`);
+                     }
+@@ -2269,6 +2282,10 @@
+                         blockCount++;
+                     } else if (param.type === 'MULTI_BLOCK') {
+                         properties[p] = [...children.filter(c => c.tagName === p)[0].childNodes];
++                    } else if (param.inherit && p in ogProperties) {
++                        properties[p] = evaluateAttribute(`${ '${' }${ p }}`, ogProperties);
++                    } else if (param.inherit && param.def === null) {
++                        throw new Error(`XacroParser: macro parameter "${ p }" inherits with ^ but the caller defines no "${ p }"`);
+                     } else {
+                         properties[p] = evaluateAttribute(macro.params[p].def, ogProperties);
+                     }
+@@ -2307,9 +2324,13 @@
+                 if (/:?=/.test(param)) {
+                     const [name, def] = param.split(/:?=/);
+ 
+-                    // TODO: Support caret and default syntax
+-                    if (/^\^/.test(def) || /\|/.test(def)) {
+-                        throw new Error(`XacroParser: ROS Jade pass-through notation not supported in macro defaults: ${ def }`);
++                    // name:=^ takes the caller's property of the same name; name:=^|x falls
++                    // back to x when the caller has none.
++                    if (/^\^/.test(def)) {
++                        obj.name = name;
++                        obj.inherit = true;
++                        obj.def = /^\^\|/.test(def) ? def.substring(2) : null;
++                        return obj;
+                     }
+ 
+                     obj.name = name;
+@@ -2458,8 +2479,8 @@
+                         let bool = null;
+                         if (!isNaN(parseFloat(value))) {
+                             bool = !!parseFloat(value);
+-                        } else if (value === 'true' || value === 'false') {
+-                            bool = value === 'true';
++                        } else if (/^(?:true|True|false|False)$/.test(value)) {
++                            bool = /^(?:true|True)$/.test(value);
+                         } else {
+                             bool = value;
+                         }
+@@ -2488,6 +2509,7 @@
+ 
+                         const prevWorkingPath = currWorkingPath;
+                         currWorkingPath = getUrlBase(filePath);
++                        scope.currentWorkingPath = currWorkingPath;
+ 
+                         const includeContent = await loadInclude(filePath);
+                         const childNodes = [...includeContent.children[0].childNodes];
+@@ -2496,6 +2518,7 @@
+                         }
+ 
+                         currWorkingPath = prevWorkingPath;
++                        scope.currentWorkingPath = currWorkingPath;
+                         return;
+                     }
+                     case 'xacro:arg': {
+@@ -2621,7 +2644,9 @@
+             const globalMacros = {};
+             const includeMap = {};
+             const argumentDefaults = {};
+-            const globalProperties = { True: 1, False: 0 };
++            // Exposed so $(eval) can see defaults declared in included files.
++            this.argumentDefaults = argumentDefaults;
++            const globalProperties = { True: true, False: false };
+             globalProperties[PARENT_SCOPE] = globalProperties;
+ 
+             const handleRospackCommand = (stem, ...args) => {
+@@ -2658,6 +2683,7 @@
+             const expressionParser = this.expressionParser;
+             let localProperties = this.localProperties;
+             let currWorkingPath = workingPath;
++            this.currentWorkingPath = currWorkingPath;
+             let content = new DOMParser().parseFromString(data, 'text/xml');
+ 
+             if (localProperties && !inOrder) {

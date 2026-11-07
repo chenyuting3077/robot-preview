@@ -1,32 +1,206 @@
 /**
  * Xacro Adapter
  *
- * Parses ROS Xacro files and converts them to URDF format using xacro-parser.
- *
- * Supported Features:
- * - Property definitions and substitutions (xacro:property)
- * - Macro definitions with parameters (xacro:macro)
- * - Conditional blocks (xacro:if, xacro:unless)
- * - File inclusions (xacro:include) with package:// and relative paths
- * - Python-style boolean constants (True/False)
- * - Arithmetic expressions and property evaluation
- *
- * Compatibility:
- * - ROS Jade and later (inOrder=true, requirePrefix=true, localProperties=true)
- * - Automatically injects True/False constants for compatibility with ROS xacro files
- *
- * Usage:
- * - Upload all related xacro files (main file and included files)
- * - The adapter automatically resolves file inclusions from the uploaded file map
- * - Mesh files are resolved using package:// paths or relative paths
+ * Expands xacro with xacro-parser, patched in patches/xacro-parser@0.3.11.patch
+ * where it differs from ROS xacro; docs/vscode-extension.md lists why.
  */
 import { XacroParser } from 'xacro-parser';
+import yaml from 'js-yaml';
 import { URDFAdapter } from './URDFAdapter.js';
-import { resolveFileFromMap, resolveMeshFile, fileUrlModifier } from '../utils/FileUtils.js';
+import { resolveFileFromMap, resolveFileMatch, resolveMeshFile, fileUrlModifier, cleanFilePath } from '../utils/FileUtils.js';
 import { trackMeshLoads } from '../utils/MeshLoader.js';
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
 
+// ROS xacro's yaml unit tags, converted to radians and metres.
+const YAML_UNITS = {
+    '!radians': 1,
+    '!degrees': Math.PI / 180,
+    '!meters': 1,
+    '!millimeters': 0.001,
+    '!foot': 0.3048,
+    '!inches': 0.0254
+};
+
+// xacro-parser understands neither Python's `a if c else b` nor a `d['k']`
+// lookup that is not at the end of an expression (and expr-eval's [] turns a
+// string key into index 0), so both are rewritten before parsing. A scanner,
+// not a regex: strings and nested parentheses must survive.
+const isQuote = c => c === '"' || c === "'";
+
+function skipString(text, i) {
+    const end = text.indexOf(text[i], i + 1);
+    return end === -1 ? text.length : end + 1;
+}
+
+function closingBracket(text, i) {
+    const open = text[i];
+    const close = open === '(' ? ')' : ']';
+    let depth = 0;
+    for (let j = i; j < text.length; j++) {
+        if (isQuote(text[j])) {
+            j = skipString(text, j) - 1;
+        } else if (text[j] === open) {
+            depth++;
+        } else if (text[j] === close && --depth === 0) {
+            return j;
+        }
+    }
+    return text.length;
+}
+
+function topLevelKeyword(text, word, from = 0) {
+    for (let j = from; j < text.length; j++) {
+        if (isQuote(text[j])) {
+            j = skipString(text, j) - 1;
+        } else if (text[j] === '(' || text[j] === '[') {
+            j = closingBracket(text, j);
+        } else if (text.startsWith(word, j) && !/\w/.test(text[j - 1] ?? '') && !/\w/.test(text[j + word.length] ?? '')) {
+            return j;
+        }
+    }
+    return -1;
+}
+
+function rewriteExpression(text) {
+    let out = '';
+    for (let i = 0; i < text.length;) {
+        if (isQuote(text[i])) {
+            const end = skipString(text, i);
+            out += text.slice(i, end);
+            i = end;
+        } else if (text[i] === '(') {
+            const end = closingBracket(text, i);
+            out += `(${rewriteExpression(text.slice(i + 1, end))})`;
+            i = end + 1;
+        } else if (/[A-Za-z_]/.test(text[i]) && !/[\w.]/.test(text[i - 1] ?? '')) {
+            const name = /^[A-Za-z_]\w*/.exec(text.slice(i))[0];
+            const keys = [];
+            let j = i + name.length;
+            while (text[j] === '[') {
+                const end = closingBracket(text, j);
+                keys.push(rewriteExpression(text.slice(j + 1, end)));
+                j = end + 1;
+            }
+            out += keys.length ? `__read_property__(${name}, ${keys.join(', ')})` : name;
+            i = j;
+        } else {
+            out += text[i++];
+        }
+    }
+    // Lowest precedence and right-associative, so only the top level splits.
+    const at = topLevelKeyword(out, 'if');
+    const elseAt = at === -1 ? -1 : topLevelKeyword(out, 'else', at + 2);
+    if (elseAt === -1) return out;
+    return `(${out.slice(at + 2, elseAt).trim()}) ? (${out.slice(0, at).trim()}) : (${rewriteExpression(out.slice(elseAt + 4)).trim()})`;
+}
+
+function rewritePythonExpressions(text) {
+    return text.replace(/\$\{([^}]*)\}/g, (whole, expression) => `\${${rewriteExpression(expression)}}`);
+}
+
 export class XacroAdapter {
+    /**
+     * Expand xacro to URDF text, before anything the viewer strips for display.
+     * @returns {Promise<string>}
+     */
+    static async expand(xacroContent, fileName, fileMap = null, userArgs = {}, { env = {} } = {}) {
+        // Create xacro parser
+        const parser = new XacroParser();
+
+        // Configure parser for ROS Jade and later (default settings)
+        parser.inOrder = true;
+        parser.requirePrefix = true;
+        parser.localProperties = true;
+
+        // Set working path (directory where xacro file is located)
+        const workingPath = fileName.includes('/')
+            ? fileName.substring(0, fileName.lastIndexOf('/') + 1)
+            : '';
+        parser.workingPath = workingPath;
+        // The webview has no process.env; the extension sends the variables
+        // the model files reference.
+        parser.rospackCommands = (stem, ...args) => {
+            if (stem === 'find') return `/${args[0]}`;
+            if (stem === 'env') {
+                if (env[args[0]] == null) throw new Error(`environment variable '${args[0]}' is not set`);
+                return env[args[0]];
+            }
+            if (stem === 'optenv') return env[args[0]] ?? args.slice(1).join(' ');
+            // currentWorkingPath comes from patches/xacro-parser@0.3.11.patch.
+            if (stem === 'dirname') return parser.currentWorkingPath.replace(/\/+$/, '');
+            if (stem === 'eval') {
+                // argumentDefaults comes from patches/xacro-parser@0.3.11.patch.
+                const scope = Object.fromEntries(Object.entries({ ...parser.argumentDefaults, ...parser.arguments })
+                    .map(([name, value]) => [name, value !== '' && !isNaN(value) ? Number(value) : value]));
+                return String(parser.expressionParser.evaluate(args.join(' '), scope));
+            }
+            return null;
+        };
+
+
+        // Extract and set xacro arguments with their default values
+        // Also add common ROS arguments that might be used without definition
+        const xacroArgs = this.extractXacroArguments(xacroContent);
+
+        // Add common ROS arguments with sensible defaults if not already defined
+        if (!xacroArgs.hasOwnProperty('DEBUG')) {
+            xacroArgs.DEBUG = 'false';
+        }
+        if (!xacroArgs.hasOwnProperty('SELF_COLLIDE')) {
+            xacroArgs.SELF_COLLIDE = 'false';
+        }
+
+        parser.arguments = { ...xacroArgs, ...userArgs };
+
+        // load_yaml is synchronous inside an expression, which is why upstream
+        // xacro-parser lacks it (issue #91); every yaml the extension sent is
+        // read up front instead. Relative paths start at the file being
+        // processed, as in ROS xacro.
+        // Read only once some file calls load_yaml: a package often carries
+        // many config yaml files and this runs on every keystroke.
+        const yamlTexts = new Map();
+        const readYamlOnce = async text => {
+            if (yamlTexts.size || !text.includes('__load_yaml__')) return text;
+            for (const [key, entry] of fileMap || []) {
+                if (/\.ya?ml$/i.test(key)) yamlTexts.set(key, await entry.text());
+            }
+            return text;
+        };
+        const units = Object.entries(YAML_UNITS).map(([tag, factor]) => new yaml.Type(tag, {
+            kind: 'scalar',
+            construct: value => Number(parser.expressionParser.evaluate(String(value))) * factor
+        }));
+        const schema = yaml.DEFAULT_SCHEMA.extend(units);
+        parser.expressionParser.functions.__load_yaml__ = filename => {
+            const target = /^[/\\]/.test(filename) ? filename : `${parser.currentWorkingPath}${filename}`;
+            // Exact only: the mesh resolver's case/tail/basename guesses would
+            // load a different file where ROS fails.
+            const found = resolveFileMatch(cleanFilePath(target), yamlTexts);
+            if (found?.match !== 'exact') throw new Error(`load_yaml: cannot find ${filename}`);
+            return yaml.load(found.file, { schema, filename });
+        };
+        const renameLoadYaml = text => rewritePythonExpressions(text.replace(/\b(?:xacro\.)?load_yaml\s*\(/g, '__load_yaml__('));
+        xacroContent = await readYamlOnce(renameLoadYaml(xacroContent));
+
+        // If fileMap provided, setup custom file loader
+        if (fileMap) {
+            parser.getFileContents = async (path) => {
+                return readYamlOnce(renameLoadYaml(await this.loadFileFromMap(path, fileMap, workingPath)));
+            };
+        }
+
+        // Parse xacro to URDF XML
+        const urdfXML = await parser.parse(xacroContent);
+
+        // Convert XMLDocument to string
+        const serializer = new XMLSerializer();
+        let urdfString = serializer.serializeToString(urdfXML);
+
+        // Clean up the XML string - remove empty xmlns attributes that might cause issues
+        urdfString = urdfString.replace(/\sxmlns=""/g, '');
+        return urdfString;
+    }
+
     /**
      * Parse xacro content and convert to unified model
      * @param {string} xacroContent - Xacro file content
@@ -35,57 +209,13 @@ export class XacroAdapter {
      * @param {File} file - Original file object (optional)
      * @returns {Promise<UnifiedRobotModel>}
      */
-    static async parse(xacroContent, fileName, fileMap = null, file = null, userArgs = {}) {
+    static async parse(xacroContent, fileName, fileMap = null, file = null, userArgs = {}, { env = {} } = {}) {
         try {
-            // Create xacro parser
-            const parser = new XacroParser();
-
-            // Configure parser for ROS Jade and later (default settings)
-            parser.inOrder = true;
-            parser.requirePrefix = true;
-            parser.localProperties = true;
-
-            // Set working path (directory where xacro file is located)
+            const urdfString = await this.expand(xacroContent, fileName, fileMap, userArgs, { env });
             const workingPath = fileName.includes('/')
                 ? fileName.substring(0, fileName.lastIndexOf('/') + 1)
                 : '';
-            parser.workingPath = workingPath;
-            parser.rospackCommands = { find: pkg => `/${pkg}` };
-
-            // Inject Python-style boolean constants as xacro properties
-            // Some xacro files use True/False (capitalized) in conditions
-            xacroContent = this.injectBooleanConstants(xacroContent);
-
-            // Extract and set xacro arguments with their default values
-            // Also add common ROS arguments that might be used without definition
-            const xacroArgs = this.extractXacroArguments(xacroContent);
-
-            // Add common ROS arguments with sensible defaults if not already defined
-            if (!xacroArgs.hasOwnProperty('DEBUG')) {
-                xacroArgs.DEBUG = 'false';
-            }
-            if (!xacroArgs.hasOwnProperty('SELF_COLLIDE')) {
-                xacroArgs.SELF_COLLIDE = 'false';
-            }
-
-            parser.arguments = { ...xacroArgs, ...userArgs };
-
-            // If fileMap provided, setup custom file loader
-            if (fileMap) {
-                parser.getFileContents = async (path) => {
-                    return await this.loadFileFromMap(path, fileMap, workingPath);
-                };
-            }
-
-            // Parse xacro to URDF XML
-            const urdfXML = await parser.parse(xacroContent);
-
-            // Convert XMLDocument to string
             const serializer = new XMLSerializer();
-            let urdfString = serializer.serializeToString(urdfXML);
-
-            // Clean up the XML string - remove empty xmlns attributes that might cause issues
-            urdfString = urdfString.replace(/\sxmlns=""/g, '');
 
             // Re-parse the URDF string with DOMParser to create a clean XMLDocument
             // This removes any xacro-specific nodes that urdf-loader might not handle
@@ -343,36 +473,6 @@ export class XacroAdapter {
     }
 
     /**
-     * Inject Python-style boolean constants (True/False) into xacro content
-     * Some xacro files use capitalized True/False in conditional expressions
-     * The parameters are passed as strings ("True", "False") but compared to constants
-     * We define the constants to match the string values for comparison to work
-     * @param {string} xacroContent - Original xacro content
-     * @returns {string} - Modified xacro content with boolean constants defined
-     */
-    static injectBooleanConstants(xacroContent) {
-        // Find the robot tag opening
-        const robotTagMatch = xacroContent.match(/(<robot[^>]*>)/);
-        if (!robotTagMatch) {
-            return xacroContent;
-        }
-
-        // Define True/False as string properties for comparison
-        // When mirror_dae="True" is passed, it becomes the string "True"
-        // We want ${mirror_dae == True} to work, so True must also be "True"
-        const booleanProperties = `
-    <!-- Injected by XacroAdapter: Python-style boolean constants -->
-    <xacro:property name="True" value="True"/>
-    <xacro:property name="False" value="False"/>
-`;
-
-        const insertPosition = robotTagMatch.index + robotTagMatch[0].length;
-        return xacroContent.substring(0, insertPosition) +
-               booleanProperties +
-               xacroContent.substring(insertPosition);
-    }
-
-    /**
      * Extract xacro arguments and their default values from xacro content
      * Xacro files can define arguments using <xacro:arg name="..." default="..."/>
      * These need to be provided to the parser via parser.arguments
@@ -389,8 +489,10 @@ export class XacroAdapter {
         let match;
         while ((match = argPattern.exec(xacroContent)) !== null) {
             const argName = match[1];
-            const defaultValue = match[2] || 'false'; // Default to 'false' if no default specified
-            args[argName] = defaultValue;
+            // A default with a substitution is left to the parser, which
+            // evaluates it; prefilling it here would pass "$(find x)" on verbatim.
+            if (match[2] !== undefined && /\$[({]/.test(match[2])) continue;
+            args[argName] = match[2] ?? 'false'; // 'false' only when no default is given
         }
 
         return args;

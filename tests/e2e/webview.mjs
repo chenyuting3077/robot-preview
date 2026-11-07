@@ -27,7 +27,17 @@ async function captureMessages() {
     env.fire('change', { document: doc, contentChanges: [{}] });
     while (!env.lastOf('update')) await sleep(20);
     const encode = message => ({ ...message, files: message.files.map(file => ({ path: file.path, data: Buffer.from(file.data).toString('base64') })) });
-    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')), matrix: encode(await capturePathMatrix()) };
+    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')), matrix: encode(await capturePathMatrix()), ur: encode(urFixture()) };
+}
+
+// ur_description has no meshes in the fixture; the check is that load_yaml and
+// the patched xacro-parser work in the bundled webview, not only in Node.
+function urFixture() {
+    const dir = new URL('../fixtures/xacro/ur_description/', import.meta.url).pathname;
+    const files = fs.readdirSync(dir, { recursive: true })
+        .filter(rel => fs.statSync(path.join(dir, rel)).isFile())
+        .map(rel => ({ path: `/ur_description/${rel.split(path.sep).join('/')}`, data: fs.readFileSync(path.join(dir, rel)) }));
+    return { type: 'load', files, primary: '/ur_description/urdf/ur.urdf.xacro', xacroArgs: { ur_type: 'ur5e' } };
 }
 
 async function capturePathMatrix() {
@@ -250,6 +260,9 @@ try {
     check('every path form resolves to its mesh', matrixDiagnostics?.loadError === null && unexpected.length === 0, JSON.stringify(unexpected));
     check('a case-mismatched mesh is reported as a guess', JSON.stringify(matrixDiagnostics?.guessedMeshes) === JSON.stringify([{ path: 'pkg/meshes/case.STL', resolved: '/pkg/meshes/Case.stl', match: 'case' }]), JSON.stringify(matrixDiagnostics?.guessedMeshes));
 
+    await ev(`await window.__send('ur')`);
+    check('UR5e with load_yaml loads in the webview', await waitFor(`window.app.currentModel?.links?.has('wrist_3_link') && window.app.currentModel.joints.has('shoulder_pan_joint')`, 15000));
+    check('UR5e joint limit read from yaml (!degrees)', await ev(`return Math.abs(window.app.currentModel.joints.get('shoulder_pan_joint').limits.upper - 2 * Math.PI) < 1e-6`), JSON.stringify(await ev(`return window.app.currentModel.joints.get('shoulder_pan_joint')?.limits`)));
 
     await ev(`document.body.classList.add('vscode-light')`);
     check('theme follows VS Code', await waitFor(`document.documentElement.getAttribute('data-theme') === 'light'`, 3000));

@@ -109,6 +109,10 @@ test('a relative packages entry starts at the workspace folder, and editing the 
     assert.ok(reload);
 });
 
+test('only the environment variables the model references are sent', () => {
+    assert.deepEqual(load.env, { PATH_MATRIX_DIR: process.env.PATH_MATRIX_DIR });
+});
+
 async function guessWorkspace() {
     const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-guess-')));
     write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');

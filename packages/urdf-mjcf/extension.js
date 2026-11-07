@@ -13,6 +13,7 @@ const SIDECAR_REFS = {
 };
 const MODEL_RE = /\.(urdf|xacro|xml)$/i;
 const REF_RE = /(package|model):\/\/([^/\s"'<>]+)|\$\(find\s+([^)\s]+)\)/g;
+const ENV_REF_RE = /\$\((?:env|optenv)\s+(\w+)/g;
 const FILE_REF_RE = /\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;
 const INCLUDE_RE = /<(?:xacro:include|include)\b[^>]*?\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;
 const ELEMENT_RE = /<(link|joint|body)\b[^>]*?\bname\s*=\s*["']([^"']+)["'][^>]*?(\/?)>/g;
@@ -196,6 +197,7 @@ async function modelInfo(fsPath, version, live = true) {
         text,
         refs: Array.from(text.matchAll(REF_RE), m => ({ name: m[2] || m[3], isModel: m[1] === 'model' })),
         files: Array.from(text.matchAll(FILE_REF_RE), m => m[1]),
+        env: Array.from(text.matchAll(ENV_REF_RE), m => m[1]),
         includes: Array.from(text.matchAll(INCLUDE_RE), m => path.basename(m[1]))
     };
     modelCache.set(cacheKey, info);
@@ -302,7 +304,16 @@ async function listFiles(fileUri, live) {
             }
         }
     }
-    return { entries, paths, packages, models, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes };
+    // Only referenced variables reach the webview: the full environment can
+    // hold tokens the preview has no use for.
+    const env = {};
+    for (const entry of entries.values()) {
+        if (!MODEL_RE.test(entry.fsPath)) continue;
+        for (const name of (await modelInfo(entry.fsPath, entry.version, live)).env) {
+            if (process.env[name] != null) env[name] = process.env[name];
+        }
+    }
+    return { entries, paths, packages, models, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes, env };
 }
 
 const fixKey = (fsPath, range) => `${fsPath}:${range.start.line}:${range.start.character}`;
@@ -633,8 +644,8 @@ class Preview {
                 if (!listing.paths.has(fsPath)) this.syntaxDiagnostics.delete(fsPath);
             }
             this.panel.webview.postMessage(full
-                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), xacroArgs: this.xacroArgsFor(primary.fsPath) }
-                : { type: 'update', files, removed, primary: listing.primary });
+                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), xacroArgs: this.xacroArgsFor(primary.fsPath), env: listing.env }
+                : { type: 'update', files, removed, primary: listing.primary, env: listing.env });
             const editor = vscode.window.activeTextEditor;
             if (full && editor) this.onSelectionChanged({ textEditor: editor, selections: editor.selections });
         } catch (error) {

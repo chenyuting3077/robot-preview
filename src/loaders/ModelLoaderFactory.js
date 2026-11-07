@@ -100,7 +100,7 @@ export class ModelLoaderFactory {
      * @param {Map} fileMap - File map (path -> File object), for loading mesh files
      * @param {File} file - Original file object (optional)
      */
-    static async loadModel(fileType, content, fileName, fileMap = null, file = null, { xacroArgs = {} } = {}) {
+    static async loadModel(fileType, content, fileName, fileMap = null, file = null, { xacroArgs = {}, env = {} } = {}) {
         // Extract base path from fileName for MJCF include resolution
         let basePath = null;
         if (fileName) {
@@ -114,7 +114,7 @@ export class ModelLoaderFactory {
             case 'urdf':
                 return await this.loadURDF(content, fileName, fileMap, file);
             case 'xacro':
-                return await this.loadXacro(content, fileName, fileMap, file, xacroArgs);
+                return await this.loadXacro(content, fileName, fileMap, file, xacroArgs, env);
             case 'mjcf':
                 return await this.loadMJCF(content, fileMap, basePath);
             default:
@@ -241,9 +241,9 @@ export class ModelLoaderFactory {
      * @param {Map} fileMap - File map
      * @param {File} file - Original file object (optional)
      */
-    static async loadXacro(content, fileName, fileMap = null, file = null, xacroArgs = {}) {
+    static async loadXacro(content, fileName, fileMap = null, file = null, xacroArgs = {}, env = {}) {
         try {
-            const model = await XacroAdapter.parse(content, fileName, fileMap, file, xacroArgs);
+            const model = await XacroAdapter.parse(content, fileName, fileMap, file, xacroArgs, { env });
             return model;
         } catch (error) {
             console.error('Xacro parsing error:', error);

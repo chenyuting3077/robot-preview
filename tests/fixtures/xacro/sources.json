@@ -1,0 +1,9 @@
+{
+  "ur_description": {
+    "repository": "https://github.com/UniversalRobots/Universal_Robots_ROS2_Description",
+    "tag": "4.4.1",
+    "revision": "0eb1a861f7772fceb38510d90fa2f98ec668070c",
+    "files": "urdf/, config/ur5e/, package.xml, LICENSE (meshes omitted: the golden test compares expanded text)",
+    "golden": "ur5e.urdf from generate-golden.sh with ur_type:=ur5e name:=ur5e"
+  }
+}

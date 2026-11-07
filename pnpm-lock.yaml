@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  xacro-parser@0.3.11:
+    hash: nc5fqjmpsb3emxacysoevzqsua
+    path: patches/xacro-parser@0.3.11.patch
+
 importers:
 
   .:
@@ -14,6 +19,9 @@ importers:
       d3:
         specifier: ^7.9.0
         version: 7.9.0
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.3.2
       mujoco-js:
         specifier: ^0.0.7
         version: 0.0.7
@@ -25,7 +33,7 @@ importers:
         version: 0.12.6(three@0.163.0)
       xacro-parser:
         specifier: ^0.3.11
-        version: 0.3.11
+        version: 0.3.11(patch_hash=nc5fqjmpsb3emxacysoevzqsua)
     devDependencies:
       linkedom:
         specifier: 0.18.12
@@ -203,6 +211,9 @@ packages:
   ansi-styles@4.3.0:
     resolution: {integrity: sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==}
     engines: {node: '>=8'}
+
+  argparse@2.0.1:
+    resolution: {integrity: sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q==}
 
   boolbase@1.0.0:
     resolution: {integrity: sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==}
@@ -432,6 +443,10 @@ packages:
     resolution: {integrity: sha512-zymm5+u+sCsSWyD9qNaejV3DFvhCKclKdizYaJUuHA83RLjb7nSuGnddCHGv0hk+KY7BMAlsWeK4Ueg6EV6XQg==}
     engines: {node: '>=8'}
 
+  js-yaml@4.3.2:
+    resolution: {integrity: sha512-SFNOvSJ+Dgf/9An904Yx+CgSlIPCkIpao4qo51lpee25TIRejdH3rhR4EZMGoNx3/TP3O+wzWuiTFl4sqbltzA==}
+    hasBin: true
+
   linkedom@0.18.12:
     resolution: {integrity: sha512-jalJsOwIKuQJSeTvsgzPe9iJzyfVaEJiEXl+25EkKevsULHvMJzpNqwvj1jOESWdmgKDiXObyjOYwlUqG7wo1Q==}
     engines: {node: '>=16'}
@@ -660,6 +675,8 @@ snapshots:
   ansi-styles@4.3.0:
     dependencies:
       color-convert: 2.0.1
+
+  argparse@2.0.1: {}
 
   boolbase@1.0.0: {}
 
@@ -924,6 +941,10 @@ snapshots:
 
   is-fullwidth-code-point@3.0.0: {}
 
+  js-yaml@4.3.2:
+    dependencies:
+      argparse: 2.0.1
+
   linkedom@0.18.12:
     dependencies:
       css-select: 5.2.2
@@ -1009,7 +1030,7 @@ snapshots:
       string-width: 4.2.3
       strip-ansi: 6.0.1
 
-  xacro-parser@0.3.11:
+  xacro-parser@0.3.11(patch_hash=nc5fqjmpsb3emxacysoevzqsua):
     dependencies:
       expr-eval-fork: 3.0.1
       yaml: 2.8.2
