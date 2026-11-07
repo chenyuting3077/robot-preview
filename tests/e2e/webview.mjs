@@ -282,6 +282,28 @@ try {
     await ev(`document.getElementById('mujoco-simulate-btn-bar').click()`);
     check('MuJoCo simulation runs under the CSP', await waitFor(`window.app.mujocoSimulationManager.isSimulationRunning()`, 30000));
 
+    // The shadow-catching ground plane is coplanar with the grid; if it writes
+    // depth, grid lines z-fight with it and flicker as the camera moves.
+    const box = '<robot name="b"><link name="base"><visual><origin xyz="0 0 0.1"/><geometry><box size="0.2 0.2 0.2"/></geometry></visual></link></robot>';
+    await ev(`window.postMessage({ type: 'load', files: [{ path: '/b/b.urdf', data: new TextEncoder().encode(${JSON.stringify(box)}) }], primary: '/b/b.urdf' }, '*')`);
+    await waitFor(`window.app.currentModel?.links?.has('base')`, 10000);
+    const hidden = await ev(`
+        const sm = window.app.sceneManager, r = sm.renderer, gl = r.getContext(), plane = sm.environmentManager.groundPlane;
+        const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, buf = new Uint8Array(w * h * 4);
+        const gridPixels = () => { r.render(sm.scene, sm.camera); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf); let n = 0; for (let i = 0; i < buf.length; i += 4) if (buf[i] > 90 && buf[i + 1] > 90 && buf[i + 2] > 90) n++; return n; };
+        // Shadows off: a shadow under the semi-transparent grid darkens a few
+        // pixels legitimately; only depth should be measured.
+        sm.environmentManager.setShadowEnabled(false, r);
+        let hidden = 0;
+        for (const a of [0.35, 0.5, 0.65]) {
+            sm.camera.position.set(3 * Math.cos(a), 0.6, 3 * Math.sin(a));
+            sm.controls.target.set(0, 0, 0); sm.controls.update(); sm.camera.updateMatrixWorld();
+            const withPlane = gridPixels(); plane.visible = false; hidden += gridPixels() - withPlane; plane.visible = true;
+        }
+        sm.environmentManager.setShadowEnabled(true, r);
+        return hidden;`);
+    check('the ground plane never hides grid lines', hidden === 0, `${hidden} grid pixels hidden`);
+
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));
 } finally {
