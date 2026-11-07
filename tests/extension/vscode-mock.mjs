@@ -121,6 +121,13 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         DiagnosticSeverity: { Error: 0, Warning: 1 },
         ConfigurationTarget: { Global: 1, Workspace: 2 },
         CodeAction: class { constructor(title, kind) { Object.assign(this, { title, kind }); } },
+        Position: class { constructor(line, character) { Object.assign(this, { line, character }); } },
+        Location: class { constructor(uri, rangeOrPosition) { Object.assign(this, { uri, range: rangeOrPosition }); } },
+        Hover: class { constructor(contents, range) { Object.assign(this, { contents, range }); } },
+        MarkdownString: class { constructor(value = '') { this.value = value; } appendCodeblock(code, lang) { this.value += `\n\`\`\`${lang}\n${code}\n\`\`\`\n`; return this; } appendMarkdown(text) { this.value += text; return this; } },
+        CompletionItem: class { constructor(label, kind) { Object.assign(this, { label, kind }); } },
+        CompletionItemKind: { Variable: 5, Function: 2, Constant: 20 },
+        DocumentLink: class { constructor(range, target) { Object.assign(this, { range, target }); } },
         CodeActionKind: { QuickFix: 'quickfix' },
         env: { language: 'zh-tw' },
         languages: {
@@ -132,7 +139,11 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             registerCodeActionsProvider: (selector, provider) => {
                 state.codeActions = provider;
                 return { dispose() {} };
-            }
+            },
+            registerDefinitionProvider: (selector, provider) => ((state.definitions = provider), { dispose() {} }),
+            registerHoverProvider: (selector, provider) => ((state.hovers = provider), { dispose() {} }),
+            registerCompletionItemProvider: (selector, provider) => ((state.completions = provider), { dispose() {} }),
+            registerDocumentLinkProvider: (selector, provider) => ((state.links = provider), { dispose() {} })
         },
         workspace: {
             getWorkspaceFolder: () => ({ uri: { fsPath: workspace } }),

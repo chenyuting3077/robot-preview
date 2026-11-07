@@ -336,6 +336,23 @@ function missingPackageMessage(name, isModel) {
         + (sourced ? '' : ' VS Code sees ROS variables only when started from a sourced shell.');
 }
 
+const attributeOf = (tag, name) => attributeRange(tag, name)?.value;
+
+function attributeRange(tag, name) {
+    const match = new RegExp(`\\b${name}(\\s*=\\s*["'])([^"']*)["']`).exec(tag);
+    return match ? { start: match.index + name.length + match[1].length, value: match[2] } : null;
+}
+
+function splitScheme(value) {
+    const match = value.match(/^(package|model):\/\/([^/]+)\/(.*)$/);
+    return match ? { isModel: match[1] === 'model', name: match[2], rest: match[3] } : null;
+}
+
+async function currentText(fsPath) {
+    const version = await versionOf(fsPath);
+    return version ? (await modelInfo(fsPath, version)).text : null;
+}
+
 const fixKey = (fsPath, range) => `${fsPath}:${range.start.line}:${range.start.character}`;
 
 function insideMacro(text, index) {
@@ -430,6 +447,217 @@ function isRobotModel(doc) {
     if (doc.uri.scheme !== 'file') return false;
     if (/\.(urdf|xacro)$/i.test(doc.fileName)) return true;
     return /\.xml$/i.test(doc.fileName) && /<(mujoco|robot)\b/.test(doc.getText(new vscode.Range(0, 0, 50, 0)));
+}
+
+// docs/vscode-extension.md, "Text editor navigation": why the scope is the include
+// chain, xacro scoping is not modelled and hover is not evaluated.
+
+const NAVIGATION_KINDS = {
+    property: { tag: /<xacro:property\b[^>]*>/g, completion: vscode.CompletionItemKind.Variable },
+    macro: { tag: /<xacro:macro\b[^>]*>/g, completion: vscode.CompletionItemKind.Function },
+    arg: { tag: /<xacro:arg\b[^>]*>/g, completion: vscode.CompletionItemKind.Constant },
+    link: { tag: /<link\b[^>]*>/g }
+};
+const XACRO_DIRECTIVES = new Set(['property', 'macro', 'arg', 'include', 'if', 'unless', 'insert_block', 'element', 'attribute', 'call']);
+const INCLUDE_FILE_RE = /<xacro:include\b[^>]*?\bfilename\s*=\s*["']([^"']+)["']/g;
+const PATH_ATTRIBUTE_RE = /\bfilename\s*=\s*["']([^"']+)["']/g;
+const groupStart = match => match.index + match[0].lastIndexOf(match[1]);
+const isXacroModel = fsPath => /\.(urdf|xacro)$/i.test(fsPath);
+
+const SYMBOL_PATTERNS = [
+    { kind: 'macro', re: /<xacro:([\w.-]+)/g, skip: name => XACRO_DIRECTIVES.has(name) },
+    { kind: 'link', re: /<(?:parent|child)\b[^>]*?\blink\s*=\s*["']([^"']+)["']/g },
+    { kind: 'path', re: PATH_ATTRIBUTE_RE }
+];
+
+function propertyAt(text, offset) {
+    const open = text.lastIndexOf('${', offset);
+    const close = open === -1 ? -1 : text.indexOf('}', open);
+    if (open === -1 || close < offset) return null;
+    for (const match of text.slice(open + 2, close).matchAll(/[A-Za-z_]\w*/g)) {
+        const start = open + 2 + match.index;
+        if (offset >= start && offset <= start + match[0].length) return { kind: 'property', text: match[0], start };
+    }
+    return null;
+}
+
+function symbolAt(text, offset) {
+    for (const match of text.matchAll(/\$\(arg\s+([\w-]+)\)/g)) {
+        const start = groupStart(match);
+        if (offset >= start && offset <= start + match[1].length) return { kind: 'arg', text: match[1], start };
+    }
+    const property = propertyAt(text, offset);
+    if (property) return property;
+    for (const { kind, re, skip } of SYMBOL_PATTERNS) {
+        for (const match of text.matchAll(re)) {
+            const start = groupStart(match);
+            if (offset >= start && offset <= start + match[1].length && !skip?.(match[1])) return { kind, text: match[1], start };
+        }
+    }
+    return null;
+}
+
+async function resolvePathReference(value, fromFile, args = {}) {
+    const index = await getPackageIndex();
+    let ref = value
+        .replace(/\$\(arg\s+([\w-]+)\)/g, (match, name) => args[name] ?? match)
+        .replace(/\$\(find\s+([^)\s]+)\)/g, (match, name) => index.get(name) ?? match);
+    const scheme = splitScheme(ref);
+    if (scheme) {
+        const dir = scheme.isModel ? await findModel(scheme.name) : index.get(scheme.name);
+        if (!dir) return null;
+        ref = path.join(dir, scheme.rest);
+    }
+    for (const candidate of localCandidates(ref, [fromFile])) {
+        if ((await fs.stat(candidate).catch(() => null))?.isFile()) return candidate;
+    }
+    return null;
+}
+
+class Navigator {
+    constructor(preview) {
+        this.preview = preview;
+        this.listings = new Map();
+    }
+
+    invalidate() {
+        this.listings.clear();
+    }
+
+    async packageFiles(doc) {
+        const fsPath = doc.uri.fsPath;
+        if (this.preview.listing?.paths.has(fsPath)) return this.preview.listing.paths;
+        if (!this.listings.has(fsPath)) this.listings.set(fsPath, listFiles(doc.uri, true));
+        return (await this.listings.get(fsPath)).paths;
+    }
+
+    textOf(fsPath, doc) {
+        return fsPath === doc.uri.fsPath ? doc.getText() : currentText(fsPath);
+    }
+
+    // Files reachable through <xacro:include> from `start`, in breadth-first order.
+    async includeClosure(start, doc, args) {
+        const order = [start];
+        for (let i = 0; i < order.length; i++) {
+            const text = (await this.textOf(order[i], doc)) || '';
+            for (const match of text.matchAll(INCLUDE_FILE_RE)) {
+                const target = await resolvePathReference(match[1], order[i], args);
+                if (target && !order.includes(target)) order.push(target);
+            }
+        }
+        return order;
+    }
+
+    async scope(doc) {
+        const fsPath = doc.uri.fsPath;
+        const args = this.preview.xacroArgsFor(fsPath);
+        const files = await this.includeClosure(fsPath, doc, args);
+        const roots = [];
+        for (const candidate of await this.packageFiles(doc)) {
+            if (files.includes(candidate) || !isXacroModel(candidate)) continue;
+            const closure = await this.includeClosure(candidate, doc, args);
+            if (!closure.includes(fsPath)) continue;
+            roots.push(candidate);
+            for (const file of closure) if (!files.includes(file)) files.push(file);
+        }
+        return { files, roots };
+    }
+
+    async definitions(doc, kind, name, scope) {
+        const found = [];
+        for (const fsPath of scope.files) {
+            const text = (await this.textOf(fsPath, doc)) || '';
+            for (const match of text.matchAll(NAVIGATION_KINDS[kind].tag)) {
+                if (name === undefined || attributeOf(match[0], 'name') === name) found.push({ fsPath, text, index: match.index, tag: match[0] });
+            }
+        }
+        // A macro included with ns="x" is called as x.name but defined as name.
+        if (!found.length && kind === 'macro' && name?.includes('.')) return this.definitions(doc, kind, name.split('.').pop(), scope);
+        return found;
+    }
+
+    // Argument values for paths: declared defaults, then those set on the edited or including files.
+    async argumentValues(doc, scope) {
+        const values = {};
+        for (const { tag } of await this.definitions(doc, 'arg', undefined, scope)) {
+            const name = attributeOf(tag, 'name');
+            if (name && values[name] === undefined && attributeOf(tag, 'default') !== undefined) values[name] = attributeOf(tag, 'default');
+        }
+        for (const file of [...scope.roots].reverse().concat(doc.uri.fsPath)) Object.assign(values, this.preview.xacroArgsFor(file));
+        return values;
+    }
+
+    async location({ fsPath, index, tag }) {
+        const doc = await vscode.workspace.openTextDocument(fsPath);
+        const name = attributeRange(tag, 'name');
+        const start = index + (name?.start ?? 0);
+        return new vscode.Location(vscode.Uri.file(fsPath), new vscode.Range(doc.positionAt(start), doc.positionAt(start + (name?.value.length ?? 0))));
+    }
+
+    async resolvePath(doc, symbol, scope) {
+        return resolvePathReference(symbol.text, doc.uri.fsPath, await this.argumentValues(doc, scope));
+    }
+
+    async provideDefinition(doc, position) {
+        const symbol = symbolAt(doc.getText(), doc.offsetAt(position));
+        if (!symbol) return undefined;
+        const scope = await this.scope(doc);
+        if (symbol.kind === 'path') {
+            const target = await this.resolvePath(doc, symbol, scope);
+            return target ? [new vscode.Location(vscode.Uri.file(target), new vscode.Position(0, 0))] : undefined;
+        }
+        return Promise.all((await this.definitions(doc, symbol.kind, symbol.text, scope)).map(definition => this.location(definition)));
+    }
+
+    async provideHover(doc, position) {
+        const symbol = symbolAt(doc.getText(), doc.offsetAt(position));
+        if (!symbol) return undefined;
+        const scope = await this.scope(doc);
+        const range = new vscode.Range(doc.positionAt(symbol.start), doc.positionAt(symbol.start + symbol.text.length));
+        const markdown = new vscode.MarkdownString();
+        if (symbol.kind === 'path') {
+            const target = await this.resolvePath(doc, symbol, scope);
+            markdown.appendMarkdown(target ? await fs.realpath(target) : 'Not found');
+            return new vscode.Hover(markdown, range);
+        }
+        const definitions = await this.definitions(doc, symbol.kind, symbol.text, scope);
+        if (!definitions.length) return undefined;
+        for (const { fsPath, text, index, tag } of definitions.slice(0, 3)) {
+            markdown.appendCodeblock(tag, 'xml');
+            markdown.appendMarkdown(`${vscode.workspace.asRelativePath(fsPath)}:${text.slice(0, index).split('\n').length}\n\n`);
+        }
+        if (symbol.kind === 'arg') {
+            const owner = [doc.uri.fsPath, ...scope.roots].find(file => this.preview.xacroArgsFor(file)[symbol.text] !== undefined);
+            if (owner) markdown.appendMarkdown(`Current value: \`${this.preview.xacroArgsFor(owner)[symbol.text]}\` (Robot Preview: Set Xacro Arguments)`);
+        }
+        return new vscode.Hover(markdown, range);
+    }
+
+    async provideCompletionItems(doc, position) {
+        const text = doc.getText();
+        const offset = doc.offsetAt(position);
+        const before = text.slice(text.lastIndexOf('\n', offset - 1) + 1, offset);
+        const open = before.lastIndexOf('${');
+        const kind = /\$\(arg\s+[\w-]*$/.test(before) ? 'arg'
+            : /<xacro:[\w.-]*$/.test(before) ? 'macro'
+            : open !== -1 && !before.includes('}', open) && /(^|[^\w.'"])\w*$/.test(before.slice(open + 2)) ? 'property'
+            : null;
+        if (!kind) return undefined;
+        const definitions = await this.definitions(doc, kind, undefined, await this.scope(doc));
+        const names = new Set(definitions.map(definition => attributeOf(definition.tag, 'name')).filter(Boolean));
+        return Array.from(names, name => new vscode.CompletionItem(name, NAVIGATION_KINDS[kind].completion));
+    }
+
+    async provideDocumentLinks(doc) {
+        const scope = await this.scope(doc);
+        const links = [];
+        for (const match of doc.getText().matchAll(PATH_ATTRIBUTE_RE)) {
+            const start = groupStart(match);
+            const target = await this.resolvePath(doc, { text: match[1] }, scope);
+            if (target) links.push(new vscode.DocumentLink(new vscode.Range(doc.positionAt(start), doc.positionAt(start + match[1].length)), vscode.Uri.file(target)));
+        }
+        return links;
+    }
 }
 
 class Preview {
@@ -620,8 +848,7 @@ class Preview {
             let doc = null;
             if (target) {
                 doc = await vscode.workspace.openTextDocument(target.fsPath);
-                const nameAttribute = /\bname\s*=\s*["']/.exec(target.tag);
-                const nameAt = target.index + nameAttribute.index + nameAttribute[0].length;
+                const nameAt = target.index + attributeRange(target.tag, 'name').start;
                 fsPath = target.fsPath;
                 range = new vscode.Range(doc.positionAt(nameAt), doc.positionAt(nameAt + target.name.length));
             }
@@ -655,10 +882,10 @@ class Preview {
 
     expectedPath({ value }) {
         if (hasExpression(value)) return null;
-        const scheme = value.match(/^(package|model):\/\/([^/]+)\/(.*)$/);
+        const scheme = splitScheme(value);
         if (scheme) {
-            const dir = (scheme[1] === 'model' ? this.listing.models : this.listing.packages).get(scheme[2]);
-            return dir ? path.join(dir, scheme[3]) : null;
+            const dir = (scheme.isModel ? this.listing.models : this.listing.packages).get(scheme.name);
+            return dir ? path.join(dir, scheme.rest) : null;
         }
         if (value.startsWith('file://')) return fromFileUrl(value);
         // The webview resolves a relative mesh from the opened file, wherever it is written.
@@ -677,9 +904,8 @@ class Preview {
         const found = [];
         for (const fsPath of this.listing.paths) {
             if (!MODEL_RE.test(fsPath)) continue;
-            const version = await versionOf(fsPath);
-            if (!version) continue;
-            const { text } = await modelInfo(fsPath, version);
+            const text = await currentText(fsPath);
+            if (text === null) continue;
             const matches = Array.from(text.matchAll(re));
             if (!matches.length) continue;
             // Opening every file would turn its version from disk:* into doc:* and resend it.
@@ -718,9 +944,8 @@ class Preview {
         const target = normalize(meshPath);
         for (const fsPath of this.listing.paths) {
             if (!MODEL_RE.test(fsPath)) continue;
-            const version = await versionOf(fsPath);
-            if (!version) continue;
-            const { text } = await modelInfo(fsPath, version);
+            const text = await currentText(fsPath);
+            if (text === null) continue;
             // A relative reference is compared as resolved from its file's key,
             // since the webview reports '../parts/a.stl' as 'pkg/parts/a.stl'.
             const key = keyOf.get(fsPath) ?? '';
@@ -889,9 +1114,8 @@ class Preview {
         let exact = [];
         let fuzzy = [];
         for (const fsPath of files) {
-            const version = await versionOf(fsPath);
-            if (!version) continue;
-            const { text } = await modelInfo(fsPath, version);
+            const text = await currentText(fsPath);
+            if (text === null) continue;
             for (const match of text.matchAll(re)) {
                 const candidate = { fsPath, index: match.index, length: match[0].length, name: match[1], tag: match[0] };
                 if (match[1] === name) {
@@ -1027,14 +1251,26 @@ exports.activate = context => {
     context.subscriptions.push(vscode.window.registerWebviewPanelSerializer('robotPreviewUrdf.preview', {
         deserializeWebviewPanel: (panel, state) => preview.restore(panel, state)
     }));
+    const navigator = new Navigator(preview);
     const packageWatcher = vscode.workspace.createFileSystemWatcher('**/package.xml');
-    const resetIndex = () => { packageIndex = null; };
+    const resetIndex = () => {
+        packageIndex = null;
+        navigator.invalidate();
+    };
     packageWatcher.onDidChange(resetIndex);
     packageWatcher.onDidCreate(resetIndex);
     packageWatcher.onDidDelete(resetIndex);
 
+    const xacroFiles = [{ scheme: 'file', pattern: '**/*.{urdf,xacro}' }];
+    const modelWatcher = vscode.workspace.createFileSystemWatcher('**/*.{urdf,xacro,xml}');
+    for (const event of ['onDidChange', 'onDidCreate', 'onDidDelete']) modelWatcher[event](() => navigator.invalidate());
     context.subscriptions.push(
         packageWatcher,
+        modelWatcher,
+        vscode.languages.registerDefinitionProvider(xacroFiles, { provideDefinition: (doc, position) => navigator.provideDefinition(doc, position) }),
+        vscode.languages.registerHoverProvider(xacroFiles, { provideHover: (doc, position) => navigator.provideHover(doc, position) }),
+        vscode.languages.registerCompletionItemProvider(xacroFiles, { provideCompletionItems: (doc, position) => navigator.provideCompletionItems(doc, position) }, '{', ':', ' '),
+        vscode.languages.registerDocumentLinkProvider(xacroFiles, { provideDocumentLinks: doc => navigator.provideDocumentLinks(doc) }),
         vscode.languages.registerCodeActionsProvider(
             [{ scheme: 'file', pattern: '**/*.{urdf,xacro,xml}' }],
             { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context) },
@@ -1055,9 +1291,12 @@ exports.activate = context => {
         }),
         vscode.window.onDidChangeActiveTextEditor(editor => preview.onActiveEditorChanged(editor)),
         vscode.workspace.onDidChangeTextDocument(event => preview.onDocumentChanged(event)),
-        vscode.workspace.onDidSaveTextDocument(doc => preview.onDocumentSaved(doc)),
+        vscode.workspace.onDidSaveTextDocument(doc => {
+            navigator.invalidate();
+            preview.onDocumentSaved(doc);
+        }),
         vscode.workspace.onDidChangeConfiguration(event => {
-            if (event.affectsConfiguration('robotPreviewUrdf.packages')) packageIndex = null;
+            if (event.affectsConfiguration('robotPreviewUrdf.packages')) resetIndex();
             if (event.affectsConfiguration('robotPreviewUrdf.updateOn') || event.affectsConfiguration('robotPreviewUrdf.packages')) preview.scheduleUpdate();
         }),
         vscode.window.onDidChangeTextEditorSelection(event => preview.onSelectionChanged(event))

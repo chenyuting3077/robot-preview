@@ -38,6 +38,10 @@ Display toggles, up axis, angle unit and panel visibility are stored in the exte
 
 The viewer UI follows VS Code's theme and display language. `zh-TW`, `zh-HK` and `zh-Hant` show Traditional Chinese, other `zh-*` Simplified Chinese, everything else English.
 
+## Text editor navigation
+
+Go to definition, hover, completion and path links work with the preview closed, and search only the edited file's include chain: its includes, the files that include it, and their other includes. Searching the whole package, as the preview's file listing does, offered definitions from sibling robots and launch files. Includes are resolved on every request so an unsaved new include counts at once; only the package listing used to find the including files is cached, until a save, a file change on disk or a package change. Xacro scoping (macro-local properties, `scope="parent"`) is not modelled: every same-named definition is offered, the edited file's first. Hover shows the definition as written, not its evaluated value, which would need a full xacro expansion per hover. Arguments are set on the top-level file, so an included file shows the value set on the file that includes it, and `$(arg)` in a path uses that value or the default. A `${...}` inside a link name or path names a property, so it wins over the reference around it.
+
 ## Model checks
 
 Checks run in the webview because only there is xacro expanded and the mesh sizes known. Severity follows consequence: an error is something ROS's URDF parser rejects (urdfdom also refuses a `<limit>` without effort or velocity and an `<inertial>` without `<mass>`), a warning something that breaks simulation or planning. Only the first root link is exempt from the inertia rule: KDL and robot_state_publisher ignore the root's inertia and fixed arms often omit it, but an extra root is a mistake, not a base. A joint with an unknown parent still gives its child a parent, so one typo does not also report a second root.
