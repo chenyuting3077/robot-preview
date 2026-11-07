@@ -2,23 +2,14 @@
 // element, once per macro, with quick fixes for literal joints only.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { startPreview, waitFor } from './vscode-mock.mjs';
-import { write } from './path-fixture.mjs';
-
-async function workspaceWith(urdf, name = 'robot.urdf') {
-    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-checks-')));
-    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
-    const primary = path.join(ws, 'src/pkg/urdf', name);
-    write(primary, urdf);
-    return { ws, primary };
-}
+import { robotWorkspace, write } from './path-fixture.mjs';
 
 async function diagnose(urdf, checks, { name, config } = {}) {
-    const { primary } = await workspaceWith(urdf, name);
-    const { env, panel } = await startPreview(path.dirname(path.dirname(path.dirname(primary))), primary, config);
+    const { ws, primary } = robotWorkspace(urdf, name);
+    const { env, panel } = await startPreview(ws, primary, config);
     panel.receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [], guessedMeshes: [], checks });
     await waitFor(() => env.state.diagnostics.has(primary), 1500).catch(() => {});
     const doc = await env.vscode.workspace.openTextDocument(primary);
@@ -144,9 +135,9 @@ test('a limit lacking effort gets no insert-limit fix', async () => {
 
 test('a same-named element in a file outside the loaded model is not marked', async () => {
     const urdf = JOINT('revolute', '  <limit lower="-1" upper="1" effort="1" velocity="1"/>');
-    const { primary } = await workspaceWith(urdf);
+    const { ws, primary } = robotWorkspace(urdf);
     write(path.join(path.dirname(primary), 'other.urdf'), '<robot name="o"><link name="base"/></robot>\n');
-    const { env, panel } = await startPreview(path.dirname(path.dirname(path.dirname(primary))), primary);
+    const { env, panel } = await startPreview(ws, primary);
     panel.receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [], guessedMeshes: [], checks: [issue('duplicate-name', 'error', 'link', 'base')] });
     await waitFor(() => env.state.diagnostics.size > 0);
     assert.deepEqual([...env.state.diagnostics.keys()], [primary]);

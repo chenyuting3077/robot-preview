@@ -14,7 +14,8 @@ export class URDFAdapter {
      */
     static convert(robot, urdfXML = null) {
         const model = new UnifiedRobotModel();
-        model.name = robot.name || 'robot';
+        // urdf-loader keeps <robot name> in robotName; its name is the root link's.
+        model.name = robot.robotName || '';
         model.threeObject = robot;
 
         // Mark model type as URDF

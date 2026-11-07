@@ -128,6 +128,9 @@ class App {
             this.setupModelTreePanel();
             const helpButton = document.getElementById('help-btn');
             helpButton.title = helpButton.ariaLabel = window.i18n.t('help');
+            const screenshotButton = document.getElementById('screenshot-btn');
+            screenshotButton.title = screenshotButton.ariaLabel = window.i18n.t('screenshot');
+            screenshotButton.addEventListener('click', () => this.captureScreenshot());
             for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['help-btn', 'help-panel']]) {
                 const button = document.getElementById(buttonId);
                 const panel = document.getElementById(panelId);
@@ -282,6 +285,7 @@ class App {
                 if (message.env) this.env = message.env;
                 return this.loadFiles(message, false);
             },
+            captureScreenshot: async () => this.captureScreenshot(),
             exportUrdf: async ({ requestId }) => {
                 vscode.postMessage({ type: 'urdf', requestId, text: this.loadReport.loadError ? null : this.currentModel?.expandedUrdf ?? null });
             },
@@ -297,6 +301,25 @@ class App {
             });
         });
         vscode.postMessage({ type: 'ready' });
+    }
+
+    // Twice the view's CSS size whatever the screen's pixel ratio, so the image
+    // does not depend on the machine it was taken on.
+    // The editor-cursor and hover highlight are UI state, not part of the picture.
+    captureScreenshot() {
+        const { renderer, scene, camera, highlightManager } = this.sceneManager;
+        highlightManager.clearHighlight();
+        const size = renderer.getSize(new THREE.Vector2());
+        const pixelRatio = renderer.getPixelRatio();
+        renderer.setPixelRatio(2);
+        renderer.setSize(size.x, size.y, false);
+        renderer.render(scene, camera);
+        const data = renderer.domElement.toDataURL('image/png').split(',')[1];
+        renderer.setPixelRatio(pixelRatio);
+        renderer.setSize(size.x, size.y, false);
+        if (this.lastHighlight) this.highlightByPattern(this.lastHighlight.kind, this.lastHighlight.pattern);
+        this.sceneManager.redraw();
+        vscode.postMessage({ type: 'screenshot', name: this.currentModel?.name || '', data });
     }
 
     highlightByPattern(kind, pattern) {
@@ -315,6 +338,8 @@ class App {
 
     handleModelLoaded(model, file) {
         const isMJCF = file.name.toLowerCase().endsWith('.xml') && model?.userData?.type === 'mjcf';
+        // The standalone mesh editor has no handler for screenshots.
+        document.getElementById('screenshot-btn').hidden = Boolean(model.isMesh);
         Object.assign(this.loadReport, {
             missingMeshes: model.missingMeshes || [],
             guessedMeshes: model.guessedMeshes || [],

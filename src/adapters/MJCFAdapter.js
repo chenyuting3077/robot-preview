@@ -214,7 +214,7 @@ export class MJCFAdapter {
         this.expandDefaults(doc);
 
         const model = new UnifiedRobotModel();
-        model.name = doc.documentElement.getAttribute('model') || 'mujoco_model';
+        model.name = doc.documentElement.getAttribute('model') || '';
 
         // Parse default values and class definitions in default tags first
         // (needed for mesh scale inheritance)
@@ -1774,7 +1774,7 @@ export class MJCFAdapter {
         await getLoaders();
 
         const rootGroup = new THREE.Group();
-        rootGroup.name = model.name;
+        rootGroup.name = model.name || 'mujoco_model';
 
         // Create Three.js objects for all links (but don't add to scene yet)
         const linkObjects = new Map();

@@ -45,6 +45,11 @@
         "command": "robotPreviewUrdf.exportUrdf",
         "title": "Export Expanded URDF",
         "category": "Robot Preview"
+      },
+      {
+        "command": "robotPreviewUrdf.saveScreenshot",
+        "title": "Save Screenshot",
+        "category": "Robot Preview"
       }
     ],
     "menus": {

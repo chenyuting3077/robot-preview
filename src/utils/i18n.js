@@ -8,6 +8,7 @@ const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '
 export const translations = {
     'zh-CN': {
         'help': '操作说明',
+        'screenshot': '保存截图',
         'helpKeyOrbit': '左键拖曳',
         'helpOrbit': '旋转',
         'helpKeyPan': '右键／中键拖曳',
@@ -221,6 +222,7 @@ export const translations = {
     },
     'zh-TW': {
         'help': '操作說明',
+        'screenshot': '儲存截圖',
         'helpKeyOrbit': '左鍵拖曳',
         'helpOrbit': '旋轉',
         'helpKeyPan': '右鍵／中鍵拖曳',
@@ -420,6 +422,7 @@ export const translations = {
     },
     'en-US': {
         'help': 'Controls',
+        'screenshot': 'Save screenshot',
         'helpKeyOrbit': 'Left drag',
         'helpOrbit': 'Rotate',
         'helpKeyPan': 'Right / middle drag',

@@ -304,6 +304,25 @@ try {
         return hidden;`);
     check('the ground plane never hides grid lines', hidden === 0, `${hidden} grid pixels hidden`);
 
+    await ev(`window.__out.length = 0; document.getElementById('screenshot-btn').click()`);
+    await waitFor(`window.__out.some(m => m.type === 'screenshot')`, 5000);
+    const shot = await ev(`
+        const message = window.__out.find(m => m.type === 'screenshot');
+        const image = new Image();
+        image.src = 'data:image/png;base64,' + message.data;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width; canvas.height = image.height;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(0, 0, image.width, image.height).data;
+        // Not blank: more than 1% of pixels differ from the background in the corner.
+        let drawn = 0;
+        for (let i = 0; i < pixels.length; i += 4) if (Math.abs(pixels[i] - pixels[0]) + Math.abs(pixels[i + 1] - pixels[1]) + Math.abs(pixels[i + 2] - pixels[2]) > 30) drawn++;
+        const css = window.app.sceneManager.renderer.domElement.getBoundingClientRect();
+        return { name: message.name, width: image.width, height: image.height, cssWidth: Math.round(css.width), cssHeight: Math.round(css.height), drawn: drawn / (pixels.length / 4) };`);
+    check('screenshot is twice the view size, not blank, named after <robot name>', shot.name === 'b' && shot.width === shot.cssWidth * 2 && shot.height === shot.cssHeight * 2 && shot.drawn > 0.01, JSON.stringify(shot));
+
     const flawed = '<robot name="f"><link name="base"/><link name="arm"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link><joint name="j" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 0 1"/></joint></robot>';
     await ev(`window.__out.length = 0; window.postMessage({ type: 'load', files: [{ path: '/f/f.urdf', data: new TextEncoder().encode(${JSON.stringify(flawed)}) }], primary: '/f/f.urdf' }, '*')`);
     await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 10000);

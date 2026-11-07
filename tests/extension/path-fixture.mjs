@@ -28,6 +28,15 @@ export function write(file, data = STL) {
     fs.writeFileSync(file, data);
 }
 
+// A one-package workspace with a single model file, for tests that need nothing else.
+export function robotWorkspace(urdf, name = 'robot.urdf') {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-ws-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    const primary = path.join(ws, 'src/pkg/urdf', name);
+    write(primary, urdf);
+    return { ws, primary };
+}
+
 export function createPathMatrix() {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-paths-')));
     const ws = path.join(root, 'ws');

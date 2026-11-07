@@ -336,6 +336,8 @@ function missingPackageMessage(name, isModel) {
         + (sourced ? '' : ' VS Code sees ROS variables only when started from a sourced shell.');
 }
 
+const modelStem = fsPath => fsPath.replace(/(\.urdf)?\.(xacro|urdf|xml)$/i, '');
+
 const attributeOf = (tag, name) => attributeRange(tag, name)?.value;
 
 function attributeRange(tag, name) {
@@ -983,6 +985,28 @@ class Preview {
         if (this.primary?.fsPath === uri.fsPath) await this.sync(true);
     }
 
+    // Unlike exportUrdf this is not a request/reply: the toolbar button starts a
+    // screenshot in the webview on its own, so the host just saves what arrives.
+    requestScreenshot() {
+        if (!this.panel || !this.ready) {
+            vscode.window.showInformationMessage('Robot Preview: open the preview first.');
+            return;
+        }
+        this.panel.webview.postMessage({ type: 'captureScreenshot' });
+    }
+
+    async saveScreenshot({ name, data }) {
+        if (!this.primary || !data) return;
+        const fileName = `${(name || path.basename(modelStem(this.primary.fsPath))).replace(/[\\/:*?"<>|]/g, '_')}.png`;
+        const target = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(path.join(path.dirname(this.primary.fsPath), fileName)),
+            filters: { 'PNG image': ['png'] }
+        });
+        if (!target) return;
+        await vscode.workspace.fs.writeFile(target, Buffer.from(data, 'base64'));
+        vscode.window.setStatusBarMessage(`Robot Preview: saved ${vscode.workspace.asRelativePath(target.fsPath)}`, 4000);
+    }
+
     async exportUrdf() {
         if (!this.panel || !this.ready || !this.primary) {
             vscode.window.showInformationMessage('Robot Preview: open the preview of a xacro file first.');
@@ -1003,6 +1027,7 @@ class Preview {
         for (const [name, dir] of this.listing.packages) {
             text = text.replace(new RegExp(`(["'\\s>])/${escapeRegex(name)}/`, 'g'), (match, before) => `${before}${dir}/`);
         }
+        // Only .xacro is stripped: for a plain .urdf the default must not be the source itself.
         const defaultUri = vscode.Uri.file(this.primary.fsPath.replace(/(\.urdf)?\.xacro$/i, '') + '.urdf');
         const target = await vscode.window.showSaveDialog({ defaultUri, filters: { URDF: ['urdf'] } });
         if (!target) return;
@@ -1022,6 +1047,8 @@ class Preview {
             await this.context.globalState.update('settings', msg.settings);
         } else if (msg?.type === 'diagnostics') {
             await this.onDiagnostics(msg);
+        } else if (msg?.type === 'screenshot') {
+            await this.saveScreenshot(msg);
         } else if (msg?.type === 'urdf') {
             if (this.pendingExport?.requestId === msg.requestId) this.pendingExport.resolve(msg.text);
         } else if (msg?.type === 'error') {
@@ -1282,6 +1309,7 @@ exports.activate = context => {
             return uri && preview.setXacroArgs(uri);
         }),
         vscode.commands.registerCommand('robotPreviewUrdf.exportUrdf', () => preview.exportUrdf()),
+        vscode.commands.registerCommand('robotPreviewUrdf.saveScreenshot', () => preview.requestScreenshot()),
         vscode.commands.registerCommand('robotPreviewUrdf.open', uri => {
             uri = uri || vscode.window.activeTextEditor?.document.uri;
             if (!uri) return;
