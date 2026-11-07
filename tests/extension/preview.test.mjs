@@ -119,7 +119,7 @@ test('cursor inside an element highlights it, expanding xacro properties', async
     const armDoc = await env.vscode.workspace.openTextDocument(path.join(env.workspace, ARM));
     select(armDoc, '<link name="${arm_link_name}">');
     await sleep(200);
-    assert.deepEqual(env.lastOf('highlight'), { type: 'highlight', kind: 'link', pattern: '.+?_arm' });
+    assert.deepEqual(env.lastOf('highlight'), { type: 'highlight', kind: 'link', pattern: '.*?_arm' });
 });
 
 test('joint limits are written back to literal URDF joints only', async () => {

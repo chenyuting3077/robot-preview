@@ -204,6 +204,17 @@ test('a load error with a location is reported in that file and line', async () 
     assert.ok(!env.state.diagnostics.get(primary)?.length);
 });
 
+test('clicking a link made by a macro with an empty prefix jumps to its definition', async () => {
+    const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-reveal-')));
+    write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');
+    const primary = path.join(ws, 'src/pkg/urdf/robot.urdf.xacro');
+    write(primary, '<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro">\n<xacro:macro name="arm" params="tf_prefix">\n  <link name="${tf_prefix}base_link"/>\n</xacro:macro>\n<xacro:arm tf_prefix=""/>\n</robot>\n');
+    const { env } = await startIn(ws, primary, {});
+    await env.state.panels[0].receive({ type: 'reveal', kind: 'link', name: 'base_link' });
+    const revealed = await waitFor(() => env.state.revealed, 2000);
+    assert.equal(revealed.line, 2);
+});
+
 test('packages referenced from an included file outside every package are sent too', async () => {
     const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-shared-')));
     write(path.join(ws, 'src/pkg/package.xml'), '<package><name>pkg</name></package>');

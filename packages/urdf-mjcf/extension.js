@@ -59,7 +59,8 @@ function renderHtml(html, webview, distUri) {
 
 const escapeRegex = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const PLACEHOLDER_RE = /(\$\{[^}]*\}|\$\([^)]*\))/;
-const namePattern = name => name.split(PLACEHOLDER_RE).map((part, i) => (i % 2 ? '.+?' : escapeRegex(part))).join('');
+// A placeholder may expand to nothing: tf_prefix and prefix usually default to ''.
+const namePattern = name => name.split(PLACEHOLDER_RE).map((part, i) => (i % 2 ? '.*?' : escapeRegex(part))).join('');
 const literalLength = name => name.split(PLACEHOLDER_RE).filter((_, i) => i % 2 === 0).join('').length;
 
 function expandProperties(text, name) {
