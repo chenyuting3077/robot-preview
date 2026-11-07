@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Grid lines no longer flicker while the camera moves.
+
 ## 0.3.0
 
 - Xacro `load_yaml()` (with `!degrees`, `!millimeters` and the other unit tags), `$(env)`, `$(optenv)`, `$(dirname)` and `$(eval)`; Universal Robots descriptions expand exactly as ROS 2 xacro does. Python conditionals work inside parentheses and alongside strings.
