@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- Xacro `load_yaml()` (with `!degrees`, `!millimeters` and the other unit tags), `$(env)`, `$(optenv)`, `$(dirname)` and `$(eval)`; Universal Robots descriptions expand exactly as ROS 2 xacro does. Python conditionals work inside parentheses and alongside strings.
+- Xacro fixes: `False` and `"false"` are false in `xacro:if` and conditionals, macro defaults `name:=^`, properties set with `scope="parent"`, and empty `xacro:arg` defaults.
+- Meshes referenced by absolute path, `file://`, a `../` outside the package, Gazebo `model://` or a percent-encoded name now load, including from files included from outside every package. Only the referenced file and the materials and textures it names are sent.
+- `robotPreviewUrdf.packages` maps package names to folders for packages without a `package.xml` or a sourced ROS environment.
+- A mesh found only by ignoring case or by file name is flagged, since ROS on Linux would not find it; the case has a quick fix.
+- Clicking a link made by a xacro macro with an empty prefix (`${tf_prefix}base_link` with `tf_prefix=""`) jumps to its definition.
+- An unknown package is a Problems entry listing where it was searched, with a quick fix to choose its folder; missing meshes name the path that was tried at every reference; YAML errors point at their line, and a missing YAML file shows its path.
+
 ## 0.2.2
 
 - Links to the other Robot Preview extensions.
