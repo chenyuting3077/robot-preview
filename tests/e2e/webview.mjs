@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { copyFixture, loadExtension, sleep } from '../extension/vscode-mock.mjs';
+import { createPathMatrix } from '../extension/path-fixture.mjs';
 
 const dist = new URL('../../packages/urdf-mjcf/dist/', import.meta.url).pathname;
 const chromeBinary = process.env.CHROME || 'google-chrome';
@@ -26,7 +27,19 @@ async function captureMessages() {
     env.fire('change', { document: doc, contentChanges: [{}] });
     while (!env.lastOf('update')) await sleep(20);
     const encode = message => ({ ...message, files: message.files.map(file => ({ path: file.path, data: Buffer.from(file.data).toString('base64') })) });
-    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')) };
+    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')), matrix: encode(await capturePathMatrix()) };
+}
+
+async function capturePathMatrix() {
+    const matrix = createPathMatrix();
+    Object.assign(process.env, matrix.env);
+    const env = loadExtension({ workspace: matrix.ws, config: matrix.config });
+    env.open(matrix.primary);
+    env.activate();
+    while (!env.state.panels[0]?.webview.html) await sleep(20);
+    env.state.panels[0].receive({ type: 'ready' });
+    while (!env.lastOf('load')) await sleep(20);
+    return { ...env.lastOf('load'), expectedMissing: matrix.expectedMissing };
 }
 
 function serve(messages) {
@@ -227,6 +240,15 @@ try {
     await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 5000);
     const missing = await ev(`return window.__out.find(m => m.type === 'diagnostics').missingMeshes`);
     check('missing mesh reported', missing.length === 1 && missing[0].endsWith('arm.stl'), JSON.stringify(missing));
+
+    await ev(`window.__out.length = 0; await window.__send('matrix')`);
+    check('path matrix model loads', await waitFor(`window.app.currentModel?.links?.has('l8')`, 10000));
+    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 15000);
+    const matrixDiagnostics = await ev(`return window.__out.find(m => m.type === 'diagnostics')`);
+    const expectedMissing = messages.matrix.expectedMissing;
+    const unexpected = (matrixDiagnostics?.missingMeshes || []).filter(mesh => !expectedMissing.some(path => mesh.endsWith(path)));
+    check('every path form resolves to its mesh', matrixDiagnostics?.loadError === null && unexpected.length === 0, JSON.stringify(unexpected));
+
 
     await ev(`document.body.classList.add('vscode-light')`);
     check('theme follows VS Code', await waitFor(`document.documentElement.getAttribute('data-theme') === 'light'`, 3000));

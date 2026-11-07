@@ -1,11 +1,19 @@
 const vscode = require('vscode');
 const path = require('path');
+const url = require('url');
 const os = require('os');
 const fs = require('fs/promises');
 
-const ASSET_RE = /\.(urdf|xacro|xml|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|msh|ya?ml)$/i;
+const ASSET_RE = /\.(urdf|xacro|xml|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|bmp|tga|tiff?|webp|msh|ya?ml)$/i;
+// Files a mesh names internally, where the URDF cannot see them.
+const SIDECAR_REFS = {
+    obj: /^\s*mtllib\s+(.+?)\s*$/gm,
+    mtl: /^\s*(?:map_\w+|bump|disp|decal|refl)\s+(?:.*\s)?(\S+)\s*$/gm,
+    dae: /<init_from>\s*([^<]+?)\s*<\/init_from>/g
+};
 const MODEL_RE = /\.(urdf|xacro|xml)$/i;
-const REF_RE = /package:\/\/([^/\s"'<>]+)|\$\(find\s+([^)\s]+)\)/g;
+const REF_RE = /(package|model):\/\/([^/\s"'<>]+)|\$\(find\s+([^)\s]+)\)/g;
+const FILE_REF_RE = /\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;
 const INCLUDE_RE = /<(?:xacro:include|include)\b[^>]*?\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;
 const ELEMENT_RE = /<(link|joint|body)\b[^>]*?\bname\s*=\s*["']([^"']+)["'][^>]*?(\/?)>/g;
 const PROPERTY_RE = /<xacro:property\s+name\s*=\s*["']([\w-]+)["']\s+value\s*=\s*["']([^"']*)["']/g;
@@ -127,6 +135,18 @@ async function buildPackageIndex() {
     return index;
 }
 
+// Gazebo looks up model://NAME as NAME/ under each of these, Harmonic first.
+async function findModel(name) {
+    const dirs = ['GZ_SIM_RESOURCE_PATH', 'IGN_GAZEBO_RESOURCE_PATH', 'GAZEBO_MODEL_PATH']
+        .flatMap(variable => (process.env[variable] || '').split(path.delimiter).filter(Boolean));
+    dirs.push(path.join(os.homedir(), '.gazebo', 'models'));
+    for (const dir of dirs) {
+        const candidate = path.join(dir, name);
+        if ((await fs.stat(candidate).catch(() => null))?.isDirectory()) return candidate;
+    }
+    return null;
+}
+
 let packageIndex = null;
 const getPackageIndex = () => (packageIndex ??= buildPackageIndex());
 
@@ -174,11 +194,34 @@ async function modelInfo(fsPath, version, live = true) {
     const info = {
         version,
         text,
-        refs: Array.from(text.matchAll(REF_RE), m => m[1] || m[2]),
+        refs: Array.from(text.matchAll(REF_RE), m => ({ name: m[2] || m[3], isModel: m[1] === 'model' })),
+        files: Array.from(text.matchAll(FILE_REF_RE), m => m[1]),
         includes: Array.from(text.matchAll(INCLUDE_RE), m => path.basename(m[1]))
     };
     modelCache.set(cacheKey, info);
     return info;
+}
+
+// Files outside every sent package are keyed by their absolute path, which is
+// also what the webview's resolver gets from an absolute or file:// reference.
+const absoluteKey = fsPath => '/' + fsPath.split(path.sep).join('/').replace(/^\/+/, '');
+
+// Candidate paths for a local reference, literal first: a name may contain a
+// real '%', so the URL-decoded form is only a fallback.
+function localCandidates(ref, fromFiles) {
+    if (/^(package|model):\/\//.test(ref)) return [];
+    const expanded = ref
+        .replace(/\$\(optenv\s+([\w]+)(?:\s+([^)]*))?\)/g, (match, name, fallback = '') => process.env[name] ?? fallback)
+        .replace(/\$\(env\s+([\w]+)\)/g, (match, name) => process.env[name] ?? match);
+    if (/\$[({]/.test(expanded)) return [];
+    const forms = [];
+    if (expanded.startsWith('file://')) {
+        try { forms.push(url.fileURLToPath(expanded)); } catch { return []; }
+    } else {
+        forms.push(expanded);
+        try { forms.push(decodeURIComponent(expanded)); } catch {}
+    }
+    return [...new Set(fromFiles.flatMap(file => forms.map(form => path.resolve(path.dirname(file), form))))];
 }
 
 async function listFiles(fileUri, live) {
@@ -189,34 +232,77 @@ async function listFiles(fileUri, live) {
     const toKey = (name, dir, file) => `/${name}/` + path.relative(dir, file).split(path.sep).join('/');
 
     const entries = new Map();
+    const paths = new Set();
     const packages = new Map();
+    const models = new Map();
     const roots = [];
     const missing = [];
     const includes = new Set();
     const seen = new Set([rootName]);
-    const queue = [[rootName, rootDir]];
-    while (queue.length) {
-        const [name, dir] = queue.shift();
-        roots.push(dir);
-        packages.set(name, dir);
-        for (const fsPath of await walk(dir)) {
-            const version = await versionOf(fsPath, live);
-            if (!version) continue;
-            entries.set(toKey(name, dir, fsPath), { fsPath, version });
-            if (!MODEL_RE.test(fsPath)) continue;
-            const info = await modelInfo(fsPath, version, live);
+    const queue = [[rootName, rootDir, false]];
+
+    const followRefs = async info => {
+        for (const { name, isModel } of info.refs) {
+            const id = isModel ? `model://${name}` : name;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const dir = isModel ? await findModel(name) : (await getPackageIndex()).get(name);
+            if (dir) queue.push([name, dir, isModel]);
+            else missing.push({ name, isModel });
+        }
+    };
+    const add = (key, fsPath, version) => {
+        entries.set(key, { fsPath, version });
+        paths.add(fsPath);
+    };
+    // docs/vscode-extension.md: why outside files go one by one.
+    const addOutside = async fsPath => {
+        if (paths.has(fsPath)) return true;
+        if (!ASSET_RE.test(fsPath) || !(await fs.stat(fsPath).catch(() => null))?.isFile()) return false;
+        const version = await versionOf(fsPath, live);
+        if (!version) return false;
+        add(absoluteKey(fsPath), fsPath, version);
+        const sidecar = SIDECAR_REFS[path.extname(fsPath).slice(1).toLowerCase()];
+        if (sidecar) {
+            const text = new TextDecoder().decode(await readData(fsPath, live));
+            for (const [, ref] of text.matchAll(sidecar)) {
+                for (const candidate of localCandidates(ref, [fsPath])) {
+                    if (await addOutside(candidate)) break;
+                }
+            }
+        }
+        return true;
+    };
+
+    // Packages and outside files alternate until neither adds anything: an
+    // included file outside every package can still name further packages.
+    const scanned = new Set();
+    for (let progress = true; progress;) {
+        progress = false;
+        while (queue.length) {
+            const [name, dir, isModel] = queue.shift();
+            roots.push(dir);
+            (isModel ? models : packages).set(name, dir);
+            for (const fsPath of await walk(dir)) {
+                const version = await versionOf(fsPath, live);
+                if (version) add(toKey(name, dir, fsPath), fsPath, version);
+            }
+        }
+        for (const entry of Array.from(entries.values())) {
+            if (!MODEL_RE.test(entry.fsPath) || scanned.has(entry.fsPath)) continue;
+            scanned.add(entry.fsPath);
+            progress = true;
+            const info = await modelInfo(entry.fsPath, entry.version, live);
             info.includes.forEach(include => includes.add(include));
-            for (const ref of info.refs) {
-                if (seen.has(ref)) continue;
-                seen.add(ref);
-                const refDir = (await getPackageIndex()).get(ref);
-                if (refDir) queue.push([ref, refDir]);
-                else missing.push(ref);
+            await followRefs(info);
+            // An include is relative to its own file (xacro); a mesh to the
+            // opened file, because the webview resolves the expanded URDF there.
+            for (const ref of info.files) {
+                for (const fsPath of localCandidates(ref, [entry.fsPath, fileUri.fsPath])) await addOutside(fsPath);
             }
         }
     }
-    const paths = new Set(Array.from(entries.values(), entry => entry.fsPath));
-    return { entries, paths, packages, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes };
+    return { entries, paths, packages, models, primary: toKey(rootName, rootDir, fileUri.fsPath), roots, missing, includes };
 }
 
 function closingEnd(text, tag, from) {
@@ -371,6 +457,9 @@ class Preview {
         for (const [fsPath, diagnostics] of byFile) this.diagnostics.set(vscode.Uri.file(fsPath), diagnostics);
     }
 
+    // Where a reference points on disk, or null when only xacro can tell
+    // (an expression) or its package / model is unknown.
+
     async findMeshReference(meshPath) {
         if (!this.listing) return null;
         const normalize = value => value.replace(/^package:\/\//, '').replace(/^(\.\/|\/)+/, '');
@@ -474,10 +563,12 @@ class Preview {
             this.listing = listing;
             this.watchRoots(listing.roots);
 
-            const newMissing = listing.missing.filter(name => !this.warned.has(name));
+            const newMissing = listing.missing
+                .map(({ name, isModel }) => (isModel ? `model://${name}` : name))
+                .filter(name => !this.warned.has(name));
             if (newMissing.length) {
                 newMissing.forEach(name => this.warned.add(name));
-                vscode.window.showWarningMessage(`Robot Preview: ROS package not found: ${newMissing.join(', ')}`);
+                vscode.window.showWarningMessage(`Robot Preview: ROS package or Gazebo model not found: ${newMissing.join(', ')}`);
             }
 
             const changed = Array.from(listing.entries).filter(([key, entry]) => full || this.sent.get(key) !== entry.version);

@@ -143,7 +143,9 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             onDidChangeTextDocument: on('change'),
             onDidSaveTextDocument: on('save'),
             onDidChangeConfiguration: on('config'),
-            getConfiguration: () => ({ get: key => state.config[key] }),
+            getConfiguration: () => ({
+                get: key => state.config[key]
+            }),
             openTextDocument: async fsPath => openDocument(fsPath),
             asRelativePath: fsPath => path.relative(workspace, fsPath),
             applyEdit: async edit => {

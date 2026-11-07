@@ -180,6 +180,16 @@ export function resolveFileFromMap(path, fileMap, options = {}) {
         }
     }
 
+    // A literal '%' is legal in a file name, so decoded forms only follow.
+    for (const candidate of [...candidates]) {
+        try {
+            const decoded = decodeURIComponent(candidate);
+            if (decoded !== candidate) addCandidate(candidates, decoded);
+        } catch {
+            // Not percent-encoded.
+        }
+    }
+
     for (const candidate of candidates) {
         if (fileMap.has(candidate)) {
             return fileMap.get(candidate);
