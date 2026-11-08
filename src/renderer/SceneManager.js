@@ -9,6 +9,7 @@ import { ConstraintManager } from './ConstraintManager.js';
 import { CoordinateAxesManager } from './CoordinateAxesManager.js';
 import { HighlightManager } from './HighlightManager.js';
 import { MeasurementManager } from './MeasurementManager.js';
+import { disposeModel } from './disposeModel.js';
 
 /**
  * SceneManager - Core scene management and coordination
@@ -156,7 +157,7 @@ export class SceneManager {
     addModel(model, { fitCamera = true } = {}) {
         // Clear previous model
         if (this.currentModel && this.currentModel.threeObject) {
-            this.removeModel(this.currentModel);
+            this.removeModel(this.currentModel, model);
         }
 
         this.currentModel = model;
@@ -247,10 +248,14 @@ export class SceneManager {
         requestAnimationFrame(() => this.emit('modelReady', model));
     }
 
-    removeModel(model) {
+    removeModel(model, next = null) {
         if (model && model.threeObject && model.threeObject.parent) {
             model.threeObject.parent.remove(model.threeObject);
         }
+        // The highlight goes first, or the highlighted link's original material
+        // is never disposed.
+        this.highlightManager.clearHighlight();
+        disposeModel(model?.threeObject, next?.threeObject);
 
         // Clear all managers
         this.axesManager.clear();

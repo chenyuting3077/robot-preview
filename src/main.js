@@ -371,7 +371,7 @@ class App {
         }
 
         if (this.currentModel) {
-            this.sceneManager.removeModel(this.currentModel);
+            this.sceneManager.removeModel(this.currentModel, model);
         }
         this.currentModel = model;
         this.poseController.setModel(model);
