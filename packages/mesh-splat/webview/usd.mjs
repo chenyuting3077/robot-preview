@@ -319,7 +319,22 @@ function xformOpMatrix(kind, value) {
     return matrix;
 }
 
+// Null when an index is out of range: three then yields undefined, not NaN.
+export function expandFloat32(data, indices, itemSize) {
+    const expanded = new Float32Array(indices.length * itemSize);
+    for (let i = 0, out = 0; i < indices.length; i++) {
+        const start = indices[i] * itemSize;
+        if (!(start >= 0 && start + itemSize <= data.length)) return null;
+        for (let j = 0; j < itemSize; j++) expanded[out++] = data[start + j];
+    }
+    return expanded;
+}
+
 class XformUSDComposer extends USDComposer {
+    _expandAttribute(data, indices, itemSize) {
+        return (data instanceof Float32Array && expandFloat32(data, indices, itemSize)) || super._expandAttribute(data, indices, itemSize);
+    }
+
     applyTransform(object, fields, attrs = {}) {
         const data = { ...fields, ...attrs };
         const order = data.xformOpOrder;

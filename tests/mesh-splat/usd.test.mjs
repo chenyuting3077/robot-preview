@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Matrix4 } from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
-import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined } from '../../packages/mesh-splat/webview/usd.mjs';
+import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined, expandFloat32 } from '../../packages/mesh-splat/webview/usd.mjs';
 
 function rows(ply) {
     const header = readPlyHeader(ply);
@@ -186,4 +186,13 @@ def Xform "A"
         .multiply(pivot.clone().invert());
     a.updateMatrix();
     a.matrix.elements.forEach((value, i) => assert.ok(Math.abs(value - expected.elements[i]) < 1e-5, `element ${i}`));
+});
+
+test('expandFloat32 gives the values three expands to, and null for an index out of range', () => {
+    const data = new Float32Array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6]);
+    const expanded = (values, indices, size) => Array.from(indices, index => Array.from({ length: size }, (_, j) => values[index * size + j])).flat();
+    assert.deepEqual(Array.from(expandFloat32(data, [1, 0, 1], 3)), expanded(data, [1, 0, 1], 3));
+    assert.deepEqual(Array.from(expandFloat32(data, new Int32Array([2, 0]), 2)), expanded(data, [2, 0], 2));
+    assert.equal(expandFloat32(data, [2], 3), null);
+    assert.equal(expandFloat32(data, [-1], 3), null);
 });
