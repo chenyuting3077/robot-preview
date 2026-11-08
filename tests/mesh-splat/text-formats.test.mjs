@@ -48,7 +48,11 @@ test('parsePointsText gives what the line-splitting version gave', () => {
         Array.from({ length: 300 }, () => { const r = row(); return [r[0], r[1], r[2], 0.5, r[3], r[4], r[5]].join(';'); }).join('\n'),
         Array.from({ length: 300 }, () => row().slice(0, 3).join('\t')).join('\n') + '\nbad line\n1 2\n',
         '1e-3 -2.5E+2 3\n4 5 6 300 0 0\n',
-        ',1,2,3,10,20,30\n1;2;3;\n  7 8 9 1 2 3 4  \n1\u00a02\u00a03\n'
+        ',1,2,3,10,20,30\n1;2;3;\n  7 8 9 1 2 3 4  \n1\u00a02\u00a03\n',
+        'x y z r g b\n1 2 3 2.55e2 0 1\n+5 .5 5. 255.0 007 -0\n1e 2 3\n. 1 2\n0x1F 2 3\nInfinity 1 2\n12abc 1 2\n',
+        Array.from({ length: 300 }, () => [Math.random() * 1e6, Math.random() * 1e-6, -Math.random()].map(String).join(' ')).join('\n'),
+        Array.from({ length: 300 }, () => [Math.random() * 100, Math.random(), Math.random()].map(x => x.toExponential(8)).join(' ')).join('\n'),
+        '1234567890123456789 2 3\n0.1234567890123456789 2 3\n'
     ];
     for (const text of cases) {
         const actual = parsePointsText(text);
