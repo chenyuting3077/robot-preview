@@ -43,8 +43,26 @@ class LayerUSDAParser extends ListOpUSDAParser {
 
 const CRATE_TYPE = { ReferenceListOp: 35, Payload: 47, LayerOffsetVector: 49, StringVector: 50, PayloadListOp: 55 };
 const INLINED_INT8_VECTORS = { 19: 2, 23: 3, 25: 3, 27: 4, 29: 4 };
+// Float, Quatf, Vec2f, Vec3f, Vec4f: components per element.
+const FLOAT_ARRAY_COMPONENTS = { 8: 1, 17: 4, 20: 2, 24: 3, 28: 4 };
 
-class ArcUSDCParser extends USDCParser {
+export class ArcUSDCParser extends USDCParser {
+    _readArrayValue(valueRep) {
+        const components = FLOAT_ARRAY_COMPONENTS[valueRep.typeEnum];
+        if (!components || valueRep.isCompressed) return super._readArrayValue(valueRep);
+        const reader = this.reader;
+        const start = reader.offset;
+        const size = this.version.major === 0 && this.version.minor < 7 ? reader.readUint32() : reader.readUint64();
+        const end = reader.offset + size * components * 4;
+        if (!(Number.isSafeInteger(size) && size > 0 && size <= 0x7fffffff && end <= this.buffer.byteLength)) {
+            reader.offset = start;
+            return super._readArrayValue(valueRep);
+        }
+        const values = new Float32Array(this.buffer.slice(reader.offset, end));
+        reader.offset = end;
+        return values;
+    }
+
     _readPaths() {
         const section = this.sections.PATHS;
         if (!section || (this.version.major === 0 && this.version.minor < 4)) return super._readPaths();

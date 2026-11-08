@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Matrix4 } from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
-import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined, expandFloat32 } from '../../packages/mesh-splat/webview/usd.mjs';
+import { USDCParser } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/usd/USDCParser.js';
+import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined, expandFloat32, ArcUSDCParser } from '../../packages/mesh-splat/webview/usd.mjs';
 
 function rows(ply) {
     const header = readPlyHeader(ply);
@@ -195,4 +196,46 @@ test('expandFloat32 gives the values three expands to, and null for an index out
     assert.deepEqual(Array.from(expandFloat32(data, new Int32Array([2, 0]), 2)), expanded(data, [2, 0], 2));
     assert.equal(expandFloat32(data, [2], 3), null);
     assert.equal(expandFloat32(data, [-1], 3), null);
+});
+
+function crateReader(buffer, offset) {
+    const view = new DataView(buffer);
+    return {
+        buffer, view, offset,
+        readUint32() { this.offset += 4; return view.getUint32(this.offset - 4, true); },
+        readUint64() { this.offset += 8; return Number(view.getBigUint64(this.offset - 8, true)); },
+        readFloat32() { this.offset += 4; return view.getFloat32(this.offset - 4, true); }
+    };
+}
+
+// [typeEnum, components]: Float, Quatf, Vec2f, Vec3f, Vec4f.
+for (const [type, components] of [[8, 1], [17, 4], [20, 2], [24, 3], [28, 4]]) {
+    for (const version of [{ major: 0, minor: 8 }, { major: 0, minor: 6 }]) {
+        test(`float array type ${type} (crate 0.${version.minor}) reads as three reads it, from an unaligned offset`, () => {
+            const count = 5;
+            const sizeBytes = version.minor < 7 ? 4 : 8;
+            const start = 3;
+            const buffer = new ArrayBuffer(start + sizeBytes + count * components * 4 + 7);
+            const view = new DataView(buffer);
+            if (sizeBytes === 4) view.setUint32(start, count, true);
+            else view.setBigUint64(start, BigInt(count), true);
+            for (let i = 0; i < count * components; i++) view.setFloat32(start + sizeBytes + i * 4, i * 0.37 - 2.5, true);
+            const parser = () => Object.assign(Object.create(ArcUSDCParser.prototype), { buffer, version, reader: crateReader(buffer, start) });
+            const rep = { typeEnum: type, isCompressed: false };
+            const ours = parser();
+            const theirs = parser();
+            const values = ours._readArrayValue(rep);
+            const expected = USDCParser.prototype._readArrayValue.call(theirs, rep);
+            assert.ok(values instanceof Float32Array);
+            assert.deepEqual(Array.from(values), Array.from(expected));
+            assert.equal(ours.reader.offset, theirs.reader.offset);
+        });
+    }
+}
+
+test('a float array running past the end of the file fails as it does in three', () => {
+    const buffer = new ArrayBuffer(16);
+    new DataView(buffer).setBigUint64(0, 100n, true);
+    const parser = Object.assign(Object.create(ArcUSDCParser.prototype), { buffer, version: { major: 0, minor: 8 }, reader: crateReader(buffer, 0) });
+    assert.throws(() => parser._readArrayValue({ typeEnum: 24, isCompressed: false }), RangeError);
 });
