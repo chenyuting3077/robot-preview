@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.3
+## 0.1.4
 
 - Binary PLY point clouds load 10-40x faster (ASCII about 3x) with about a quarter of the memory; clouds past ~44M points no longer fail.
 - XYZ, PTS and ASC point clouds load about 2.5x faster.
