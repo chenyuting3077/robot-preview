@@ -3,7 +3,7 @@
  * Responsible for distance measurement between objects
  */
 import * as THREE from 'three';
-import * as d3 from 'd3';
+import * as d3 from '../d3-lite.js';
 
 export class MeasurementController {
     constructor(sceneManager) {

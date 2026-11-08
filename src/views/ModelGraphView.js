@@ -2,7 +2,7 @@
  * ModelGraphView - D3.js model structure graph view
  * Responsible for drawing and managing model tree structure graph
  */
-import * as d3 from 'd3';
+import * as d3 from '../d3-lite.js';
 
 export class ModelGraphView {
     constructor(sceneManager, measurementController = null) {

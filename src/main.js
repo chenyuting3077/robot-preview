@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import * as d3 from 'd3';
+import * as d3 from './d3-lite.js';
 import { SceneManager } from './renderer/SceneManager.js';
 import { UIController } from './ui/UIController.js';
 import { FileHandler } from './controllers/FileHandler.js';
