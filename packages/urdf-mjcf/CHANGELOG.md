@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- Renamed to Robot Preview: URDF, Xacro & MJCF.
+- Model checks in Problems: errors for what the ROS URDF parser rejects (unknown or duplicate names, a link with two parents, several root links, loops, a missing or incomplete `<limit>`, an `<inertial>` without `<mass>`) and warnings for what breaks simulation or planning (missing or impossible inertia, a zero axis, inverted limits, zero effort or velocity, a collision mesh 100x the size of its visual, likely a mm/m mistake). Quick fixes for inverted limits, bounds on continuous joints and a missing `<limit>`; `robotPreviewUrdf.checks.disabled` turns rules off.
+- Xacro navigation without opening the preview: Go to Definition (F12 or Cmd/Ctrl+click) and hover for macros, properties, arguments, link names and include paths; completion after `${`, `<xacro:` and `$(arg `; clickable paths.
+- Save Screenshot (camera button or command) saves the view as a PNG at twice its size beside the model.
+- Faster and lighter: reloading reuses parsed meshes (UR5e full reload 259 -> 62 ms) and frees the previous model's GPU memory; syntax errors and checks appear before meshes finish loading; the package shrinks from 3.3 to 1.7 MB and a MuJoCo simulation starts about twice as fast.
+
 ## 0.3.1
 
 - Grid lines no longer flicker while the camera moves.
