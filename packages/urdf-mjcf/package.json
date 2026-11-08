@@ -1,6 +1,6 @@
 {
   "name": "robot-preview-urdf-mjcf",
-  "displayName": "Robot Preview: URDF & MJCF",
+  "displayName": "Robot Preview: URDF, Xacro & MJCF",
   "description": "Live 3D viewer for URDF, Xacro and MJCF robot models (ROS, ROS 2, MuJoCo) inside VS Code",
   "version": "0.3.1",
   "publisher": "chenyuting3077",
@@ -95,7 +95,7 @@
       }
     ],
     "configuration": {
-      "title": "Robot Preview: URDF & MJCF",
+      "title": "Robot Preview: URDF, Xacro & MJCF",
       "properties": {
         "robotPreviewUrdf.autoOpen": {
           "type": "boolean",
@@ -216,6 +216,13 @@
     "urdf viewer",
     "kinematics",
     "rviz",
-    "viewer"
+    "viewer",
+    "urdf visualizer",
+    "urdf preview",
+    "xacro viewer",
+    "mjcf viewer",
+    "mujoco viewer",
+    "ros 2",
+    "gazebo"
   ]
 }

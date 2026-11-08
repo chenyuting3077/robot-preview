@@ -23,7 +23,7 @@ pnpm test:e2e
 
 ## Contents
 
-- [packages/urdf-mjcf/](packages/urdf-mjcf/) — Robot Preview: URDF & MJCF ([CHANGELOG](packages/urdf-mjcf/CHANGELOG.md))
+- [packages/urdf-mjcf/](packages/urdf-mjcf/) — Robot Preview: URDF, Xacro & MJCF ([CHANGELOG](packages/urdf-mjcf/CHANGELOG.md))
 - [packages/mesh-splat/](packages/mesh-splat/) — Robot Preview: Mesh & Splat ([CHANGELOG](packages/mesh-splat/CHANGELOG.md))
 - [packages/usd/](packages/usd/) — Robot Preview: USD, sharing the Mesh & Splat viewer ([CHANGELOG](packages/usd/CHANGELOG.md))
 - [docs/vscode-extension.md](docs/vscode-extension.md) — URDF & MJCF design decisions, limits and pitfalls
