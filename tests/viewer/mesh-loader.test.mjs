@@ -22,3 +22,37 @@ test('mesh parse is cached per file and invalidated when a material or texture c
     await cachedMeshParse(mesh, parse);
     assert.equal(parses, 2);
 });
+
+test('a full reload with unchanged files keeps the mesh cache; a changed or removed texture clears it', async () => {
+    const handler = new FileHandler();
+    const files = [{ path: '/m/part.obj', data: new TextEncoder().encode('v 0 0 0') }, { path: '/m/tex.webp', data: new Uint8Array([1]) }];
+    handler.setFiles(files, [], true);
+    const mesh = handler.fileMap.get('/m/part.obj');
+    let parses = 0;
+    const parse = async () => { parses++; return { isBufferGeometry: true, clone() { return this; } }; };
+    await cachedMeshParse(mesh, parse);
+    handler.setFiles(files, [], true);
+    assert.equal(handler.fileMap.get('/m/part.obj'), mesh, 'unchanged file keeps its File');
+    await cachedMeshParse(mesh, parse);
+    assert.equal(parses, 1);
+    handler.setFiles([{ path: '/m/tex.webp', data: new Uint8Array([2]) }]);
+    await cachedMeshParse(mesh, parse);
+    assert.equal(parses, 2);
+    handler.setFiles([], ['/m/tex.webp']);
+    await cachedMeshParse(mesh, parse);
+    assert.equal(parses, 3);
+});
+
+test('a texture left out of a full reload clears the mesh cache', async () => {
+    const handler = new FileHandler();
+    const obj = { path: '/m/part.obj', data: new TextEncoder().encode('v 0 0 0') };
+    handler.setFiles([obj, { path: '/m/tex.png', data: new Uint8Array([1]) }], [], true);
+    const mesh = handler.fileMap.get('/m/part.obj');
+    let parses = 0;
+    const parse = async () => { parses++; return { isBufferGeometry: true, clone() { return this; } }; };
+    await cachedMeshParse(mesh, parse);
+    handler.setFiles([obj], [], true);
+    assert.equal(handler.fileMap.get('/m/part.obj'), mesh);
+    await cachedMeshParse(mesh, parse);
+    assert.equal(parses, 2);
+});
