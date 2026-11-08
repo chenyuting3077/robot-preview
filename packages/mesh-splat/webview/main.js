@@ -11,7 +11,8 @@ import { VRMLLoader } from 'three/examples/jsm/loaders/VRMLLoader.js';
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
-import { readPlyHeader, plyKind, addMissingScale } from './ply.mjs';
+import { readPlyHeader, plyKind, addMissingScale, readPlyPoints } from './ply.mjs';
+import { flatNormals, percentile, grown } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 
@@ -132,6 +133,15 @@ async function loadPly(info) {
         if (patched !== bytes) info.format = t('flat');
         return loadSplat(patched, info);
     }
+    const points = kind === 'points' && readPlyPoints(bytes, header);
+    if (points) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(points.positions, 3));
+        if (points.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(points.normals, 3));
+        if (points.uvs) geometry.setAttribute('uv', new THREE.BufferAttribute(points.uvs, 2));
+        if (points.colors) geometry.setAttribute('color', new THREE.BufferAttribute(points.colors, 3, true));
+        return pointsOf(geometry);
+    }
     const geometry = new PLYLoader().parse(bytes.buffer);
     return kind === 'mesh' ? meshOf(geometry) : pointsOf(geometry);
 }
@@ -158,7 +168,7 @@ async function loadUsd(info) {
 const LOADERS = {
     stl: async () => {
         const geometry = new STLLoader().parse((await fetchBytes()).buffer);
-        geometry.deleteAttribute('normal');
+        geometry.setAttribute('normal', new THREE.BufferAttribute(flatNormals(geometry.attributes.position.array), 3));
         return meshOf(geometry);
     },
     ply: loadPly,
@@ -185,16 +195,18 @@ const LOADERS = {
 };
 
 function splatBox(splat) {
-    const axes = [[], [], []];
+    let axes = [0, 1, 2].map(() => new Float32Array(splat.packedSplats?.numSplats || splat.numSplats || 1024));
+    let count = 0;
     splat.forEachSplat((index, center) => {
-        axes[0].push(center.x);
-        axes[1].push(center.y);
-        axes[2].push(center.z);
+        if (index >= axes[0].length) axes = axes.map(values => grown(values, index + 1));
+        axes[0][index] = center.x;
+        axes[1][index] = center.y;
+        axes[2][index] = center.z;
+        count = Math.max(count, index + 1);
     });
-    const at = (values, q) => values.sort((a, b) => a - b)[Math.floor((values.length - 1) * q)];
     const box = new THREE.Box3(
-        new THREE.Vector3(...axes.map(values => at(values, 0.02))),
-        new THREE.Vector3(...axes.map(values => at(values, 0.98)))
+        new THREE.Vector3(...axes.map(values => percentile(values.subarray(0, count), 0.02))),
+        new THREE.Vector3(...axes.map(values => percentile(values.subarray(0, count), 0.98)))
     );
     splat.updateWorldMatrix(true, false);
     return box.applyMatrix4(splat.matrixWorld);
