@@ -12,6 +12,7 @@ import { i18n } from './utils/i18n.js';
 import { checkModel, linkGeometrySizes } from './utils/ModelChecks.js';
 
 // What a load tells the extension for the Problems panel.
+const isMJCF = model => model?.userData?.type === 'mjcf';
 const emptyLoadReport = () => ({ loadError: null, loadErrorLocation: null, missingMeshes: [], guessedMeshes: [], checks: [] });
 import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
@@ -262,7 +263,10 @@ class App {
 
             const pose = this.isUpdate ? this.poseController.getPose() : null;
             const previousModel = this.currentModel;
-            await this.fileHandler.loadPrimary(primary, { xacroArgs: this.xacroArgs, env: this.env });
+            // Only the panel's first load: later loads mostly hit the mesh cache,
+            // where a partial report would make the mesh-size checks blink.
+            const onParsed = previousModel ? undefined : model => this.reportParsed(model, syntax);
+            await this.fileHandler.loadPrimary(primary, { xacroArgs: this.xacroArgs, env: this.env, onParsed });
             if (!this.loadReport.loadError) this.showError('');
             if (pose && this.currentModel !== previousModel) this.poseController.applyPose(pose, { source: 'user' });
             if (this.lastHighlight) this.highlightByPattern(this.lastHighlight.kind, this.lastHighlight.pattern);
@@ -303,6 +307,13 @@ class App {
         vscode.postMessage({ type: 'ready' });
     }
 
+    // UR5e cold load: Problems entries at 80 ms this way, 326 ms when they waited
+    // for meshes (headless Chrome 157, Apple M2, median of 2).
+    reportParsed(model, syntax) {
+        const checks = model.expandedUrdf && !isMJCF(model) ? checkModel(model.expandedUrdf) : [];
+        vscode.postMessage({ type: 'diagnostics', partial: true, syntax, ...emptyLoadReport(), checks });
+    }
+
     // Twice the view's CSS size whatever the screen's pixel ratio, so the image
     // does not depend on the machine it was taken on.
     // The editor-cursor and hover highlight are UI state, not part of the picture.
@@ -337,13 +348,13 @@ class App {
     }
 
     handleModelLoaded(model, file) {
-        const isMJCF = file.name.toLowerCase().endsWith('.xml') && model?.userData?.type === 'mjcf';
+        const mjcf = isMJCF(model);
         // The standalone mesh editor has no handler for screenshots.
         document.getElementById('screenshot-btn').hidden = Boolean(model.isMesh);
         Object.assign(this.loadReport, {
             missingMeshes: model.missingMeshes || [],
             guessedMeshes: model.guessedMeshes || [],
-            checks: model.expandedUrdf && !isMJCF ? checkModel(model.expandedUrdf, { sizes: linkGeometrySizes(model, THREE.Box3) }) : []
+            checks: model.expandedUrdf && !mjcf ? checkModel(model.expandedUrdf, { sizes: linkGeometrySizes(model, THREE.Box3) }) : []
         });
 
         if (this.mujocoSimulationManager?.hasScene()) {
@@ -351,7 +362,7 @@ class App {
         }
 
         const simulationBar = document.getElementById('mujoco-simulation-bar');
-        if (isMJCF && model.joints?.size > 0) {
+        if (mjcf && model.joints?.size > 0) {
             this.currentMJCFFile = file;
             this.currentMJCFModel = model;
             simulationBar.style.display = 'flex';

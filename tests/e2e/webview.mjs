@@ -141,6 +141,11 @@ async function connect(port) {
         }
         return false;
     };
+    // The complete report; a partial one goes out first on a cold load.
+    const finalDiagnostics = async (ms = 10000) => {
+        await waitFor("window.__out.find(m => m.type === 'diagnostics' && !m.partial)", ms);
+        return ev("return window.__out.find(m => m.type === 'diagnostics' && !m.partial)");
+    };
     await send('Runtime.enable');
     await send('Page.enable');
     await send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
@@ -151,13 +156,13 @@ async function connect(port) {
         await sleep(1000);
         try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
     };
-    return { ev, waitFor, close };
+    return { ev, waitFor, finalDiagnostics, close };
 }
 
 const messages = await captureMessages();
 const server = await serve(messages);
 const page = await connect(server.address().port);
-const { ev, waitFor } = page;
+const { ev, waitFor, finalDiagnostics } = page;
 
 try {
     const panelsHidden = `['floating-joints-panel','floating-model-tree'].every(id => getComputedStyle(document.getElementById(id)).display === 'none')`;
@@ -171,8 +176,11 @@ try {
     await sleep(800);
     check('loading indicator hidden after load', await ev(`return getComputedStyle(document.getElementById('loading-indicator')).display === 'none'`));
     check('settings applied, panels still closed', await ev(`return document.getElementById('show-collision').classList.contains('active') && window.app.angleUnit === 'deg' && ${panelsHidden}`));
-    const diagnostics = await ev(`return window.__out.find(m => m.type === 'diagnostics')`);
+    const diagnostics = await finalDiagnostics();
     check('clean diagnostics after load', diagnostics?.loadError === null && diagnostics.missingMeshes.length === 0 && Object.values(diagnostics.syntax).every(list => list.length === 0));
+    const firstReports = await ev(`return window.__out.filter(m => m.type === 'diagnostics').map(m => ({ partial: !!m.partial, checks: m.checks.map(c => c.rule + ':' + c.name).sort() }))`);
+    const meshFree = report => JSON.stringify(report.checks.filter(check => !check.startsWith('collision-scale-mismatch')));
+    check('the first load reports the checks needing no mesh size before meshes load', firstReports.length === 2 && firstReports[0].partial && !firstReports[1].partial && meshFree(firstReports[0]) === meshFree(firstReports[1]), JSON.stringify(firstReports));
 
     await ev(`
         window.app.poseController.setJointValue('lift_joint', 0.1);
@@ -236,25 +244,24 @@ try {
 
     await ev(`window.__keep = window.app.currentModel; window.__out.length = 0; await window.__send('update', m => { m.files = [{ path: m.files[0].path, data: new TextEncoder().encode('<robot name="x">\\n  <link name="a">\\n</robot>') }]; })`);
     check('broken XML keeps the model and shows the error', await waitFor(`getComputedStyle(document.getElementById('load-error')).display === 'block'`, 8000) && await ev(`return window.app.currentModel === window.__keep`));
-    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 5000);
-    const broken = await ev(`return Object.values(window.__out.find(m => m.type === 'diagnostics').syntax).flat()`);
+    const broken = Object.values((await finalDiagnostics(5000)).syntax).flat();
     check('syntax error reported with its line', broken.length === 1 && broken[0].line === 2, JSON.stringify(broken));
     await ev(`window.__out.length = 0; window.postMessage({ type: 'exportUrdf', requestId: 8 }, '*')`);
     await waitFor(`window.__out.some(m => m.type === 'urdf')`, 3000);
     check('export refused while the source does not load', await ev(`return window.__out.find(m => m.type === 'urdf').text === null`));
     await ev(`await window.__send('update')`);
     check('fixing the XML clears the error', await waitFor(`getComputedStyle(document.getElementById('load-error')).display === 'none' && window.app.currentModel !== window.__keep`, 8000));
+    await finalDiagnostics();
+    check('an update sends one report, no partial one first', await ev(`return !window.__out.some(m => m.type === 'diagnostics' && m.partial)`));
 
     await ev(`window.__out.length = 0; await window.__send('load', m => { m.xacroArgs = { side: 'right' }; m.files = m.files.filter(f => !f.path.endsWith('arm.stl')); })`);
     check('xacro arguments override defaults', await waitFor(`window.app.currentModel?.links?.has('right_arm')`, 10000));
-    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 5000);
-    const missing = await ev(`return window.__out.find(m => m.type === 'diagnostics').missingMeshes`);
+    const missing = (await finalDiagnostics(5000)).missingMeshes;
     check('missing mesh reported', missing.length === 1 && missing[0].endsWith('arm.stl'), JSON.stringify(missing));
 
     await ev(`window.__out.length = 0; await window.__send('matrix')`);
     check('path matrix model loads', await waitFor(`window.app.currentModel?.links?.has('l9')`, 10000));
-    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 15000);
-    const matrixDiagnostics = await ev(`return window.__out.find(m => m.type === 'diagnostics')`);
+    const matrixDiagnostics = await finalDiagnostics(15000);
     const expectedMissing = messages.matrix.expectedMissing;
     const unexpected = (matrixDiagnostics?.missingMeshes || []).filter(mesh => !expectedMissing.some(path => mesh.endsWith(path)));
     check('every path form resolves to its mesh', matrixDiagnostics?.loadError === null && unexpected.length === 0, JSON.stringify(unexpected));
@@ -265,8 +272,7 @@ try {
     check('UR5e joint limit read from yaml (!degrees)', await ev(`return Math.abs(window.app.currentModel.joints.get('shoulder_pan_joint').limits.upper - 2 * Math.PI) < 1e-6`), JSON.stringify(await ev(`return window.app.currentModel.joints.get('shoulder_pan_joint')?.limits`)));
 
     await ev(`window.__out.length = 0; await window.__send('ur', m => { const f = m.files.find(f => f.path.endsWith('ur5e/joint_limits.yaml')); f.data = btoa('joint_limits:\\n  a: [1, 2\\n'); })`);
-    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 15000);
-    const yamlDiagnostics = await ev(`return window.__out.find(m => m.type === 'diagnostics')`);
+    const yamlDiagnostics = await finalDiagnostics(15000);
     check('a yaml syntax error points at the yaml file', yamlDiagnostics?.loadErrorLocation?.key === '/ur_description/config/ur5e/joint_limits.yaml' && yamlDiagnostics.loadErrorLocation.line >= 1, JSON.stringify(yamlDiagnostics?.loadErrorLocation));
 
     await ev(`document.body.classList.add('vscode-light')`);
@@ -325,8 +331,8 @@ try {
 
     const flawed = '<robot name="f"><link name="base"/><link name="arm"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link><joint name="j" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 0 1"/></joint></robot>';
     await ev(`window.__out.length = 0; window.postMessage({ type: 'load', files: [{ path: '/f/f.urdf', data: new TextEncoder().encode(${JSON.stringify(flawed)}) }], primary: '/f/f.urdf' }, '*')`);
-    await waitFor(`window.__out.some(m => m.type === 'diagnostics')`, 10000);
-    const checks = await ev(`return window.__out.find(m => m.type === 'diagnostics').checks.map(c => c.rule + ':' + c.name).sort()`);
+    const checks = (await finalDiagnostics()).checks.map(c => c.rule + ':' + c.name).sort();
+    check('a later load sends one report, no partial one first', await ev(`return !window.__out.some(m => m.type === 'diagnostics' && m.partial)`));
     check('model checks run on the loaded robot', JSON.stringify(checks) === JSON.stringify(['missing-inertial:arm', 'missing-limit:j']), JSON.stringify(checks));
 
     const violations = await ev(`return window.__csp`);

@@ -92,6 +92,7 @@ export class FileHandler {
             const fileType = ModelLoaderFactory.detectFileType(file.name, content);
             if (!fileType) throw new Error(`${window.i18n.t('unsupportedFormat')}: ${file.name}`);
             const model = await ModelLoaderFactory.loadModel(fileType, content, primaryPath, this.fileMap, file, options);
+            options.onParsed?.(model);
             await Promise.race([model.meshesReady, new Promise(resolve => setTimeout(resolve, FileHandler.MESH_TIMEOUT_MS))]);
             this.onModelLoaded?.(model, file);
         } catch (error) {
