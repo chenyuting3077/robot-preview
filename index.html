@@ -493,6 +493,12 @@
             transition: all 0.4s var(--spring);
         }
 
+        /* Dragging moves a panel by transform; maximized fills the view from where it stands. */
+        #floating-model-tree.maximized,
+        #floating-joints-panel.maximized {
+            transform: none !important;
+        }
+
         #floating-model-tree.maximized {
             top: 80px !important;
             left: 20px !important;

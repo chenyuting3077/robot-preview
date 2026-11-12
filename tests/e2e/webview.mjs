@@ -195,6 +195,12 @@ try {
         window.__before = window.app.currentModel;`);
     await ev(`await window.__send('update')`);
     check('update applied', await waitFor(`window.app.currentModel !== window.__before`));
+
+    await ev(`document.getElementById('toggle-model-tree').click(); document.getElementById('floating-model-tree').style.transform = 'translate(-300px, 120px)'; document.querySelector('.panel-maximize-btn[data-panel-id=floating-model-tree]').click()`);
+    await sleep(800);
+    const maximized = await ev(`const r = document.getElementById('floating-model-tree').getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, vw: innerWidth, vh: innerHeight }`);
+    check('a dragged tree panel maximizes inside the view', maximized.left >= 0 && maximized.top >= 0 && maximized.right <= maximized.vw && maximized.bottom <= maximized.vh, JSON.stringify(maximized));
+    await ev(`document.querySelector('.panel-maximize-btn[data-panel-id=floating-model-tree]').click(); document.getElementById('toggle-model-tree').click()`);
     await sleep(800);
     const smooth = await ev(`window.__sampling = false; return { steady: window.__steady, min: window.__min, snapshot: window.__snapshot }`);
     check('update never drops meshes or shows a snapshot', !smooth.snapshot && smooth.min >= smooth.steady, JSON.stringify(smooth));
