@@ -155,27 +155,29 @@ function settingPath(value) {
     return path.resolve(first, expanded);
 }
 
+// Candidate folders in priority order (first one naming a package wins), read
+// in parallel: /opt/ros/<distro> is usually also AMENT_PREFIX_PATH, and its
+// ~400 package.xml files read one by one took 150-270 ms.
 async function buildPackageIndex() {
     const index = new Map();
     const configured = vscode.workspace.getConfiguration('robotPreviewUrdf').get('packages') || {};
     for (const [name, dir] of Object.entries(configured)) index.set(name, settingPath(dir));
-    const add = async dir => {
-        const name = await readPackageName(dir);
-        if (name && !index.has(name)) index.set(name, dir);
-    };
-    for (const uri of await vscode.workspace.findFiles('**/package.xml', '**/{.git,node_modules,build,install,log}/**')) {
-        await add(path.dirname(uri.fsPath));
-    }
+    const dirs = (await vscode.workspace.findFiles('**/package.xml', '**/{.git,node_modules,build,install,log}/**'))
+        .map(uri => path.dirname(uri.fsPath));
     for (const dir of (process.env.ROS_PACKAGE_PATH || '').split(path.delimiter).filter(Boolean)) {
-        await add(dir);
-        for (const name of await listDir(dir)) await add(path.join(dir, name));
+        dirs.push(dir, ...(await listDir(dir)).map(name => path.join(dir, name)));
     }
     const prefixes = (process.env.AMENT_PREFIX_PATH || '').split(path.delimiter).filter(Boolean);
     for (const distro of await listDir('/opt/ros')) prefixes.push(path.join('/opt/ros', distro));
-    for (const prefix of prefixes) {
+    for (const prefix of new Set(prefixes.map(prefix => path.resolve(prefix)))) {
         const share = path.join(prefix, 'share');
-        for (const name of await listDir(share)) await add(path.join(share, name));
+        dirs.push(...(await listDir(share)).map(name => path.join(share, name)));
     }
+    const unique = [...new Set(dirs)];
+    const names = await Promise.all(unique.map(readPackageName));
+    unique.forEach((dir, i) => {
+        if (names[i] && !index.has(names[i])) index.set(names[i], dir);
+    });
     return index;
 }
 
