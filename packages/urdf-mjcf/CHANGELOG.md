@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1
+
+- A URDF whose ROS package cannot be found (a CAD export copied without `package.xml`, a renamed folder, or only the URDF and its meshes kept) loads from the nearby folder holding its meshes, as the web viewer did with a dragged folder; Problems warns that ROS will not find the package.
+- fusion2urdf exports load: their `.gazebo` and `.trans` xacro includes were never sent to the preview.
+- The kinematic tree no longer overlaps labels under a link with many children, and every label fits its box.
+- A dragged panel stays inside the view when maximized.
+
 ## 0.4.0
 
 - Renamed to Robot Preview: URDF, Xacro & MJCF.
