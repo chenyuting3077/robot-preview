@@ -60,16 +60,32 @@ export class ModelGraphView {
             return;
         }
 
+        // getBBox reads 0 while the panel is hidden, which is when the graph
+        // is usually drawn, so text is measured on a canvas instead.
+        const measureContext = document.createElement('canvas').getContext('2d');
+        const fontFamily = getComputedStyle(svg.node()).fontFamily;
+        const textWidth = (text, size, weight) => {
+            measureContext.font = `${weight} ${size}px ${fontFamily}`;
+            return measureContext.measureText(text).width;
+        };
+        const LINK_PAD_X = 28;
+        const JOINT_PAD_X = 16;
+        const NODE_GAP = 24;
+
         const hierarchy = d3.hierarchy(treeData);
-        const nodeCount = hierarchy.descendants().length;
-        const treeWidth = Math.max(1000, nodeCount * 70);
-        const treeHeight = Math.max(700, hierarchy.height * 120 + 100);
+        hierarchy.each(d => {
+            const linkWidth = textWidth(d.data.name, 18, 500) + LINK_PAD_X * 2;
+            const jointWidth = d.data.jointName
+                ? Math.max(textWidth(d.data.jointName, 12, 500), textWidth(d.data.jointType || 'joint', 10, 400)) + JOINT_PAD_X * 2
+                : 0;
+            d.width = Math.max(linkWidth, jointWidth);
+        });
 
-        const treeLayout = d3.tree()
-            .size([treeWidth - 100, treeHeight - 100])
-            .separation((a, b) => (a.parent === b.parent ? 0.8 : 1.2));
-
-        treeLayout(hierarchy);
+        // Siblings sit apart by their own label widths, so a link with many
+        // children (fixed sensors on base_link) keeps every label readable.
+        d3.tree()
+            .nodeSize([1, 120])
+            .separation((a, b) => (a.width + b.width) / 2 + NODE_GAP)(hierarchy);
 
         const container = svg.append('g').attr('class', 'zoom-container');
 
@@ -165,10 +181,14 @@ export class ModelGraphView {
             .enter()
             .append('path')
             .attr('class', 'graph-link')
-            .attr('d', d3.linkVertical()
-                .x(d => d.x + 50)
-                .y(d => d.y + 50)
-            );
+            // Curves to the joint label above the child, then drops straight:
+            // labels at the curve midpoints would crowd under a wide parent.
+            .attr('d', d => {
+                const sx = d.source.x + 50, sy = d.source.y + 50;
+                const tx = d.target.x + 50, ty = d.target.y + 50;
+                const my = (sy + ty) / 2;
+                return `M${sx},${sy}C${sx},${(sy + my) / 2} ${tx},${(sy + my) / 2} ${tx},${my}L${tx},${ty}`;
+            });
 
         // Draw joint nodes (on connection lines)
         const jointGroup = container.append('g').attr('class', 'joint-nodes');
@@ -178,8 +198,8 @@ export class ModelGraphView {
             .append('g')
             .attr('class', 'graph-joint-group')
             .attr('transform', d => {
-                // Calculate midpoint position of connection line
-                const midX = (d.source.x + d.target.x) / 2 + 50;
+                // Above the child, halfway down from the parent
+                const midX = d.target.x + 50;
                 const midY = (d.source.y + d.target.y) / 2 + 50;
                 return `translate(${midX}, ${midY})`;
             })
@@ -212,12 +232,12 @@ export class ModelGraphView {
                 .style('user-select', 'none')
                 .text(d.target.data.jointType || 'joint');
 
-            // Calculate maximum width of two lines of text
-            const nameBBox = nameText.node().getBBox();
-            const typeBBox = typeText.node().getBBox();
-            const maxTextWidth = Math.max(nameBBox.width, typeBBox.width);
+            const maxTextWidth = Math.max(
+                textWidth(d.target.data.jointName, 12, 500),
+                textWidth(d.target.data.jointType || 'joint', 10, 400)
+            );
 
-            const paddingX = 16; // Left-right padding
+            const paddingX = JOINT_PAD_X;
             const paddingY = 8;  // Top-bottom padding
             const lineHeight = 14; // Line height
             const capsuleWidth = maxTextWidth + paddingX * 2;
@@ -335,14 +355,12 @@ export class ModelGraphView {
             .style('user-select', 'none')
             .text(d => d.data.name);
 
-        node.each(function() {
+        // 22px: the line box of 18px text, what getBBox gives when visible.
+        node.each(function(d) {
             const nodeGroup = d3.select(this);
-            const textElement = nodeGroup.select('text').node();
-            const textBBox = textElement.getBBox();
-            const paddingX = 28;
             const paddingY = 10;
-            const boxWidth = textBBox.width + paddingX * 2;
-            const boxHeight = textBBox.height + paddingY * 2 + 8;
+            const boxWidth = textWidth(d.data.name, 18, 500) + LINK_PAD_X * 2;
+            const boxHeight = 22 + paddingY * 2 + 8;
 
             nodeGroup.insert('rect', 'text')
                 .attr('class', 'node-bg')
@@ -455,11 +473,9 @@ export class ModelGraphView {
             .text('Ground');
 
         // Dynamically adjust ground node rectangle size based on text width - Apple style
-        const groundTextBBox = groundText.node().getBBox();
-        const groundPaddingX = 28; // Consistent with other nodes
         const groundPaddingY = 10; // Consistent with other nodes
-        const groundBoxWidth = groundTextBBox.width + groundPaddingX * 2;
-        const groundBoxHeight = groundTextBBox.height + groundPaddingY * 2 + 8;
+        const groundBoxWidth = textWidth('Ground', 18, 500) + LINK_PAD_X * 2;
+        const groundBoxHeight = 22 + groundPaddingY * 2 + 8;
 
         groundNode.insert('rect', 'text')
             .attr('class', 'node-bg')
