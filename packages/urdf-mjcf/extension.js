@@ -93,6 +93,49 @@ async function findPackageRoot(fileUri) {
     }
 }
 
+// Without the package, the preview gets what the web viewer got from a dragged
+// folder: the nearest folder holding a referenced file at any depth, then the
+// webview matches paths in it the same way. Covers folders copied without
+// package.xml, renamed, or reduced to the URDF and its meshes.
+// ponytail: two folders up and GUESS_SCAN_LIMIT entries, so a stray
+// base_link.STL in $HOME or a full Desktop is never walked; beyond that, set
+// robotPreviewUrdf.packages.
+const GUESS_SCAN_LIMIT = 5000;
+
+// How many of `names` the folder holds at any depth; 0 past GUESS_SCAN_LIMIT.
+async function countHeld(root, names) {
+    const found = new Set();
+    const queue = [root];
+    for (let seen = 0; queue.length && found.size < names.size;) {
+        const dir = queue.shift();
+        for (const entry of await fs.readdir(dir, { withFileTypes: true }).catch(() => [])) {
+            if (++seen > GUESS_SCAN_LIMIT) return 0;
+            if (entry.isDirectory()) {
+                if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) queue.push(path.join(dir, entry.name));
+            } else if (names.has(entry.name.toLowerCase())) {
+                found.add(entry.name.toLowerCase());
+            }
+        }
+    }
+    return found.size;
+}
+
+// The nearest folder holding the most referenced files: the URDF folder can
+// hold an included .trans while the meshes sit one level up.
+async function guessPackageDir(name, info, fromFile) {
+    const prefixes = [`package://${name}/`, `$(find ${name})/`];
+    const names = new Set(info.files.flatMap(ref => prefixes.filter(prefix => ref.startsWith(prefix)).map(() => path.posix.basename(ref).toLowerCase())));
+    let best = null;
+    let bestCount = 0;
+    let dir = path.dirname(fromFile);
+    for (let up = 0; up <= 2 && bestCount < names.size; up++, dir = path.dirname(dir)) {
+        const count = await countHeld(dir, names);
+        if (count > bestCount) [best, bestCount] = [dir, count];
+        if (path.dirname(dir) === dir) break;
+    }
+    return best;
+}
+
 async function listDir(dir) {
     try {
         return await fs.readdir(dir);
@@ -252,14 +295,18 @@ async function listFiles(fileUri, live) {
     const seen = new Set([rootName]);
     const queue = [[rootName, rootDir, false]];
 
-    const followRefs = async info => {
+    const followRefs = async (info, fromFile) => {
         for (const { name, isModel } of info.refs) {
             const id = isModel ? `model://${name}` : name;
             if (seen.has(id)) continue;
             seen.add(id);
             const dir = isModel ? await findModel(name) : (await getPackageIndex()).get(name);
-            if (dir) queue.push([name, dir, isModel]);
-            else missing.push({ name, isModel });
+            const guessedDir = dir ? null : !isModel && await guessPackageDir(name, info, fromFile);
+            // A guessed folder already sent is not sent again: two copies of a
+            // mesh would make its file-name match ambiguous in the webview.
+            const sent = guessedDir && roots.some(root => guessedDir === root || guessedDir.startsWith(root + path.sep));
+            if (dir || (guessedDir && !sent)) queue.push([name, dir || guessedDir, isModel]);
+            if (!dir) missing.push({ name, isModel, guessedDir });
         }
     };
     const add = (key, fsPath, version) => {
@@ -305,7 +352,7 @@ async function listFiles(fileUri, live) {
             progress = true;
             const info = await modelInfo(entry.fsPath, entry.version, live);
             info.includes.forEach(include => includes.add(include));
-            await followRefs(info);
+            await followRefs(info, entry.fsPath);
             // An include is relative to its own file (xacro); a mesh to the
             // opened file, because the webview resolves the expanded URDF there.
             for (const ref of info.files) {
@@ -786,9 +833,11 @@ class Preview {
         }
 
         const fixes = new Map();
-        for (const { name: bare, isModel } of this.listing?.missing || []) {
+        for (const { name: bare, isModel, guessedDir } of this.listing?.missing || []) {
+            const message = missingPackageMessage(bare, isModel)
+                + (guessedDir ? ` The preview uses ${vscode.workspace.asRelativePath(guessedDir)}, which holds the referenced files; ROS will not.` : '');
             for (const reference of await this.findPackageReferences(bare, isModel)) {
-                add(reference.fsPath, make(reference.range, missingPackageMessage(bare, isModel), vscode.DiagnosticSeverity.Warning));
+                add(reference.fsPath, make(reference.range, message, vscode.DiagnosticSeverity.Warning));
                 if (!isModel) {
                     fixes.set(fixKey(reference.fsPath, reference.range), [{
                         title: `Choose the folder of package "${bare}"…`,

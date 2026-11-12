@@ -324,6 +324,29 @@ test('packages setting paths accept ${workspaceFolder:name} and ~', async () => 
     }
 });
 
+test('package:// without any package.xml resolves from an ancestor holding the path', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-nopkg-')));
+    const urdfDir = path.join(dir, 'robot (mix)/urdf');
+    write(path.join(urdfDir, 'r.urdf'), '<robot name="r"><link name="a"><visual><geometry><mesh filename="package://renamed_pkg/meshes/a.stl"/></geometry></visual></link></robot>');
+    write(path.join(dir, 'robot (mix)/meshes/a.stl'));
+    // The workspace is the urdf folder, as when the file is opened on its own.
+    const primary = path.join(urdfDir, 'r.urdf');
+    const { env, load } = await startPreview(urdfDir, primary);
+    assert.ok(load.files.some(file => file.path === '/renamed_pkg/meshes/a.stl'));
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [], guessedMeshes: [] });
+    const [diagnostic] = await waitFor(() => env.state.diagnostics.get(primary)?.length && env.state.diagnostics.get(primary));
+    assert.match(diagnostic.message, /ROS package "renamed_pkg" not found\..* The preview uses .+, which holds the referenced files; ROS will not\./);
+});
+
+test('an exported URDF left beside its meshes, without package.xml, sends each mesh once', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-flat-')));
+    write(path.join(dir, 'arm.urdf'), '<robot name="r"><link name="a"><visual><geometry><mesh filename="package://arm_description/meshes/base_link.STL"/></geometry></visual></link></robot>');
+    write(path.join(dir, 'base_link.STL'));
+    const { load } = await startPreview(dir, path.join(dir, 'arm.urdf'));
+    // One copy, so the webview's unique file-name match finds it.
+    assert.equal(load.files.filter(file => file.path.endsWith('/base_link.STL')).length, 1);
+});
+
 test('fusion2urdf .gazebo and .trans includes are sent with the xacro', async () => {
     const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-fusion-')));
     const urdf = path.join(dir, 'bot_description/urdf');
@@ -334,4 +357,13 @@ test('fusion2urdf .gazebo and .trans includes are sent with the xacro', async ()
     write(path.join(dir, 'bot_description/meshes/a.stl'));
     const { load } = await startPreview(urdf, path.join(urdf, 'bot.xacro'));
     for (const name of ['bot.trans', 'bot.gazebo', 'a.stl']) assert.ok(load.files.some(file => file.path.endsWith('/' + name)), name);
+});
+
+test('meshes in a differently named folder are found as a dragged folder would be', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-other-')));
+    const urdf = path.join(dir, 'robot/urdf');
+    write(path.join(urdf, 'r.urdf'), '<robot name="r"><link name="a"><visual><geometry><mesh filename="package://gone/meshes/a.stl"/></geometry></visual></link></robot>');
+    write(path.join(dir, 'robot/stl_files/a.stl'));
+    const { load } = await startPreview(urdf, path.join(urdf, 'r.urdf'));
+    assert.ok(load.files.some(file => file.path === '/gone/stl_files/a.stl'));
 });
