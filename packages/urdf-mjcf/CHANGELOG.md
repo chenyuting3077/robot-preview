@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2
+
+- The first preview of a model that names another ROS package opens faster: the package index reads each `package.xml` once and in parallel (Jazzy, 399 packages: 153-269 -> 59-83 ms).
+- Reloading is faster: sent files are hashed four bytes at a time (30 MB model: unchanged reload 255 -> about 195 ms).
+
 ## 0.4.1
 
 - A URDF whose ROS package cannot be found (a CAD export copied without `package.xml`, a renamed folder, or only the URDF and its meshes kept) loads from the nearby folder holding its meshes, as the web viewer did with a dragged folder; Problems warns that ROS will not find the package.
