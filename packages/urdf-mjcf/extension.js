@@ -4,14 +4,15 @@ const url = require('url');
 const os = require('os');
 const fs = require('fs/promises');
 
-const ASSET_RE = /\.(urdf|xacro|xml|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|bmp|tga|tiff?|webp|msh|ya?ml)$/i;
+// .gazebo and .trans are xacro fragments fusion2urdf writes and includes.
+const ASSET_RE = /\.(urdf|xacro|xml|gazebo|trans|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|bmp|tga|tiff?|webp|msh|ya?ml)$/i;
 // Files a mesh names internally, where the URDF cannot see them.
 const SIDECAR_REFS = {
     obj: /^\s*mtllib\s+(.+?)\s*$/gm,
     mtl: /^\s*(?:map_\w+|bump|disp|decal|refl)\s+(?:.*\s)?(\S+)\s*$/gm,
     dae: /<init_from>\s*([^<]+?)\s*<\/init_from>/g
 };
-const MODEL_RE = /\.(urdf|xacro|xml)$/i;
+const MODEL_RE = /\.(urdf|xacro|xml|gazebo|trans)$/i;
 const REF_RE = /(package|model):\/\/([^/\s"'<>]+)|\$\(find\s+([^)\s]+)\)/g;
 const ENV_REF_RE = /\$\((?:env|optenv)\s+(\w+)/g;
 const FILE_REF_RE = /\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;
@@ -1289,7 +1290,7 @@ exports.activate = context => {
     packageWatcher.onDidDelete(resetIndex);
 
     const xacroFiles = [{ scheme: 'file', pattern: '**/*.{urdf,xacro}' }];
-    const modelWatcher = vscode.workspace.createFileSystemWatcher('**/*.{urdf,xacro,xml}');
+    const modelWatcher = vscode.workspace.createFileSystemWatcher('**/*.{urdf,xacro,xml,gazebo,trans}');
     for (const event of ['onDidChange', 'onDidCreate', 'onDidDelete']) modelWatcher[event](() => navigator.invalidate());
     context.subscriptions.push(
         packageWatcher,

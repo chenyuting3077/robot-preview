@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension, sleep } from './vscode-mock.mjs';
+import { loadExtension, sleep, startPreview } from './vscode-mock.mjs';
 import { createPathMatrix, write } from './path-fixture.mjs';
 
 let load;
@@ -322,4 +322,16 @@ test('packages setting paths accept ${workspaceFolder:name} and ~', async () => 
     } finally {
         process.env.HOME = savedHome;
     }
+});
+
+test('fusion2urdf .gazebo and .trans includes are sent with the xacro', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-fusion-')));
+    const urdf = path.join(dir, 'bot_description/urdf');
+    write(path.join(urdf, 'bot.xacro'), '<robot name="bot" xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:include filename="$(find bot_description)/urdf/bot.trans"/><xacro:include filename="$(find bot_description)/urdf/bot.gazebo"/><link name="a"><visual><geometry><mesh filename="package://bot_description/meshes/a.stl"/></geometry></visual></link></robot>');
+    write(path.join(dir, 'bot_description/package.xml'), '<package><name>bot_description</name></package>');
+    write(path.join(urdf, 'bot.trans'), '<robot/>');
+    write(path.join(urdf, 'bot.gazebo'), '<robot/>');
+    write(path.join(dir, 'bot_description/meshes/a.stl'));
+    const { load } = await startPreview(urdf, path.join(urdf, 'bot.xacro'));
+    for (const name of ['bot.trans', 'bot.gazebo', 'a.stl']) assert.ok(load.files.some(file => file.path.endsWith('/' + name)), name);
 });
