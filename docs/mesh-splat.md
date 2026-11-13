@@ -20,7 +20,7 @@ Measured 2026-11-05 on an RTX PRO 1000 Blackwell Laptop GPU, headless Chrome, 12
 
 ## Defaults
 
-- Splats start with `-Y` up (COLMAP / 3DGS convention), meshes with `+Y` (glTF / OBJ).
+- The up menu starts at the file's declared up axis (glTF / VRML `+Y`, DAE `<up_axis>`, USD `upAxis`); three's rotation of Z-up DAE / USD to Y-up is undone so the menu shows `+Z` for them. Everything that declares none, STL / OBJ / PLY / point clouds / splats and DAE / USD without the field, starts at `+Z` as in ROS, at the user's request. Raw COLMAP / 3DGS splats need `-Y` by hand.
 - The camera frames the 2nd–98th percentile of splat centres so floaters far from the scene do not shrink it.
 - `.asc` is an optional editor because the extension is also used by PGP signatures.
 - The URDF & MJCF extension's mesh editor became optional in 0.2.0 so the two extensions do not both claim `.stl` / `.dae` / `.obj`.

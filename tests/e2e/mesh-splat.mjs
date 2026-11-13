@@ -153,13 +153,14 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
                 help: help.classList.contains('open') && help.querySelectorAll('tr').length === 8 && help.innerText.includes('W A S D'),
                 display: visible(document.getElementById('display-menu-btn')),
                 modes: visible(document.querySelector('[data-mode]')),
-                sizes: visible(document.querySelector('[data-size]'))
+                sizes: visible(document.querySelector('[data-size]')),
+                up: document.getElementById('up-select').value
             };
         })()`);
         const usdKind = ui.modes ? 'mesh' : 'splat';
-        const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|gltf/, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
+        const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|gltf|\.dae$/, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
         const expected = { mesh: [true, true, true], points: [true, false, true], splat: [false, false, false] }[kind];
-        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]);
+        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gltf$/.test(name) ? '+Y' : '+Z');
         camera += ` ui ${JSON.stringify(ui)}`;
         if (name === 'scene.usda') {
             const size = await evaluate('[innerWidth, innerHeight]');

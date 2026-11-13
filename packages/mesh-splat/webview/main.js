@@ -146,7 +146,13 @@ async function loadPly(info) {
     return kind === 'mesh' ? meshOf(geometry) : pointsOf(geometry);
 }
 
-const loadGltf = async () => (await new GLTFLoader().loadAsync(src)).scene;
+// The up menu shows the file's own up axis. Files that do not declare one start +Z (ROS REP 103), splats
+// included: robot-side splats (Isaac Sim, nerfstudio) are Z-up, raw COLMAP / 3DGS output needs -Y by hand.
+function withUp(object, up) {
+    object.userData.up = up;
+    return object;
+}
+const loadGltf = async () => withUp((await new GLTFLoader().loadAsync(src)).scene, '+Y');
 const loadTextPoints = async () => pointsOf(geometryFrom(parsePointsText(await fetchText())));
 const loadSplatFile = async info => loadSplat(await fetchBytes(), info);
 
@@ -157,12 +163,12 @@ async function loadUsd(info) {
         if (!response.ok) throw new Error(response.statusText);
         return new Uint8Array(await response.arrayBuffer());
     };
-    const { group, gaussians, missing } = await composeUsd(await fetchBytes(), new URL('.', new URL(src, location.href)).href, read);
+    const { group, gaussians, missing, upAxis } = await composeUsd(await fetchBytes(), new URL('.', new URL(src, location.href)).href, read);
     info.format = 'USD';
     info.notLoaded = missing.join(', ');
     for (const { object, ply } of gaussians) object.add(await loadSplat(ply, info, 'gaussians.ply'));
     buildStage(group);
-    return group;
+    return withUp(group, upAxis === 'Y' ? '+Y' : '+Z');
 }
 
 const LOADERS = {
@@ -174,11 +180,17 @@ const LOADERS = {
     ply: loadPly,
     obj: loadObj,
     off: async () => meshOf(geometryFrom(parseOff(await fetchText()))),
-    dae: async () => (await new ColladaLoader().loadAsync(src)).scene,
+    dae: async () => {
+        // ColladaLoader rotates Z_UP files to Y-up and reads a missing <up_axis> as Y_UP; both are undone here.
+        const text = await fetchText();
+        const { scene } = new ColladaLoader().parse(text, new URL('.', new URL(src, location.href)).href);
+        scene.rotation.set(0, 0, 0);
+        return withUp(scene, `+${text.match(/<up_axis>\s*([XYZ])_UP/)?.[1] ?? 'Z'}`);
+    },
     gltf: loadGltf,
     glb: loadGltf,
     '3mf': () => new ThreeMFLoader().loadAsync(src),
-    wrl: () => new VRMLLoader().loadAsync(src),
+    wrl: async () => withUp(await new VRMLLoader().loadAsync(src), '+Y'),
     '3ds': () => new TDSLoader().loadAsync(src),
     pcd: async () => pointsOf((await new PCDLoader().loadAsync(src)).geometry),
     xyz: loadTextPoints,
@@ -335,10 +347,9 @@ async function main() {
         const counted = stats(object);
         Object.assign(info, counted);
         info.format ??= counted.faces ? t('mesh') : t('pointCloud');
-        const isSplat = object instanceof SplatMesh;
         localBox = boxOf(object);
         info.size = localBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
-        const up = isSplat ? '-Y' : '+Y';
+        const up = object.userData.up ?? '+Z';
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
         showInfo(info);

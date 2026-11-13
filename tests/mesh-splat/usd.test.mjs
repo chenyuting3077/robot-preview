@@ -239,3 +239,12 @@ test('a float array running past the end of the file fails as it does in three',
     const parser = Object.assign(Object.create(ArcUSDCParser.prototype), { buffer, version: { major: 0, minor: 8 }, reader: crateReader(buffer, 0) });
     assert.throws(() => parser._readArrayValue({ typeEnum: 24, isCompressed: false }), RangeError);
 });
+
+test('composeUsd reports upAxis and leaves the root unrotated', async () => {
+    const usda = up => new TextEncoder().encode(`#usda 1.0\n(\n${up}\n)\ndef Xform "World"\n{\n}\n`);
+    const zUp = await composeUsd(usda('    upAxis = "Z"'));
+    assert.equal(zUp.upAxis, 'Z');
+    assert.equal(zUp.group.rotation.x, 0);
+    assert.equal((await composeUsd(usda('    upAxis = "Y"'))).upAxis, 'Y');
+    assert.equal((await composeUsd(usda(''))).upAxis, undefined);
+});

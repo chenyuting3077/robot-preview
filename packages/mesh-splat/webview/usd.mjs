@@ -390,6 +390,8 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
     const specs = hideGuides(dropUndefined(data.specsByPath));
     const composer = new XformUSDComposer();
     const group = composer.compose(data, assets, {}, basePath);
+    // three turns upAxis "Z" into Y-up by rotating the root; the viewer's up menu does that instead.
+    group.rotation.set(0, 0, 0);
     await Promise.all(composer.texturePromises);
     const gaussians = [];
     const walk = (object, path) => {
@@ -406,5 +408,5 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
         const href = new URL(url).href;
         return decodeURIComponent(href.startsWith(basePath) ? href.slice(basePath.length) : href.split('/').slice(-2).join('/'));
     };
-    return { group, missing: missing.map(displayPath), gaussians: gaussians.map(({ object, path }) => ({ object, ply: gaussianPly(specs, path) })).filter(({ ply }) => ply) };
+    return { group, upAxis: data.specsByPath['/']?.fields.upAxis, missing: missing.map(displayPath), gaussians: gaussians.map(({ object, path }) => ({ object, ply: gaussianPly(specs, path) })).filter(({ ply }) => ply) };
 }
