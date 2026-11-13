@@ -5,6 +5,13 @@ import { loadMeshFile, clearMeshCache } from '../utils/MeshLoader.js';
 
 const MESH_RE = /\.(stl|dae|obj)$/i;
 
+// ColladaLoader turns Z_UP files Y-up and leaves Y_UP / X_UP alone; a lone DAE is instead put in the
+// robot's Z-up frame like RViz does. A missing <up_axis> counts as Z_UP, the ROS default, not Collada's Y_UP.
+function daeToZUp(object, text) {
+    const axis = text.match(/<up_axis>\s*([XYZ])_UP/)?.[1] ?? 'Z';
+    object.rotation.set(axis === 'Y' ? Math.PI / 2 : 0, axis === 'X' ? -Math.PI / 2 : 0, 0);
+}
+
 function meshModel(mesh, name) {
     const object = mesh.isBufferGeometry
         ? new THREE.Mesh(mesh, new THREE.MeshPhongMaterial({ color: 0xb0b0b0, shininess: 30 }))
@@ -95,7 +102,9 @@ export class FileHandler {
             if (MESH_RE.test(file.name)) {
                 const mesh = await loadMeshFile(primaryPath, this.fileMap);
                 if (!mesh) throw new Error(window.i18n.t('cannotLoadMesh'));
-                this.onModelLoaded?.(meshModel(mesh, file.name), file);
+                const model = meshModel(mesh, file.name);
+                if (/\.dae$/i.test(file.name)) daeToZUp(model.threeObject, await readFileContent(file));
+                this.onModelLoaded?.(model, file);
                 return;
             }
             const content = await readFileContent(file);

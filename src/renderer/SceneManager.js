@@ -166,31 +166,16 @@ export class SceneManager {
             return;
         }
 
-        // Check if single mesh model (no joints)
-        const isSingleMesh = !model.joints || model.joints.size === 0;
-
-        if (isSingleMesh) {
-            // Single mesh file: add directly to scene, no world rotation
-            // DAE file's ColladaLoader already handles Z-up to Y-up conversion
-            this.scene.add(model.threeObject);
-        } else {
-            // Complete robot model (URDF/MJCF/USD): use world object for coordinate system conversion
-            // Ensure world object exists (default +Z coordinate system)
-            if (!this.world) {
-                this.world = new THREE.Object3D();
-                this.scene.add(this.world);
-                // Default set to +Z coordinate system
-                this.world.rotation.set(-Math.PI / 2, 0, 0);
-            }
-
-            // Add model to world
-            this.world.add(model.threeObject);
-
-            // Read and apply current coordinate system setting
-            const upSelect = document.getElementById('up-select');
-            if (upSelect) {
-                this.setUp(upSelect.value || '+Z');
-            }
+        // Single mesh files go into the same +Z-up world as robots, so the up menu applies to them too.
+        if (!this.world) {
+            this.world = new THREE.Object3D();
+            this.scene.add(this.world);
+            this.world.rotation.set(-Math.PI / 2, 0, 0);
+        }
+        this.world.add(model.threeObject);
+        const upSelect = document.getElementById('up-select');
+        if (upSelect) {
+            this.setUp(upSelect.value || '+Z');
         }
 
         // Extract visual and collision bodies
@@ -540,7 +525,7 @@ export class SceneManager {
 
     /**
      * Get the world wrapper object's quaternion (used for coordinate system conversion).
-     * Returns null if no world wrapper exists (e.g., single-mesh models).
+     * Returns null if no world wrapper exists (no model loaded yet).
      */
     getWorldWrapperQuaternion() {
         if (!this.world) return null;

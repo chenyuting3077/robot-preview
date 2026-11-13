@@ -293,6 +293,17 @@ try {
 
     await ev(`await window.__send('load', m => { m.files = m.files.filter(f => f.path.endsWith('arm.stl')).map(f => ({ ...f, path: '/mesh/arm.stl' })); m.primary = '/mesh/arm.stl'; })`);
     check('mesh preview', await waitFor(`window.app.currentModel?.isMesh === true`, 10000));
+    check('mesh preview follows the up menu', await ev(`return window.app.currentModel.threeObject.parent === window.app.sceneManager.world && document.getElementById('up-select').value === '+Z'`));
+
+    // A triangle 1 tall along the file's Z: upright on screen unless the file declares Y_UP.
+    const dae = up => `<?xml version="1.0"?><COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1"><asset>${up}</asset><library_geometries><geometry id="g"><mesh><source id="p"><float_array id="pa" count="9">0 0 0 0.1 0 0 0 0 1</float_array><technique_common><accessor source="#pa" count="3" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source><vertices id="v"><input semantic="POSITION" source="#p"/></vertices><triangles count="1"><input semantic="VERTEX" source="#v" offset="0"/><p>0 1 2</p></triangles></mesh></geometry></library_geometries><library_visual_scenes><visual_scene id="s"><node id="n"><instance_geometry url="#g"/></node></visual_scene></library_visual_scenes><scene><instance_visual_scene url="#s"/></scene></COLLADA>`;
+    const heights = [];
+    for (const [i, up] of ['<up_axis>Z_UP</up_axis>', '', '<up_axis>Y_UP</up_axis>'].entries()) {
+        await ev(`window.postMessage({ type: 'load', files: [{ path: '/d/t${i}.dae', data: new TextEncoder().encode(${JSON.stringify(dae(up))}) }], primary: '/d/t${i}.dae' }, '*')`);
+        await waitFor(`window.app.currentModel?.name === 't${i}.dae'`, 10000);
+        heights.push(await ev(`return (o => { o.updateMatrixWorld(true); const b = window.app.sceneManager.getModelBoundingBox(o); return +(b.max.y - b.min.y).toFixed(2); })(window.app.currentModel.threeObject)`));
+    }
+    check('DAE up_axis is put in the Z-up frame', JSON.stringify(heights) === '[1,1,0]', JSON.stringify(heights));
 
     const mjcf = '<mujoco model="t"><worldbody><light pos="0 0 3"/><geom type="plane" size="2 2 .1"/><body name="arm" pos="0 0 1"><joint name="hinge" type="hinge" axis="0 1 0"/><geom type="capsule" fromto="0 0 0 .5 0 0" size=".05"/></body></worldbody></mujoco>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/t/t.xml', data: new TextEncoder().encode(${JSON.stringify(mjcf)}) }], primary: '/t/t.xml' }, '*')`);
