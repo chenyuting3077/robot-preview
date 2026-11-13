@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0
+
+- Files start with +Z up, as in ROS, unless they declare their own up axis (glTF and VRML +Y, DAE `<up_axis>`, USD `upAxis`). Gaussian splats too: raw COLMAP / 3DGS output needs -Y from the up menu.
+- Z-up DAE and USD files now show +Z in the up menu instead of +Y; the view is unchanged.
+
 ## 0.1.4
 
 - Binary PLY point clouds load 10-40x faster (ASCII about 3x) with about a quarter of the memory; clouds past ~44M points no longer fail.
