@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3
+
+- A single STL, OBJ or DAE preview now starts Z-up and follows the up menu like robots do; DAE files are placed by their `<up_axis>`, a missing one counting as Z-up.
+
 ## 0.4.2
 
 - The first preview of a model that names another ROS package opens faster: the package index reads each `package.xml` once and in parallel (Jazzy, 399 packages: 153-269 -> 59-83 ms).
