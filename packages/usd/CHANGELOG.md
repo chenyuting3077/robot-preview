@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- The up menu shows the stage's `upAxis` (+Z for Isaac Sim assets); stages without one start +Z instead of +Y.
+
 ## 0.1.1
 
 - USD scenes load about 2-3.5x faster, and large multi-file scenes use less memory.
