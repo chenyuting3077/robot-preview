@@ -5,17 +5,15 @@ const crypto = require('crypto');
 
 const escapeAttr = text => String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
-// OpenCascade takes minutes on a large STEP assembly, so the webview sends back its tessellation as GLB and
-// later opens of the same file (path, mtime, size) load that instead.
+// Tessellating a STEP assembly takes seconds (foxtrot) to minutes (OpenCascade), so the webview sends back
+// its tessellation as GLB and later opens of the same file (path, mtime, size) load that instead.
 function stepCache(cacheDir, fileUri, stat) {
     if (!cacheDir || !/\.ste?p$/i.test(fileUri.path)) return null;
     const prefix = crypto.createHash('sha1').update(fileUri.path).digest('hex').slice(0, 16);
     return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}.glb`) };
 }
 
-async function renderHtml(template, webview, distUri, fileUri, cacheDir) {
-    const stat = await vscode.workspace.fs.stat(fileUri);
-    const cache = stepCache(cacheDir, fileUri, stat);
+async function renderHtml(template, webview, distUri, fileUri, stat, cache) {
     const source = webview.cspSource;
     const csp = [
         "default-src 'none'",
@@ -47,12 +45,15 @@ function activate(context) {
             const dir = vscode.Uri.joinPath(document.uri, '..');
             const folder = vscode.workspace.getWorkspaceFolder(document.uri)?.uri;
             panel.webview.options = { enableScripts: true, localResourceRoots: [distUri, dir, ...(folder ? [folder] : []), ...(cacheDir ? [cacheDir] : [])] };
+            // Keyed by the file as rendered, so a save during tessellation cannot file the old model under the new mtime.
+            let cache = null;
             const render = async () => {
-                panel.webview.html = await renderHtml(template, panel.webview, distUri, document.uri, cacheDir);
+                const stat = await vscode.workspace.fs.stat(document.uri);
+                cache = stepCache(cacheDir, document.uri, stat);
+                panel.webview.html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
             };
             panel.webview.onDidReceiveMessage(async message => {
-                const cache = message?.type === 'stepCache' && stepCache(cacheDir, document.uri, await vscode.workspace.fs.stat(document.uri));
-                if (!cache || !(message.glb instanceof Uint8Array)) return;
+                if (message?.type !== 'stepCache' || !cache || !(message.glb instanceof Uint8Array)) return;
                 await vscode.workspace.fs.createDirectory(cacheDir);
                 for (const [file] of await vscode.workspace.fs.readDirectory(cacheDir)) {
                     if (file.startsWith(`${cache.prefix}-`)) await vscode.workspace.fs.delete(vscode.Uri.joinPath(cacheDir, file));
