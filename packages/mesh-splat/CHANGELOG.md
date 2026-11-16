@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Binary PCD point clouds load into typed arrays instead of PCDLoader's growing arrays, keeping only position and color.
-- STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up as most CAD exports are. A 39 MB assembly shows in about 8 s (was about 100 s), with under 1% of faces left as small holes; later opens of the unchanged file load a cached copy in about 1 s.
+- STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up. A 39 MB assembly shows in about 8 s (was about 100 s), with under 1% of faces left as small holes; later opens of the unchanged file load a cached copy in about 1 s.
 
 ## 0.2.0
 

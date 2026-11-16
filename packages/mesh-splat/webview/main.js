@@ -278,7 +278,7 @@ function cacheStep(object) {
 
 async function loadStep(info) {
     info.format = 'STEP';
-    // STEP declares no up axis; SolidWorks, Inventor and Creo export Y-up.
+    // STEP declares no up axis; the AMR (Autodesk) export is Y-up, Z-up exports need the up menu.
     if (cached) return withUp((await new GLTFLoader().loadAsync(cached)).scene, '+Y');
     const bytes = await fetchBytes();
     const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
