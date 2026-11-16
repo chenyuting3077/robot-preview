@@ -363,6 +363,8 @@ export class SceneManager {
         // If camera adjustment needed, perform auto-zoom and positioning
         if (fitCamera) {
             this.fitCameraToModel(bboxGlobal, center, size);
+            const gridCell = this.environmentManager.fitGridToModel(Math.max(size.x, size.y, size.z));
+            if (gridCell) this.onGridCellChange?.(gridCell);
         }
 
         // If ground position changed, trigger measurement update callback
@@ -435,6 +437,8 @@ export class SceneManager {
         // Set camera position and target
         this.camera.position.copy(center).add(cameraOffset);
         this.controls.target.copy(center);
+        // Near follows the fit distance: a 9 cm RealSense fits at ~0.1 m, inside a 0.1 m near plane.
+        this.camera.near = Math.min(0.1, distance / 100);
 
         // Update controls and camera
         this.controls.update();

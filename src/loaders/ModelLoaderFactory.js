@@ -7,7 +7,7 @@ import { URDFAdapter } from '../adapters/URDFAdapter.js';
 import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
 import { resolveFileFromMap, resolveMeshFile, fileUrlModifier, directoryOf } from '../utils/FileUtils.js';
-import { trackMeshLoads, cachedMeshParse } from '../utils/MeshLoader.js';
+import { trackMeshLoads, cachedMeshParse, ensureMeshNormals } from '../utils/MeshLoader.js';
 
 export class ModelLoaderFactory {
     /**
@@ -546,6 +546,7 @@ export class ModelLoaderFactory {
             }
 
             URL.revokeObjectURL(blobUrl);
+            ensureMeshNormals(meshObject);
             return meshObject;
         } catch (error) {
             URL.revokeObjectURL(blobUrl);

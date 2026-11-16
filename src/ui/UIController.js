@@ -3,6 +3,11 @@
  */
 import * as THREE from 'three';
 
+/** Grid cell sizes are at most 0.5 m, so cm and mm cover them. */
+export function formatLength(meters) {
+    return meters >= 0.01 ? `${+(meters * 100).toPrecision(3)} cm` : `${+(meters * 1000).toPrecision(3)} mm`;
+}
+
 export class UIController {
     constructor(sceneManager) {
         this.sceneManager = sceneManager;
@@ -432,9 +437,24 @@ export class UIController {
      */
     setupGridToggle() {
         const gridBtn = document.getElementById('toggle-grid');
+        const label = document.getElementById('grid-label');
         if (!gridBtn) {
             return;
         }
+
+        // The label carries the cell size so the grid reads as a scale.
+        let cellMeters = null;
+        const updateLabel = () => {
+            if (!label) return;
+            const on = gridBtn.getAttribute('data-checked') === 'true';
+            label.textContent = !on ? window.i18n.t('gridOff')
+                : cellMeters ? window.i18n.t('gridAutoSize').replace('{size}', formatLength(cellMeters))
+                : window.i18n.t('gridAuto');
+        };
+        this.sceneManager.onGridCellChange = cell => {
+            cellMeters = cell;
+            updateLabel();
+        };
 
         gridBtn.addEventListener('click', () => {
             const isChecked = gridBtn.getAttribute('data-checked') === 'true';
@@ -443,6 +463,7 @@ export class UIController {
             gridBtn.setAttribute('data-checked', newState.toString());
             gridBtn.classList.toggle('active', newState);
             this.sceneManager.setGridVisible(newState);
+            updateLabel();
             this.sceneManager.render();
         });
     }

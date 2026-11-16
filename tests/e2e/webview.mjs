@@ -248,6 +248,12 @@ try {
     const settings = await ev(`return window.__out.find(m => m.type === 'settings')?.settings`);
     check('panel toggle saved as setting', settings?.['toggle-joints-panel'] === true && settings['show-collision'] === true, JSON.stringify(settings));
 
+    // robot_a spans 0.1-1 m, so its auto cell is 10 cm.
+    const grid = await ev(`const btn = document.getElementById('toggle-grid'), label = () => document.getElementById('grid-label').textContent;
+        const auto = label(); btn.click(); const off = label(); const hidden = !window.app.sceneManager.referenceGrid.visible; btn.click();
+        return { auto, off, hidden, restored: label() };`);
+    check('grid button reads auto with the cell size, or off', grid.auto === '網格：自動（10 cm）' && grid.off === '網格：關閉' && grid.hidden && grid.restored === grid.auto, JSON.stringify(grid));
+
 
     await ev(`window.__out.length = 0; window.postMessage({ type: 'exportUrdf', requestId: 7 }, '*')`);
     await waitFor(`window.__out.some(m => m.type === 'urdf')`, 3000);
@@ -357,6 +363,12 @@ try {
     const checks = (await finalDiagnostics()).checks.map(c => c.rule + ':' + c.name).sort();
     check('a later load sends one report, no partial one first', await ev(`return !window.__out.some(m => m.type === 'diagnostics' && m.partial)`));
     check('model checks run on the loaded robot', JSON.stringify(checks) === JSON.stringify(['missing-inertial:arm', 'missing-limit:j']), JSON.stringify(checks));
+
+    // SketchUp-exported DAE such as RealSense d435.dae carry no normals and render black under lit materials.
+    const noNormalsDae = dae('');
+    const daeUrdf = '<robot name="n"><link name="l"><visual><geometry><mesh filename="package://n/m.dae"/></geometry></visual></link></robot>';
+    await ev(`window.postMessage({ type: 'load', files: [{ path: '/n/n.urdf', data: new TextEncoder().encode(${JSON.stringify(daeUrdf)}) }, { path: '/n/m.dae', data: new TextEncoder().encode(${JSON.stringify(noNormalsDae)}) }], primary: '/n/n.urdf' }, '*')`);
+    check('a DAE without normals gets them', await waitFor(`(() => { let ok = false; window.app.currentModel?.threeObject?.traverse(o => { if (o.isMesh && o.geometry.attributes.normal) ok = true; }); return ok; })()`, 5000));
 
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));

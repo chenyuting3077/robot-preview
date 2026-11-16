@@ -56,3 +56,14 @@ test('a texture left out of a full reload clears the mesh cache', async () => {
     await cachedMeshParse(mesh, parse);
     assert.equal(parses, 2);
 });
+
+test('meshes without normals get them, existing normals are kept', async () => {
+    const THREE = await import('three');
+    const { ensureMeshNormals } = await import('../../src/utils/MeshLoader.js');
+    const bare = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+    const lit = bare.clone().setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, -1, 0, 0, -1, 0, 0, -1], 3));
+    const group = new THREE.Group().add(new THREE.Mesh(bare), new THREE.Mesh(lit));
+    ensureMeshNormals(group);
+    assert.deepEqual([...bare.attributes.normal.array.slice(0, 3)], [0, 0, 1]);
+    assert.deepEqual([...lit.attributes.normal.array.slice(0, 3)], [0, 0, -1]);
+});

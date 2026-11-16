@@ -155,10 +155,21 @@ async function parseMeshFile(file, fileExt, meshPath, fileMap) {
 }
 
 /**
+ * Compute normals for meshes loaded without them.
+ * Lit materials render black without normals; DAE exported without them (e.g. RealSense d435.dae) is common, and RViz computes them too.
+ */
+export function ensureMeshNormals(object) {
+    object?.traverse?.(child => {
+        if (child.isMesh && child.geometry && !child.geometry.attributes.normal) child.geometry.computeVertexNormals();
+    });
+}
+
+/**
  * Ensure mesh uses lighting-compatible material
  * Enhanced for better lighting (MuJoCo style)
  */
 export function ensureMeshHasPhongMaterial(meshObject) {
+    ensureMeshNormals(meshObject);
     meshObject.traverse((child) => {
         if (child.isMesh && child.material) {
             // Handle material arrays (common in DAE files with multiple materials)

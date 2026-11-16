@@ -4,6 +4,8 @@
  */
 import * as THREE from 'three';
 
+const GRID_DIVISIONS = 40;
+
 export class EnvironmentManager {
     constructor(scene) {
         this.scene = scene;
@@ -162,13 +164,20 @@ export class EnvironmentManager {
      * Create reference grid
      */
     createReferenceGrid() {
-        const gridSize = 10;  // 10m x 10m
-        const divisions = 20; // 20 divisions (0.5m per cell)
-
-        // Use default white first (dark theme)
-        this.referenceGrid = new THREE.GridHelper(gridSize, divisions, 0xffffff, 0xcccccc);
+        // Unit grid scaled by setGridCellSize, so the fade below works in local units.
+        this.referenceGrid = new THREE.GridHelper(1, GRID_DIVISIONS, 0xffffff, 0xcccccc);
         this.referenceGrid.name = 'referenceGrid';
         this.referenceGrid.position.y = 0; // Fixed at Y = 0, aligned with ground
+        this.setGridCellSize(0.25); // 10 m across until a model is fitted
+
+        // Fade lines toward the edge: at grazing views the far lines pile into an aliased, flickering band.
+        // The radius is taken per fragment: each line's two vertices sit on the edge, so an interpolated radius never drops below it.
+        this.referenceGrid.material.onBeforeCompile = shader => {
+            shader.vertexShader = 'varying vec2 vGridXZ;\n' + shader.vertexShader
+                .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGridXZ = position.xz;');
+            shader.fragmentShader = 'varying vec2 vGridXZ;\n' + shader.fragmentShader
+                .replace('#include <opaque_fragment>', 'diffuseColor.a *= 1.0 - smoothstep(0.2, 0.5, length(vGridXZ));\n#include <opaque_fragment>');
+        };
 
         // Increase opacity to make grid lines more visible (appear thicker)
         this.referenceGrid.material.opacity = 0.7;
@@ -181,6 +190,22 @@ export class EnvironmentManager {
         this.referenceGrid.renderOrder = 1;
 
         this.scene.add(this.referenceGrid);
+    }
+
+    /**
+     * Pick the cell size from the model: 0.5 m cells give no scale for a 9 cm camera.
+     * @returns {number|null} cell size in meters, or null when the model has no size
+     */
+    fitGridToModel(maxDim) {
+        if (!(maxDim > 0)) return null;
+        const cellMeters = Math.min(0.5, 10 ** Math.floor(Math.log10(maxDim)));
+        this.setGridCellSize(cellMeters);
+        return cellMeters;
+    }
+
+    setGridCellSize(cellMeters) {
+        const size = cellMeters * GRID_DIVISIONS;
+        this.referenceGrid?.scale.set(size, 1, size);
     }
 
     /**
