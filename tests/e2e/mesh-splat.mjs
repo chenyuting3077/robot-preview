@@ -62,11 +62,18 @@ async function htmlFor(file) {
 }
 
 const pages = new Map();
+let postedGlb = null;
 const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
-    if (pages.has(url.pathname)) {
+    if (req.method === 'POST' && url.pathname === '/glb') {
+        const chunks = [];
+        req.on('data', chunk => chunks.push(chunk));
+        return req.on('end', () => { postedGlb = Buffer.concat(chunks); res.end(); });
+    }
+    const page = pages.get(decodeURIComponent(url.pathname));
+    if (page) {
         res.setHeader('Content-Type', 'text/html');
-        return res.end(pages.get(url.pathname));
+        return res.end(page);
     }
     fs.readFile(decodeURIComponent(url.pathname), (error, data) => {
         if (error) return res.writeHead(404).end();
@@ -121,13 +128,12 @@ for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) 
     }
     let camera = ` shown ${Math.round((Date.now() - started) / 100) / 10}s`;
     if (/\.ste?p$/i.test(name) && !state.loading && !state.error && !reopen) {
-        const glb = await evaluate(`new Promise(async resolve => {
+        // POSTed, not returned through CDP: a 150 MB GLB as a base64 string stalls the protocol.
+        await evaluate(`new Promise(async resolve => {
             while (window.__posted?.type !== 'stepCache') await new Promise(r => setTimeout(r, 100));
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result.split(',')[1]);
-            reader.readAsDataURL(new Blob([window.__posted.glb]));
+            resolve((await fetch('/glb', { method: 'POST', body: window.__posted.glb })).ok);
         })`);
-        await panels.get(name).listener({ type: 'stepCache', glb: new Uint8Array(Buffer.from(glb, 'base64')) });
+        await panels.get(name).listener({ type: 'stepCache', glb: new Uint8Array(postedGlb) });
     }
     if (reopen) {
         state.cacheOk = /data-cached="[^"]+"/.test(pages.get(`/page/${name}`));
