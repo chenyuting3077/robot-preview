@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- PLY files with double-precision coordinates render; WebGL rejected their Float64 attributes and the view stayed empty.
+- Binary PLY meshes load without PLYLoader: a 181 MB, 4.5M-face mesh parses in 0.18 s instead of 2.0 s, with half the memory.
 - Binary PCD point clouds load into typed arrays instead of PCDLoader's growing arrays, keeping only position and color.
 - STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up. A 39 MB assembly shows in about 8 s (was about 100 s), with under 1% of faces left as small holes; later opens of the unchanged file load a cached copy in about 1 s.
 

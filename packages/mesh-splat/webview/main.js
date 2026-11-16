@@ -12,7 +12,7 @@ import { VRMLLoader } from 'three/examples/jsm/loaders/VRMLLoader.js';
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
-import { readPlyHeader, plyKind, addMissingScale, readPlyPoints } from './ply.mjs';
+import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
 import { flatNormals, percentile, grown } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
@@ -89,7 +89,16 @@ const fetchBytes = async () => new Uint8Array(await (await fetch(src)).arrayBuff
 const fetchText = async () => (await fetch(src)).text();
 const hasColor = geometry => Boolean(geometry.attributes.color);
 
+// PLY doubles arrive as Float64Array, which WebGL cannot take: the first draw throws and nothing renders.
+function float32Attributes(geometry) {
+    for (const [key, attribute] of Object.entries(geometry.attributes)) {
+        if (attribute.array instanceof Float64Array) geometry.setAttribute(key, new THREE.BufferAttribute(new Float32Array(attribute.array), attribute.itemSize));
+    }
+    return geometry;
+}
+
 function meshOf(geometry) {
+    float32Attributes(geometry);
     if (!geometry.attributes.normal) geometry.computeVertexNormals();
     return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
         color: hasColor(geometry) ? 0xffffff : 0xb0b0b0, vertexColors: hasColor(geometry), roughness: 0.8, side: THREE.DoubleSide
@@ -97,7 +106,7 @@ function meshOf(geometry) {
 }
 
 let pointSize = 2;
-const pointsOf = geometry => new THREE.Points(geometry, new THREE.PointsMaterial({
+const pointsOf = geometry => new THREE.Points(float32Attributes(geometry), new THREE.PointsMaterial({
     size: pointSize, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : 0x9aa7b8, vertexColors: hasColor(geometry)
 }));
 
@@ -140,14 +149,16 @@ async function loadPly(info) {
         if (patched !== bytes) info.format = t('flat');
         return loadSplat(patched, info);
     }
-    const points = kind === 'points' && readPlyPoints(bytes, header);
+    const points = kind === 'points' ? readPlyPoints(bytes, header) : kind === 'mesh' && readPlyMesh(bytes, header);
     if (points) {
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.BufferAttribute(points.positions, 3));
         if (points.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(points.normals, 3));
         if (points.uvs) geometry.setAttribute('uv', new THREE.BufferAttribute(points.uvs, 2));
         if (points.colors) geometry.setAttribute('color', new THREE.BufferAttribute(points.colors, 3, true));
-        return pointsOf(geometry);
+        if (!points.indices) return pointsOf(geometry);
+        geometry.setIndex(new THREE.BufferAttribute(points.indices, 1));
+        return meshOf(geometry);
     }
     const geometry = new PLYLoader().parse(bytes.buffer);
     return kind === 'mesh' ? meshOf(geometry) : pointsOf(geometry);

@@ -178,3 +178,49 @@ test('readPlyPoints splits ASCII on every whitespace PLYLoader splits on', () =>
     const expected = new PLYLoader().parse(bytes.buffer.slice(0));
     assert.deepEqual(Array.from(readPlyPoints(bytes, readPlyHeader(bytes)).positions), Array.from(expected.attributes.position.array));
 });
+
+const { readPlyMesh } = await import('../../packages/mesh-splat/webview/ply.mjs');
+
+function meshPly(format, faces, { faceProps = '', indexType = 'int' } = {}) {
+    const little = format === 'binary_little_endian';
+    const vertices = [[0, 0, 0, 255, 0, 0], [1, 0, 0, 0, 255, 0], [1, 1, 0, 0, 0, 255], [0, 1, 0, 9, 9, 9], [0.5, 2, 0, 1, 2, 3]];
+    const header = `ply\nformat ${format} 1.0\nelement vertex ${vertices.length}\nproperty float x\nproperty float y\nproperty float z\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nelement face ${faces.length}\nproperty list uchar ${indexType} vertex_indices\n${faceProps}end_header\n`;
+    if (format === 'ascii') return ascii(header + [...vertices, ...faces.map(face => [face.length, ...face])].map(row => row.join(' ')).join('\n') + '\n');
+    const head = new TextEncoder().encode(header);
+    const out = new Uint8Array(head.length + vertices.length * 15 + faces.reduce((sum, face) => sum + 1 + face.length * 4, 0));
+    out.set(head);
+    const view = new DataView(out.buffer);
+    let at = head.length;
+    for (const v of vertices) {
+        for (let k = 0; k < 3; k++, at += 4) view.setFloat32(at, v[k], little);
+        for (let k = 3; k < 6; k++) view.setUint8(at++, v[k]);
+    }
+    for (const face of faces) {
+        view.setUint8(at++, face.length);
+        for (const index of face) { view.setInt32(at, index, little); at += 4; }
+    }
+    return out;
+}
+
+for (const format of ['binary_little_endian', 'binary_big_endian']) {
+    test(`readPlyMesh matches PLYLoader: ${format}, triangles, quads and a dropped pentagon`, () => {
+        const bytes = meshPly(format, [[0, 1, 2], [0, 1, 2, 3], [0, 1, 2, 3, 4], [2, 3, 4]]);
+        const expected = new PLYLoader().parse(bytes.buffer.slice(0));
+        const mesh = readPlyMesh(bytes, readPlyHeader(bytes));
+        assert.deepEqual(Array.from(mesh.indices), Array.from(expected.index.array));
+        assert.deepEqual(Array.from(mesh.positions), Array.from(expected.attributes.position.array));
+        assert.deepEqual(Array.from(mesh.colors), Array.from(expected.attributes.color.array));
+    });
+}
+
+test('readPlyMesh leaves ascii, face properties, truncated faces and negative indices to PLYLoader', () => {
+    const triangle = [[0, 1, 2]];
+    assert.equal(readPlyMesh(meshPly('ascii', triangle), readPlyHeader(meshPly('ascii', triangle))), null);
+    const coloured = meshPly('binary_little_endian', triangle, { faceProps: 'property uchar red\n' });
+    assert.equal(readPlyMesh(coloured, readPlyHeader(coloured)), null);
+    const full = meshPly('binary_little_endian', triangle);
+    const cut = full.subarray(0, full.length - 2);
+    assert.equal(readPlyMesh(cut, readPlyHeader(full)), null);
+    const negative = meshPly('binary_little_endian', [[0, -1, 2]]);
+    assert.equal(readPlyMesh(negative, readPlyHeader(negative)), null);
+});

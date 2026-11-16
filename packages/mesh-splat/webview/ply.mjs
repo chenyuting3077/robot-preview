@@ -39,7 +39,7 @@ export function readPlyHeader(bytes) {
         if (keyword === 'element') header.elements.push({ name: rest[0], count: parseInt(rest[1]), properties: [] });
         if (keyword === 'property') {
             header.elements.at(-1)?.properties.push(rest[0] === 'list'
-                ? { name: rest[3], type: rest[2], list: true }
+                ? { name: rest[3], type: rest[2], countType: rest[1], list: true }
                 : { name: rest[1], type: rest[0] });
         }
     }
@@ -231,4 +231,47 @@ export function readPlyPoints(bytes, header) {
         }
     }
     return points;
+}
+
+// Binary meshes whose faces hold only the index list, read like readPlyPoints: PLYLoader pushed a
+// 181 MB, 4.5M-face mesh through plain arrays in 1.79 s. Faces other than triangles and quads are
+// dropped and quads split 0-1-2 / 0-2-3, as PLYLoader does; anything else returns null for PLYLoader.
+export function readPlyMesh(bytes, header) {
+    const [vertex, face, ...others] = header.elements;
+    const list = face?.properties[0];
+    if (others.length || face?.name !== 'face' || !(face.count >= 0) || face.properties.length !== 1 || !list.list) return null;
+    if (list.name !== 'vertex_indices' && list.name !== 'vertex_index') return null;
+    const countType = TYPES[list.countType], indexType = TYPES[list.type];
+    if (!countType || !indexType || countType.float || indexType.float || !header.format.startsWith('binary')) return null;
+    const points = readPlyPoints(bytes, header);
+    if (!points) return null;
+    const little = header.format === 'binary_little_endian';
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
+    const start = header.headerLength + vertex.properties.reduce((sum, property) => sum + TYPES[property.type].size, 0) * vertex.count;
+    // Size the index buffer first, which also checks every face lies inside the file.
+    let size = 0;
+    for (let i = 0, at = start; i < face.count; i++) {
+        if (at + countType.size > bytes.length) return null;
+        const n = view[countType.getter](at, little);
+        at += countType.size + n * indexType.size;
+        if (at > bytes.length) return null;
+        if (n === 3) size += 3;
+        else if (n === 4) size += 6;
+    }
+    const indices = new Uint32Array(size);
+    const corner = [0, 0, 0, 0];
+    for (let i = 0, at = start, out = 0; i < face.count; i++) {
+        const n = view[countType.getter](at, little);
+        at += countType.size;
+        if (n === 3 || n === 4) {
+            for (let k = 0; k < n; k++) {
+                corner[k] = view[indexType.getter](at + k * indexType.size, little);
+                if (corner[k] < 0) return null;
+            }
+            indices[out++] = corner[0]; indices[out++] = corner[1]; indices[out++] = corner[2];
+            if (n === 4) { indices[out++] = corner[0]; indices[out++] = corner[2]; indices[out++] = corner[3]; }
+        }
+        at += n * indexType.size;
+    }
+    return { ...points, indices };
 }
