@@ -22,7 +22,7 @@ export function readPcdPoints(bytes) {
     const start = data.index + data[0].length;
     // A wrong POINTS must not make us allocate gigabytes for a short body.
     if (start + stride * count > bytes.length) return null;
-    const rgb = fields.findIndex(name => name === 'rgb' || name === 'rgba');
+    const rgb = fields.indexOf('rgb');
     const view = new DataView(bytes.buffer, bytes.byteOffset + start, stride * count);
     const positions = new Float32Array(count * 3);
     const colors = rgb >= 0 && sizes[rgb] === 4 ? new Uint8Array(count * 3) : null;
