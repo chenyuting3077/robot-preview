@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Triangle and quad meshes triangulate into typed arrays: a 177 MB, 3.4M-triangle usdc composes in 1.2–1.4 s instead of 2.0–2.2 s.
+
 ## 0.2.0
 
 - The up menu shows the stage's `upAxis` (+Z for Isaac Sim assets); stages without one start +Z instead of +Y.

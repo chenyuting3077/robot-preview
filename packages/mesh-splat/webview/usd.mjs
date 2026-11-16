@@ -348,7 +348,36 @@ export function expandFloat32(data, indices, itemSize) {
     return expanded;
 }
 
+// three pushes every triangle into plain arrays: 409 ms of 1.2 s for a 3.4M-triangle usdc. Triangle and
+// quad meshes without holes are written straight into typed arrays; null hands anything else (n-gons,
+// holes, indices three would read as undefined) back to three.
+export function triangulateTrisQuads(indices, counts) {
+    let size = 0, corners = 0;
+    for (let i = 0; i < counts.length; i++) {
+        if (counts[i] !== 3 && counts[i] !== 4) return null;
+        size += counts[i] === 3 ? 3 : 6;
+        corners += counts[i];
+    }
+    if (corners > indices.length) return null;
+    const pattern = new Uint32Array(size);
+    for (let i = 0, offset = 0, out = 0; i < counts.length; offset += counts[i++]) {
+        pattern[out++] = offset; pattern[out++] = offset + 1; pattern[out++] = offset + 2;
+        if (counts[i] === 4) { pattern[out++] = offset; pattern[out++] = offset + 2; pattern[out++] = offset + 3; }
+    }
+    const triangulated = new Uint32Array(size);
+    for (let i = 0; i < size; i++) {
+        const index = indices[pattern[i]];
+        if (!(index >= 0 && index <= 0xffffffff && index % 1 === 0)) return null;
+        triangulated[i] = index;
+    }
+    return { indices: triangulated, pattern };
+}
+
 class XformUSDComposer extends USDComposer {
+    _triangulateIndicesWithPattern(indices, counts, points, holeMap) {
+        return (!holeMap?.parentToHoles?.size && triangulateTrisQuads(indices, counts)) || super._triangulateIndicesWithPattern(indices, counts, points, holeMap);
+    }
+
     _expandAttribute(data, indices, itemSize) {
         return (data instanceof Float32Array && expandFloat32(data, indices, itemSize)) || super._expandAttribute(data, indices, itemSize);
     }

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { Matrix4 } from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
 import { USDCParser } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/usd/USDCParser.js';
-import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined, expandFloat32, ArcUSDCParser } from '../../packages/mesh-splat/webview/usd.mjs';
+import { USDComposer } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/usd/USDComposer.js';
+import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined, expandFloat32, triangulateTrisQuads, ArcUSDCParser } from '../../packages/mesh-splat/webview/usd.mjs';
 
 function rows(ply) {
     const header = readPlyHeader(ply);
@@ -247,4 +248,16 @@ test('composeUsd reports upAxis and leaves the root unrotated', async () => {
     assert.equal(zUp.group.rotation.x, 0);
     assert.equal((await composeUsd(usda('    upAxis = "Y"'))).upAxis, 'Y');
     assert.equal((await composeUsd(usda(''))).upAxis, undefined);
+});
+
+test('triangulateTrisQuads matches three for triangles and quads, and leaves the rest to it', () => {
+    const indices = [0, 1, 2, 3, 4, 5, 6, 1, 7, 8];
+    const counts = [4, 3, 3];
+    const three = USDComposer.prototype._triangulateIndicesWithPattern.call(new USDComposer(), indices, counts);
+    const fast = triangulateTrisQuads(indices, counts);
+    assert.deepEqual(Array.from(fast.indices), three.indices);
+    assert.deepEqual(Array.from(fast.pattern), three.pattern);
+    assert.equal(triangulateTrisQuads([0, 1, 2, 3, 4], [5]), null);
+    assert.equal(triangulateTrisQuads([0, 1, 2], [4]), null);
+    assert.equal(triangulateTrisQuads([0, -1, 2], [3]), null);
 });
