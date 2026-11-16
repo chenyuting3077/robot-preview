@@ -7,7 +7,7 @@ self.onmessage = async ({ data: { engine, bytes, wasm } }) => {
         if (engine === 'foxtrot') {
             await initFoxtrot({ module_or_path: wasm });
             const mesh = step_to_mesh(bytes);
-            const out = { positions: mesh.take_positions(), normals: mesh.take_normals(), colors: mesh.take_colors(), indices: mesh.take_indices(), failed: mesh.failed };
+            const out = { positions: mesh.take_positions(), normals: mesh.take_normals(), colors: mesh.take_colors(), indices: mesh.take_indices() };
             self.postMessage(out, [out.positions.buffer, out.normals.buffer, out.colors.buffer, out.indices.buffer]);
             return;
         }

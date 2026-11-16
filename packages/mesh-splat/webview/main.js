@@ -409,9 +409,7 @@ function showInfo(info) {
     }));
 }
 
-let displayMode = 'solid';
 function setMode(mode) {
-    displayMode = mode;
     document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
     const meshes = [];
     root.traverse(child => child.isMesh && child !== sparkRenderer && meshes.push(child));
