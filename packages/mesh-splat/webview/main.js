@@ -255,10 +255,14 @@ function setUp(up) {
 
 function stats(object) {
     const result = { vertices: 0, faces: 0, points: 0 };
+    const counted = new Set();
     object.traverse(child => {
-        const count = child.geometry?.attributes.position?.count ?? 0;
+        const position = child.geometry?.attributes.position;
+        const count = position?.count ?? 0;
         if (child.isMesh) {
-            result.vertices += count;
+            // glTF primitives of one mesh share a vertex buffer.
+            if (!counted.has(position)) result.vertices += count;
+            counted.add(position);
             result.faces += (child.geometry.index?.count ?? count) / 3;
         }
         if (child.isPoints) result.points += count;
