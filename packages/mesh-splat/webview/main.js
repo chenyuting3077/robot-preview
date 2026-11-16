@@ -17,6 +17,7 @@ import { flatNormals, percentile, grown } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { stepLengthUnit } from './step.mjs';
+import { readPcdPoints } from './pcd.mjs';
 import StepWorker from './step-worker.js?worker&inline';
 import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
 import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
@@ -159,6 +160,15 @@ function withUp(object, up) {
     return object;
 }
 const loadGltf = async () => withUp((await new GLTFLoader().loadAsync(src)).scene, '+Y');
+async function loadPcd() {
+    const bytes = await fetchBytes();
+    const points = readPcdPoints(bytes);
+    if (!points) return pointsOf(new PCDLoader().parse(bytes.buffer).geometry);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(points.positions, 3));
+    if (points.colors) geometry.setAttribute('color', new THREE.BufferAttribute(points.colors, 3, true));
+    return pointsOf(geometry);
+}
 const loadTextPoints = async () => pointsOf(geometryFrom(parsePointsText(await fetchText())));
 const loadSplatFile = async info => loadSplat(await fetchBytes(), info);
 
@@ -299,7 +309,7 @@ const LOADERS = {
     '3mf': () => new ThreeMFLoader().loadAsync(src),
     wrl: async () => withUp(await new VRMLLoader().loadAsync(src), '+Y'),
     '3ds': () => new TDSLoader().loadAsync(src),
-    pcd: async () => pointsOf((await new PCDLoader().loadAsync(src)).geometry),
+    pcd: loadPcd,
     xyz: loadTextPoints,
     pts: loadTextPoints,
     asc: loadTextPoints,

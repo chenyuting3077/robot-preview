@@ -93,7 +93,7 @@ let srgbToLinearByte = null;
 const color = new Color();
 const linearByte = value => Math.round(color.setRGB(value * (1 / 255), 0, 0, SRGBColorSpace).r * 255);
 
-function linearByteTable() {
+export function linearByteTable() {
     srgbToLinearByte ??= Uint8Array.from({ length: 256 }, (_, i) => linearByte(i));
     return srgbToLinearByte;
 }
