@@ -3,7 +3,7 @@
 Open meshes, point clouds and Gaussian splats in VS Code as a 3D view.
 
 - Meshes: `.stl` `.ply` `.obj` (+ `.mtl`) `.off` `.dae` `.gltf` `.glb` `.3mf` `.wrl` `.3ds`
-- CAD: `.stp` `.step`, tessellated by [foxtrot](https://github.com/Formlabs/foxtrot) with [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)) filling in faces it misses ([why](../../docs/mesh-splat.md#step))
+- CAD: `.stp` `.step`, tessellated by [foxtrot](https://github.com/Formlabs/foxtrot), or [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)) when foxtrot fails ([why](../../docs/mesh-splat.md#step))
 - Point clouds: `.ply` `.pcd` `.xyz` `.pts`, and `.asc` through *Reopen Editor With…*
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
 - Solid, wireframe and point display, point size, up-axis selection, and vertex / face / splat counts.

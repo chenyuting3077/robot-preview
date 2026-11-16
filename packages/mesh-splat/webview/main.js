@@ -187,10 +187,10 @@ async function loadUsd(info) {
     return withUp(group, upAxis === 'Y' ? '+Y' : '+Z');
 }
 
-// STEP is B-rep and needs a CAD kernel to tessellate. foxtrot (Rust) does a 39 MB assembly in ~6 s but
-// skips 0.1-0.6% of faces, left as small holes; OpenCascade (C++) gets every face but takes minutes on
+// STEP is B-rep and needs a CAD kernel to tessellate. foxtrot (Rust) shows a 39 MB assembly in 7.5 s but
+// skips under 1% of faces, left as small holes; OpenCascade (C++) gets every face but takes minutes on
 // large assemblies, so it runs only when the length unit is unclear or foxtrot aborts (a Rust panic kills
-// the whole WASM instance). Both run in a worker so the view keeps turning meanwhile.
+// the whole WASM instance) or yields no triangles (it skips shapes it does not know). Both run in a worker so the view keeps turning meanwhile.
 // The worker gets the WASM bytes, not its URL, so it does not depend on a fetch from a blob: worker
 // reaching the webview's service worker, which serves extension files in VS Code.
 async function stepJob(engine, bytes) {
@@ -283,7 +283,7 @@ async function loadStep(info) {
     const bytes = await fetchBytes();
     const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
     const fast = unit && await stepJob('foxtrot', bytes).catch(() => null);
-    const object = fast ? foxtrotObject(fast, unit) : occtObject(await stepJob('occt', bytes));
+    const object = fast?.indices.length ? foxtrotObject(fast, unit) : occtObject(await stepJob('occt', bytes));
     cacheStep(object);
     return withUp(object, '+Y');
 }
