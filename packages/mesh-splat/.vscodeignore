@@ -4,3 +4,6 @@ webview/**
 vite.config.js
 package-lock.json
 images/preview.png
+vendor/**
+!vendor/**/LICENSE*
+!vendor/**/license*

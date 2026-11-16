@@ -1,0 +1,529 @@
+diff --git a/nurbs/src/sampled_curve.rs b/nurbs/src/sampled_curve.rs
+index 8b1583e..2cb7528 100644
+--- a/nurbs/src/sampled_curve.rs
++++ b/nurbs/src/sampled_curve.rs
+@@ -1,10 +1,13 @@
+ use nalgebra_glm::{dot, length, length2, DVec3};
+ use crate::{abstract_curve::AbstractCurve, nd_curve::NDBSplineCurve};
+ 
+-#[derive(Debug)]
++#[derive(Debug, Clone)]
+ pub struct SampledCurve<const N: usize> {
+-    curve: NDBSplineCurve<N>,
++    pub curve: NDBSplineCurve<N>,
+     samples: Vec<(f64, DVec3)>,
++    // Newton's distance tolerance, relative to the curve's size: a fixed 0.01
++    // reorders nearby points on sub-millimeter features.
++    eps: f64,
+ }
+ 
+ impl<const N: usize> SampledCurve<N>
+@@ -28,16 +31,23 @@ impl<const N: usize> SampledCurve<N>
+             }
+         }
+ 
+-        Self { curve, samples }
++        let (lo, hi) = samples.iter().fold(
++            (DVec3::repeat(f64::INFINITY), DVec3::repeat(-f64::INFINITY)),
++            |(lo, hi), (_, q)| (lo.inf(q), hi.sup(q)));
++        let size = (hi - lo).norm();
++        let eps = if size.is_finite() && size > 0.0 { size * 1e-7 } else { 1e-7 };
++        Self { curve, samples, eps }
+     }
+ 
+     // Section 6.1 (start middle page 232)
+     pub fn u_from_point_newtons_method(&self, P: DVec3, u_0: f64) -> f64 {
+-        let eps1 = 0.01; // a Euclidean distance error bound
+-        let eps2 = 0.01; // a cosine error bound
++        let eps1 = self.eps; // a Euclidean distance error bound
++        let eps2 = 1e-6; // a cosine error bound
+ 
+         let mut u_i = u_0;
+-        loop {
++        // Newton's method can cycle on projected or degenerate curves; the sampled
++        // starting point is already close, so a bounded refinement is enough.
++        for _ in 0..32 {
+             let derivs = self.curve.derivs::<2>(u_i);
+             let C = derivs[0];
+             let C_p = derivs[1];
+@@ -78,14 +88,32 @@ impl<const N: usize> SampledCurve<N>
+ 
+             u_i = u_ip1;
+         }
++        u_i
+     }
+ 
+     pub fn u_from_point(&self, p: DVec3) -> f64 {
+         use ordered_float::OrderedFloat;
+-        let best_u = self.samples.iter()
+-            .min_by_key(|(_u, pos)| OrderedFloat((pos - p).norm()))
+-            .unwrap().0;
+-        self.u_from_point_newtons_method(p, best_u)
++        let (best, _) = self.samples.iter().enumerate()
++            .min_by_key(|(_i, (_u, pos))| OrderedFloat((pos - p).norm()))
++            .unwrap();
++        let u = self.u_from_point_newtons_method(p, self.samples[best].0);
++        let dist = |u: f64| (self.curve.point(u) - p).norm();
++        if dist(u) <= dist(self.samples[best].0) && dist(u) <= self.eps * 10.0 {
++            return u;
++        }
++        // Newton's method stalls on tight rational arcs; the distance is
++        // unimodal between the neighbouring samples, so a ternary search finds it.
++        let (mut lo, mut hi) = (
++            self.samples[best.saturating_sub(1)].0,
++            self.samples[(best + 1).min(self.samples.len() - 1)].0,
++        );
++        for _ in 0..80 {
++            let m1 = lo + (hi - lo) / 3.0;
++            let m2 = hi - (hi - lo) / 3.0;
++            if dist(m1) < dist(m2) { hi = m2 } else { lo = m1 }
++        }
++        let refined = (lo + hi) / 2.0;
++        if dist(refined) < dist(u) { refined } else { u }
+     }
+ 
+     pub fn as_polyline(&self, u_start: f64, u_end: f64, num_points_per_knot: usize) -> Vec<DVec3> {
+diff --git a/triangulate/src/surface.rs b/triangulate/src/surface.rs
+index 7e00a09..d0bef87 100644
+--- a/triangulate/src/surface.rs
++++ b/triangulate/src/surface.rs
+@@ -3,7 +3,7 @@ use std::f64::{EPSILON, consts::PI};
+ use nalgebra_glm as glm;
+ use glm::{DVec2, DVec3, DVec4, DMat4};
+ 
+-use nurbs::{AbstractSurface, NDBSplineSurface, SampledSurface};
++use nurbs::{AbstractCurve, AbstractSurface, KnotVector, NDBSplineCurve, NDBSplineSurface, NURBSCurve, SampledCurve, SampledSurface};
+ use crate::{Error, mesh::Vertex};
+ 
+ // Represents a surface in 3D space, with a function to project a 3D point
+@@ -44,6 +44,24 @@ pub enum Surface {
+         major_radius: f64,
+         minor_radius: f64,
+     },
++    // A curve swept along `dir`.  `flat` is the curve projected onto the plane
++    // normal to `dir`, which is where a surface point finds its curve
++    // parameter; `scale` makes one unit of u roughly one unit of length.
++    Extrusion {
++        curve: SampledCurve<4>,
++        flat: SampledCurve<4>,
++        dir: DVec3,
++        scale: f64,
++    },
++    // A curve swept around `axis`.  Points are lowered onto an annulus, the
++    // same trick as `Cylinder`, so faces spanning a full turn have no seam.
++    Revolution {
++        curve: SampledCurve<4>,
++        location: DVec3,
++        axis: DVec3,
++        x: DVec3,
++        y: DVec3,
++    },
+ }
+ 
+ impl Surface {
+@@ -95,6 +113,41 @@ impl Surface {
+         }
+     }
+ 
++    /// `control_points` are homogeneous (x*w, y*w, z*w, w).
++    pub fn new_extrusion(open: bool, knots: KnotVector, control_points: Vec<DVec4>, dir: DVec3) -> Self {
++        let dir = dir.normalize();
++        // Projection onto the plane is linear, so it applies to homogeneous
++        // control points and gives exactly the projected rational curve.
++        let flat_points = control_points.iter()
++            .map(|p| p - DVec4::new(dir.x, dir.y, dir.z, 0.0) * p.xyz().dot(&dir))
++            .collect();
++        let flat = SampledCurve::new(NDBSplineCurve::new(open, knots.clone(), flat_points));
++        let curve: NURBSCurve = NDBSplineCurve::new(open, knots, control_points);
++        let (u0, u1) = (curve.min_u(), curve.max_u());
++        let pts: Vec<DVec3> = (0..=32).map(|i| curve.point(u0 + (u1 - u0) * i as f64 / 32.0)).collect();
++        let length: f64 = pts.windows(2).map(|w| (w[1] - w[0]).norm()).sum();
++        let scale = if u1 > u0 && length > 0.0 { length / (u1 - u0) } else { 1.0 };
++        Surface::Extrusion { curve: SampledCurve::new(curve), flat, dir, scale }
++    }
++
++    /// `control_points` are homogeneous (x*w, y*w, z*w, w).
++    pub fn new_revolution(open: bool, knots: KnotVector, control_points: Vec<DVec4>,
++                          location: DVec3, axis: DVec3) -> Self {
++        let axis = axis.normalize();
++        let curve: NURBSCurve = NDBSplineCurve::new(open, knots, control_points);
++        // Put the profile's start at angle 0, so a meridian profile lowers
++        // without being rotated.
++        let start = curve.point(curve.min_u()) - location;
++        let radial = start - axis * start.dot(&axis);
++        let x = if radial.norm() > 1e-9 {
++            radial.normalize()
++        } else {
++            let any = if axis.x.abs() < 0.9 { DVec3::new(1.0, 0.0, 0.0) } else { DVec3::new(0.0, 1.0, 0.0) };
++            (any - axis * any.dot(&axis)).normalize()
++        };
++        Surface::Revolution { curve: SampledCurve::new(curve), location, axis, x, y: axis.cross(&x) }
++    }
++
+     pub fn make_affine_transform(z_world: DVec3, x_world: DVec3, y_world: DVec3, origin_world: DVec3) -> DMat4 {
+         let mut mat = DMat4::identity();
+         mat.set_column(0, &glm::vec3_to_vec4(&x_world));
+@@ -189,6 +242,20 @@ impl Surface {
+             },
+             Surface::BSpline(surf) => Self::surf_lower(p, surf),
+             Surface::NURBS(surf) => Self::surf_lower(p, surf),
++            Surface::Extrusion { curve, flat, dir, scale } => {
++                let u = flat.u_from_point(p - *dir * p.dot(dir));
++                let v = (p - curve.curve.point(u)).dot(dir);
++                Ok(DVec2::new(u * scale, v))
++            },
++            Surface::Revolution { curve, location, axis, x, y } => {
++                let rel = p - location;
++                let z = rel.dot(axis);
++                let (px, py) = (rel.dot(x), rel.dot(y));
++                let theta = py.atan2(px);
++                let meridian = location + axis * z + x * px.hypot(py);
++                let u = Self::revolution_fraction(curve, curve.u_from_point(meridian));
++                Ok((1.0 + u) * DVec2::new(theta.cos(), theta.sin()))
++            },
+             Surface::Sphere { mat_i, radius, .. } => {
+                 // mat_i is constructed in prepare to be a reasonable basis
+                 let p = (mat_i * p_).xyz() / *radius;
+@@ -321,6 +388,11 @@ impl Surface {
+         }
+     }
+ 
++    fn revolution_fraction(curve: &SampledCurve<4>, u: f64) -> f64 {
++        let (u0, u1) = (curve.curve.min_u(), curve.curve.max_u());
++        if u1 > u0 { (u - u0) / (u1 - u0) } else { 0.0 }
++    }
++
+     fn bbox(pts: &[(f64, f64)]) -> (f64, f64, f64, f64) {
+         let (mut xmin, mut xmax) = (std::f64::INFINITY, -std::f64::INFINITY);
+         let (mut ymin, mut ymax) = (std::f64::INFINITY, -std::f64::INFINITY);
+@@ -401,6 +473,23 @@ impl Surface {
+             },
+             Surface::BSpline(surf) => Self::surf_normal(uv, surf),
+             Surface::NURBS(surf) => Self::surf_normal(uv, surf),
++            // ISO 10303-42 parameterizes both as (curve parameter, sweep), so
++            // the normal is d/du x d/dv.
++            Surface::Extrusion { curve, dir, scale, .. } => {
++                let tangent = curve.curve.derivs::<1>(uv.x / scale)[1];
++                tangent.cross(dir).normalize()
++            },
++            Surface::Revolution { curve, location, axis, x, y } => {
++                let theta = uv.y.atan2(uv.x);
++                let (u0, u1) = (curve.curve.min_u(), curve.curve.max_u());
++                let u = u0 + (uv.norm() - 1.0) * (u1 - u0);
++                let t = curve.curve.derivs::<1>(u)[1];
++                let (tx, ty, tz) = (t.dot(x), t.dot(y), t.dot(axis));
++                let (c, s) = (theta.cos(), theta.sin());
++                let du = *x * (tx * c - ty * s) + *y * (tx * s + ty * c) + *axis * tz;
++                let dv = axis.cross(&(p - location));
++                du.cross(&dv).normalize()
++            },
+             Surface::Torus { mat, mat_i, major_radius, .. } => {
+                 let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
+                 let major_angle = p.y.atan2(p.z);
+diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
+index ad4ba6e..3a64679 100644
+--- a/triangulate/src/triangulate.rs
++++ b/triangulate/src/triangulate.rs
+@@ -23,6 +23,11 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
+ const SAVE_DEBUG_SVGS: bool = false;
+ const SAVE_PANIC_SVGS: bool = false;
+ 
++// Vertex color of a face without its own style; replaced by the solid's color.
++const UNSET_COLOR: f64 = -1.0;
++
++type Colors<'a> = HashMap<RepresentationItem<'a>, DVec3>;
++
+ /// `TransformStack` is a mapping of representations to transformed children.
+ type TransformStack<'a> =
+     HashMap<Representation<'a>, Vec<(Representation<'a>, DMat4)>>;
+@@ -64,18 +69,23 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
+ }
+ 
+ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+-    let styled_items: Vec<_> = s.0.iter()
++    // Face colors usually come as OVER_RIDING_STYLED_ITEMs on top of the
++    // solid's STYLED_ITEM.
++    let styled_items: Vec<(&Vec<PresentationStyleAssignment>, RepresentationItem)> = s.0.iter()
+         .filter_map(|e| MechanicalDesignGeometricPresentationRepresentation_::try_from_entity(e))
+         .flat_map(|m| m.items.iter())
+-        .filter_map(|item| s.entity(item.cast::<StyledItem_>()))
++        .filter_map(|item| s.entity(item.cast::<StyledItem_>())
++            .map(|i| (&i.styles, i.item))
++            .or_else(|| s.entity(item.cast::<OverRidingStyledItem_>())
++                .map(|i| (&i.styles, i.item))))
+         .collect();
+-    let brep_colors: HashMap<_, DVec3> = styled_items.iter()
+-        .filter_map(|styled|
+-            if styled.styles.len() != 1 {
++    let brep_colors: Colors = styled_items.iter()
++        .filter_map(|(styles, item)|
++            if styles.len() != 1 {
+                 None
+             } else {
+-                presentation_style_color(s, styled.styles[0])
+-                    .map(|c| (styled.item, c))
++                presentation_style_color(s, styles[0])
++                    .map(|c| (*item, c))
+             })
+         .collect();
+ 
+@@ -124,7 +134,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+                 Entity::AdvancedBrepShapeRepresentation(b) => &b.items,
+                 Entity::ShapeRepresentation(b) => &b.items,
+                 Entity::ManifoldSurfaceShapeRepresentation(b) => &b.items,
+-                e => panic!("Could not get shape from {:?}", e),
++                // A panic aborts the whole WASM instance, so unknown shapes are skipped.
++                e => {
++                    warn!("Could not get shape from {:?}", e);
++                    continue;
++                }
+             };
+ 
+             for m in items.iter() {
+@@ -173,14 +187,14 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+                 let t_start = mesh.triangles.len();
+                 match &s[*id] {
+                     Entity::ManifoldSolidBrep(b) =>
+-                        closed_shell(s, b.outer, &mut mesh, &mut stats),
++                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats),
+                     Entity::ShellBasedSurfaceModel(b) =>
+                         for v in &b.sbsm_boundary {
+-                            shell(s, *v, &mut mesh, &mut stats);
++                            shell(s, *v, &brep_colors, &mut mesh, &mut stats);
+                         },
+                     Entity::BrepWithVoids(b) =>
+                         // TODO: handle voids
+-                        closed_shell(s, b.outer, &mut mesh, &mut stats),
++                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats),
+                     _ => {
+                         warn!("Skipping {:?} (not a known solid)", s[*id]);
+                         return (mesh, stats);
+@@ -189,9 +203,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+ 
+                 // Pick out a color from the color map and apply it to each
+                 // newly-created vertex
+-                let color = brep_colors.get(id)
++                let brep_color = brep_colors.get(&id.cast())
+                     .map(|c| *c)
+                     .unwrap_or(DVec3::new(0.5, 0.5, 0.5));
++                // Faces with their own style keep it over the solid's color.
++                let color_of = |v: &mesh::Vertex|
++                    if v.color.x == UNSET_COLOR { brep_color } else { v.color };
+ 
+                 // Build copies of the mesh by copying and applying transforms
+                 let v_end = mesh.verts.len();
+@@ -205,6 +222,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+                         let n = mesh.verts[v].norm;
+                         let norm = (mat * glm::vec3_to_vec4(&n)).xyz();
+ 
++                        let color = color_of(&mesh.verts[v]);
+                         mesh.verts.push(mesh::Vertex { pos, norm, color });
+                     }
+                     let offset = mesh.verts.len() - v_end;
+@@ -226,7 +244,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+                     let n = mesh.verts[v].norm;
+                     mesh.verts[v].norm = (mat * glm::vec3_to_vec4(&n)).xyz();
+ 
+-                    mesh.verts[v].color = color;
++                    mesh.verts[v].color = color_of(&mesh.verts[v]);
+                 }
+                 (mesh, stats)
+             });
+@@ -320,44 +338,53 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
+ fn axis2_placement_3d(s: &StepFile, t: Id<Axis2Placement3d_>) -> (DVec3, DVec3, DVec3) {
+     let a = s.entity(t).expect("Could not get Axis2Placement3d");
+     let location = cartesian_point(s, a.location);
+-    // TODO: this doesn't necessarily match the behavior of `build_axes`
+-    let axis = direction(s, a.axis.expect("Missing axis"));
+-    let ref_direction = match a.ref_direction {
+-        None => DVec3::new(1.0, 0.0, 0.0),
+-        Some(r) => direction(s, r),
++    // Defaults and projection from ISO 10303-42 `build_axes`: an omitted
++    // ref_direction along the axis would make the frame singular.
++    let axis = a.axis.map(|d| direction(s, d)).unwrap_or(DVec3::new(0.0, 0.0, 1.0)).normalize();
++    let default_ref = if (axis - DVec3::new(1.0, 0.0, 0.0)).norm() > 1e-9 {
++        DVec3::new(1.0, 0.0, 0.0)
++    } else {
++        DVec3::new(0.0, 0.0, 1.0)
+     };
+-    (location, axis, ref_direction)
++    let project = |r: DVec3| r - axis * r.dot(&axis);
++    let mut ref_direction = project(a.ref_direction.map(|r| direction(s, r)).unwrap_or(default_ref));
++    if ref_direction.norm() < 1e-9 {
++        ref_direction = project(default_ref);
++    }
++    (location, axis, ref_direction.normalize())
+ }
+ 
+-fn shell(s: &StepFile, c: Shell, mesh: &mut Mesh, stats: &mut Stats) {
++fn shell(s: &StepFile, c: Shell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats) {
+     match &s[c] {
+-        Entity::ClosedShell(_) => closed_shell(s, c.cast(), mesh, stats),
+-        Entity::OpenShell(_) => open_shell(s, c.cast(), mesh, stats),
++        Entity::ClosedShell(_) => closed_shell(s, c.cast(), colors, mesh, stats),
++        Entity::OpenShell(_) => open_shell(s, c.cast(), colors, mesh, stats),
+         h => warn!("Skipping {:?} (unknown Shell type)", h),
+     }
+ }
+ 
+-fn open_shell(s: &StepFile, c: OpenShell, mesh: &mut Mesh, stats: &mut Stats) {
++fn open_shell(s: &StepFile, c: OpenShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats) {
+     let cs = s.entity(c).expect("Could not get OpenShell");
+     for face in &cs.cfs_faces {
+-        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
++        if let Err(err) = advanced_face(s, face.cast(), colors, mesh, stats) {
+             error!("Failed to triangulate {:?}: {}", s[*face], err);
++            stats.num_errors += 1;
+         }
+     }
+     stats.num_shells += 1;
+ }
+ 
+-fn closed_shell(s: &StepFile, c: ClosedShell, mesh: &mut Mesh, stats: &mut Stats) {
++fn closed_shell(s: &StepFile, c: ClosedShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats) {
+     let cs = s.entity(c).expect("Could not get ClosedShell");
+     for face in &cs.cfs_faces {
+-        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
++        if let Err(err) = advanced_face(s, face.cast(), colors, mesh, stats) {
+             error!("Failed to triangulate {:?}: {}", s[*face], err);
++            stats.num_errors += 1;
+         }
+     }
+     stats.num_shells += 1;
+ }
+ 
+-fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
++fn advanced_face(s: &StepFile, f: AdvancedFace, colors: &Colors, mesh: &mut Mesh,
+                  stats: &mut Stats) -> Result<(), Error>
+ {
+     let face = s.entity(f).expect("Could not get AdvancedFace");
+@@ -497,6 +524,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+             v.norm = -v.norm;
+         }
+     }
++    let color = colors.get(&f.cast()).copied().unwrap_or(DVec3::repeat(UNSET_COLOR));
++    for v in &mut mesh.verts[v_start..] {
++        v.color = color;
++    }
+     Ok(())
+ }
+ 
+@@ -609,6 +640,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+             Ok(Surface::NURBS(SampledSurface::new(surf)))
+ 
+         },
++        Entity::SurfaceOfLinearExtrusion(e) => {
++            let (open, knots, points) = swept_curve(s, e.swept_curve)?;
++            let v = s.entity(e.extrusion_axis).expect("Could not get Vector");
++            Ok(Surface::new_extrusion(open, knots, points, direction(s, v.orientation)))
++        },
++        Entity::SurfaceOfRevolution(e) => {
++            let (open, knots, points) = swept_curve(s, e.swept_curve)?;
++            let a = s.entity(e.axis_position).expect("Could not get Axis1Placement");
++            let axis = a.axis.map(|d| direction(s, d)).unwrap_or_else(|| DVec3::new(0.0, 0.0, 1.0));
++            Ok(Surface::new_revolution(open, knots, points, cartesian_point(s, a.location), axis))
++        },
+         e => {
+             warn!("Could not get surface from {:?}", e);
+             Err(Error::UnknownSurfaceType)
+@@ -616,6 +658,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+     }
+ }
+ 
++/// The curve a swept surface is built from, as homogeneous control points
++/// (weight 1 for a non-rational B-spline).
++fn swept_curve(s: &StepFile, c: ap214::Curve) -> Result<(bool, KnotVector, Vec<DVec4>), Error> {
++    let (bspline, weights) = match &s[c] {
++        Entity::BSplineCurveWithKnots(b) => (b, None),
++        Entity::ComplexEntity(v) => {
++            let bspline = v.iter().find_map(|e| match e {
++                Entity::BSplineCurveWithKnots(b) => Some(b),
++                _ => None,
++            });
++            let rational = v.iter().find_map(|e| match e {
++                Entity::RationalBSplineCurve(r) => Some(r),
++                _ => None,
++            });
++            match (bspline, rational) {
++                (Some(b), Some(r)) => (b, Some(&r.weights_data)),
++                _ => return Err(Error::UnknownCurveType),
++            }
++        },
++        e => {
++            warn!("Could not get swept curve from {:?}", e);
++            return Err(Error::UnknownCurveType);
++        },
++    };
++    let knots: Vec<f64> = bspline.knots.iter().map(|k| k.0).collect();
++    let multiplicities: Vec<usize> = bspline.knot_multiplicities.iter()
++        .map(|&k| k.try_into().expect("Got negative multiplicity"))
++        .collect();
++    let knot_vec = KnotVector::from_multiplicities(
++        bspline.degree.try_into().expect("Got negative degree"),
++        &knots, &multiplicities);
++    let points = control_points_1d(s, &bspline.control_points_list);
++    let points = match weights {
++        Some(w) => points.iter().zip(w.iter())
++            .map(|(p, w)| DVec4::new(p.x * w, p.y * w, p.z * w, *w))
++            .collect(),
++        None => points.iter().map(|p| DVec4::new(p.x, p.y, p.z, 1.0)).collect(),
++    };
++    Ok((bspline.closed_curve.0 != Some(true), knot_vec, points))
++}
++
+ fn control_points_1d(s: &StepFile, row: &Vec<CartesianPoint>) -> Vec<DVec3> {
+     row.iter().map(|p| cartesian_point(s, *p)).collect()
+ }
+diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
+index 0e65527..468918a 100644
+--- a/wasm/src/lib.rs
++++ b/wasm/src/lib.rs
+@@ -52,3 +52,48 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
+         .map(|f| *f as f32)
+         .collect()
+ }
++
++/// A triangle mesh in the file's own units, with per-vertex normals and
++/// colors (0-1 RGB), plus how many faces could not be triangulated.
++#[wasm_bindgen]
++pub struct StepMesh {
++    positions: Vec<f32>,
++    normals: Vec<f32>,
++    colors: Vec<f32>,
++    indices: Vec<u32>,
++    faces: usize,
++    failed: usize,
++}
++
++#[wasm_bindgen]
++impl StepMesh {
++    pub fn take_positions(&mut self) -> Vec<f32> { std::mem::take(&mut self.positions) }
++    pub fn take_normals(&mut self) -> Vec<f32> { std::mem::take(&mut self.normals) }
++    pub fn take_colors(&mut self) -> Vec<f32> { std::mem::take(&mut self.colors) }
++    pub fn take_indices(&mut self) -> Vec<u32> { std::mem::take(&mut self.indices) }
++    #[wasm_bindgen(getter)]
++    pub fn faces(&self) -> usize { self.faces }
++    #[wasm_bindgen(getter)]
++    pub fn failed(&self) -> usize { self.failed }
++}
++
++#[wasm_bindgen]
++pub fn step_to_mesh(data: &[u8]) -> StepMesh {
++    use step::step_file::StepFile;
++    use triangulate::triangulate::triangulate;
++
++    let flat = StepFile::strip_flatten(data);
++    let step = StepFile::parse(&flat);
++    let (mesh, stats) = triangulate(&step);
++    let pack = |f: &dyn Fn(&triangulate::mesh::Vertex) -> [f64; 3]| -> Vec<f32> {
++        mesh.verts.iter().flat_map(|v| f(v)).map(|x| x as f32).collect()
++    };
++    StepMesh {
++        positions: pack(&|v| [v.pos.x, v.pos.y, v.pos.z]),
++        normals: pack(&|v| [v.norm.x, v.norm.y, v.norm.z]),
++        colors: pack(&|v| [v.color.x, v.color.y, v.color.z]),
++        indices: mesh.triangles.iter().flat_map(|t| t.verts.iter().copied()).collect(),
++        faces: stats.num_faces,
++        failed: stats.num_errors + stats.num_panics,
++    }
++}

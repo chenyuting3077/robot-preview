@@ -6,6 +6,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js';
 import { VRMLLoader } from 'three/examples/jsm/loaders/VRMLLoader.js';
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
@@ -15,6 +16,10 @@ import { readPlyHeader, plyKind, addMissingScale, readPlyPoints } from './ply.mj
 import { flatNormals, percentile, grown } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
+import { stepLengthUnit } from './step.mjs';
+import StepWorker from './step-worker.js?worker&inline';
+import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
+import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
 
 const STRINGS = {
     en: { help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
@@ -26,7 +31,8 @@ const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.starts
 const t = key => strings[key] ?? STRINGS.en[key];
 const $ = id => document.getElementById(id);
 
-const { src, name, bytes: fileSize } = document.body.dataset;
+const { src, name, bytes: fileSize, cached } = document.body.dataset;
+const vscodeApi = globalThis.acquireVsCodeApi?.();
 const ext = name.split('.').pop().toLowerCase();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -171,6 +177,107 @@ async function loadUsd(info) {
     return withUp(group, upAxis === 'Y' ? '+Y' : '+Z');
 }
 
+// STEP is B-rep and needs a CAD kernel to tessellate. foxtrot (Rust) does a 39 MB assembly in ~6 s but
+// skips 0.1-0.6% of faces, left as small holes; OpenCascade (C++) gets every face but takes minutes on
+// large assemblies, so it runs only when the length unit is unclear or foxtrot aborts (a Rust panic kills
+// the whole WASM instance). Both run in a worker so the view keeps turning meanwhile.
+// The worker gets the WASM bytes, not its URL, so it does not depend on a fetch from a blob: worker
+// reaching the webview's service worker, which serves extension files in VS Code.
+async function stepJob(engine, bytes) {
+    const wasm = await fetch(new URL(engine === 'foxtrot' ? foxtrotWasm : occtWasm, document.baseURI)).then(response => response.arrayBuffer());
+    return new Promise((resolve, reject) => {
+        const worker = new StepWorker();
+        worker.onmessage = ({ data }) => {
+            worker.terminate();
+            if (data.error) reject(new Error(data.error));
+            else resolve(data);
+        };
+        worker.onerror = event => {
+            worker.terminate();
+            reject(new Error(event.message));
+        };
+        worker.postMessage({ engine, bytes: bytes.slice(), wasm }, [wasm]);
+    });
+}
+
+const stepMaterials = new Map();
+const stepMaterial = color => {
+    const key = color.join();
+    if (!stepMaterials.has(key)) stepMaterials.set(key, new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...color, THREE.SRGBColorSpace), roughness: 0.8, side: THREE.DoubleSide }));
+    return stepMaterials.get(key);
+};
+
+const srgbToLinear = c => (c < 0.04045 ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4));
+
+function foxtrotObject({ positions, normals, colors, indices }, unit) {
+    for (let i = 0; i < positions.length; i++) positions[i] *= unit;
+    // STEP colors are sRGB; vertex colors are read as linear.
+    for (let i = 0; i < colors.length; i++) colors[i] = srgbToLinear(colors[i]);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    const group = new THREE.Group();
+    group.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide })));
+    return group;
+}
+
+function occtObject({ meshes }) {
+    const group = new THREE.Group();
+    for (const mesh of meshes) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
+        if (mesh.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
+        // Faces may carry their own color over the part's; each face is a run of triangles [first, last].
+        // Triangles are regrouped by material so a part draws once per color, not once per face.
+        const base = mesh.color ?? [0.69, 0.69, 0.69];
+        const used = [stepMaterial(base)];
+        const runs = [[]];
+        for (const { first, last, color } of mesh.faces ?? []) {
+            let slot = used.indexOf(stepMaterial(color ?? base));
+            if (slot < 0) slot = used.push(stepMaterial(color)) - 1;
+            (runs[slot] ??= []).push(first * 3, (last + 1) * 3);
+        }
+        const source = mesh.indices;
+        const covered = runs.flat().reduce((sum, value, i) => sum + (i % 2 ? value : -value), 0);
+        const regroup = runs.length > 1 && covered === source.length;
+        const index = regroup ? new Uint32Array(source.length) : source;
+        if (regroup) {
+            let offset = 0;
+            runs.forEach((ranges, slot) => {
+                const start = offset;
+                for (let i = 0; i < ranges.length; i += 2) {
+                    index.set(source.subarray(ranges[i], ranges[i + 1]), offset);
+                    offset += ranges[i + 1] - ranges[i];
+                }
+                geometry.addGroup(start, offset - start, slot);
+            });
+        }
+        geometry.setIndex(new THREE.BufferAttribute(index, 1));
+        if (!geometry.attributes.normal) geometry.computeVertexNormals();
+        group.add(Object.assign(new THREE.Mesh(geometry, regroup ? used : used[0]), { name: mesh.name }));
+    }
+    return group;
+}
+
+// Exported after the first frame so the model shows without waiting for it.
+function cacheStep(object) {
+    if (vscodeApi) setTimeout(() => new GLTFExporter().parseAsync(object, { binary: true }).then(glb => vscodeApi.postMessage({ type: 'stepCache', glb: new Uint8Array(glb) })), 500);
+}
+
+async function loadStep(info) {
+    info.format = 'STEP';
+    // STEP declares no up axis; SolidWorks, Inventor and Creo export Y-up.
+    if (cached) return withUp((await new GLTFLoader().loadAsync(cached)).scene, '+Y');
+    const bytes = await fetchBytes();
+    const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
+    const fast = unit && await stepJob('foxtrot', bytes).catch(() => null);
+    const object = fast ? foxtrotObject(fast, unit) : occtObject(await stepJob('occt', bytes));
+    cacheStep(object);
+    return withUp(object, '+Y');
+}
+
 const LOADERS = {
     stl: async () => {
         const geometry = new STLLoader().parse((await fetchBytes()).buffer);
@@ -203,7 +310,9 @@ const LOADERS = {
     usd: loadUsd,
     usda: loadUsd,
     usdc: loadUsd,
-    usdz: loadUsd
+    usdz: loadUsd,
+    stp: loadStep,
+    step: loadStep
 };
 
 function splatBox(splat) {
@@ -290,7 +399,9 @@ function showInfo(info) {
     }));
 }
 
+let displayMode = 'solid';
 function setMode(mode) {
+    displayMode = mode;
     document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
     const meshes = [];
     root.traverse(child => child.isMesh && child !== sparkRenderer && meshes.push(child));
@@ -338,6 +449,17 @@ function setupUi(hasMesh, hasPoints, up) {
 }
 
 
+function show(object, info) {
+    root.add(object);
+    const counted = stats(object);
+    Object.assign(info, counted);
+    info.format ??= counted.faces ? t('mesh') : t('pointCloud');
+    localBox = boxOf(object);
+    info.size = localBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
+    showInfo(info);
+    return counted;
+}
+
 async function main() {
     document.querySelectorAll('[data-t]').forEach(element => {
         (element.querySelector('span') ?? element).textContent = t(element.dataset.t);
@@ -347,16 +469,10 @@ async function main() {
         const load = LOADERS[ext];
         if (!load) throw new Error(`${t('unsupportedFormat')}: ${name}`);
         const object = await load(info);
-        root.add(object);
-        const counted = stats(object);
-        Object.assign(info, counted);
-        info.format ??= counted.faces ? t('mesh') : t('pointCloud');
-        localBox = boxOf(object);
-        info.size = localBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
+        const counted = show(object, info);
         const up = object.userData.up ?? '+Z';
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
-        showInfo(info);
     } catch (error) {
         $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
         $('load-error').hidden = false;

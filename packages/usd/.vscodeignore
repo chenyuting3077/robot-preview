@@ -1,3 +1,5 @@
 **/*.map
 vite.config.js
 images/preview.png
+dist/occt-import-js*
+dist/foxtrot*

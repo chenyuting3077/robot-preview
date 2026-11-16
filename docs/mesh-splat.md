@@ -65,3 +65,23 @@ The camera key handling creates vectors only by cloning the camera's own, so one
 ## Not supported
 
 E57, PTX, NXS, X3D and other MeshLab-only formats, Draco / Meshopt compressed glTF, ASCII 2DGS PLY.
+
+## STEP
+
+STEP is B-rep, so a CAD kernel has to tessellate it. Times to open in headless Chrome, 2026-11-16, Intel Arrow Lake, first open (no cache):
+
+| File | OpenCascade 7.6.1 `-Oz` (occt-import-js 0.0.23) | foxtrot, first view | Cached GLB |
+|---|---|---|---|
+| Respeaker board, 2.7 MB, 1,468 faces | 1.9–2.9 s | 0.4 s | 0.3–1.2 s |
+| EEP500T, 30 MB, 15,362 faces | 21.9–23.5 s | 3.4 s | 0.4–0.9 s |
+| AMR assembly, 39 MB, 18,315 faces | 90.5–111.8 s | 7.5 s | 0.7–2.3 s |
+
+- OpenCascade's time is in reading and transferring the STEP model, not tessellation: a 10x coarser deflection cut the AMR triangles by 47% and the time by nothing (145 vs 151 s in Node). The CPU profile has no hot spot to fix from JS.
+- occt-import-js ships `-Oz`. Rebuilding the same source with CMake's Release `-O3` (`patches/occt-import-js.patch`) took the AMR from 131–148 s to 72 s in Node with identical triangles; the WASM grows from 7.6 to 12.1 MB.
+- foxtrot (Rust, unmaintained since 2021) parses and triangulates without building a B-rep model. Unpatched it skipped 3.5% of the AMR's faces and 12% of the Respeaker's: extrusion and revolution surfaces were missing, and its curve projection used a fixed 0.01 tolerance and an unbounded Newton loop, which reordered points on sub-millimetre arcs. `patches/foxtrot.patch` adds both surfaces, a size-relative tolerance with a ternary-search fallback, per-face colors (`OVER_RIDING_STYLED_ITEM`) and an indexed mesh API. It still skips 0.2–0.6% of faces (closed B-spline edges, `TRIMMED_CURVE`, triangulation errors on spheres / tori), and makes about 4.5x OpenCascade's triangles.
+- So foxtrot's mesh is final, holes included (2026-11-17, native foxtrot: AMR 117 of 18,255 faces skipped, EEP500T 20 of 14,919, Respeaker 3 of 1,468). OpenCascade `-O3` runs only when the length unit is not a single assigned one or foxtrot aborts. Refining every file with holes in the background cost 1–2 minutes of CPU per open for under 1% of faces.
+- foxtrot aborts on a Rust panic: WASM has no unwinding, so its `catch_unwind` around each face only works natively, and each job gets a fresh worker. The patch turns the panics we hit outside triangulation into skips (an omitted `ref_direction` defaulted to +X even for an X axis, giving a singular frame; unknown shape representations), but 5 faces of a 161 MB assembly still fail `assert!`s inside `cdt`, so that file goes to OpenCascade.
+- foxtrot keeps file units; the unit comes from the `LENGTH_UNIT` a `GLOBAL_UNIT_ASSIGNED_CONTEXT` names, because SolidWorks also declares an unused metre next to the millimetre it uses.
+- STEP has no up axis. The AMR (Autodesk export) is Y-up with its floor at y = 0, so STEP starts `+Y`; flat boards exported Z-up need `+Z` from the menu.
+- Embind builds call wrappers with `new Function`, which the webview CSP blocks; `vite.config.js` replaces them at build time. wasm-bindgen's glue needs no eval.
+- `vendor/build.sh` rebuilds both WASMs from pinned commits.

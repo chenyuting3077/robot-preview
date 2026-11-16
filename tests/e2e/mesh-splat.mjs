@@ -50,10 +50,13 @@ function fixtures(dir) {
     return Object.keys(files).filter(name => name !== 'quad.mtl').map(name => path.join(dir, name));
 }
 
+const globalStorage = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-storage-'));
+const panels = new Map();
 async function htmlFor(file) {
-    const env = loadExtension({ workspace: path.dirname(file), extension });
+    const env = loadExtension({ workspace: path.dirname(file), extension, globalStorage });
     env.activate();
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '' }, onDidDispose() {} };
+    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
+    panels.set(path.basename(file), panel);
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
     return panel.webview.html.replaceAll('vscode-webview:', "'self'");
 }
@@ -99,11 +102,14 @@ const send = (method, params = {}) => new Promise(resolve => {
 });
 const evaluate = async expression => (await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
 await send('Page.enable');
-await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
+await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ postMessage: message => { window.__posted = message; } }); window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
-for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))]) {
+const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];
+// STEP files open twice: OpenCascade first, then the GLB the first open handed to the extension.
+for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) {
     const name = path.basename(file);
+    const reopen = pages.has(`/page/${name}`);
     pages.set(`/page/${name}`, await htmlFor(file));
     await send('Page.navigate', { url: `${origin}/page/${name}` });
     let state;
@@ -113,7 +119,20 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
         if (state && !state.loading) break;
         await sleep(200);
     }
-    let camera = '';
+    let camera = ` shown ${Math.round((Date.now() - started) / 100) / 10}s`;
+    if (/\.ste?p$/i.test(name) && !state.loading && !state.error && !reopen) {
+        const glb = await evaluate(`new Promise(async resolve => {
+            while (window.__posted?.type !== 'stepCache') await new Promise(r => setTimeout(r, 100));
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.readAsDataURL(new Blob([window.__posted.glb]));
+        })`);
+        await panels.get(name).listener({ type: 'stepCache', glb: new Uint8Array(Buffer.from(glb, 'base64')) });
+    }
+    if (reopen) {
+        state.cacheOk = /data-cached="[^"]+"/.test(pages.get(`/page/${name}`));
+        camera += ` cache ${state.cacheOk}`;
+    }
     if (!state.loading && !state.error && /^(cube\.stl|cloud\.ply|gauss3d\.ply)$/.test(name)) {
         const size = await evaluate('[innerWidth, innerHeight]');
         const shot = async () => (await send('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width: size[0], height: size[1], scale: 0.25 } })).data;
@@ -158,9 +177,9 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
             };
         })()`);
         const usdKind = ui.modes ? 'mesh' : 'splat';
-        const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|gltf|\.dae$/, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
+        const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|gltf|\.dae$|\.ste?p$/i, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
         const expected = { mesh: [true, true, true], points: [true, false, true], splat: [false, false, false] }[kind];
-        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gltf$/.test(name) ? '+Y' : '+Z');
+        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gltf$|\.ste?p$/i.test(name) ? '+Y' : '+Z');
         camera += ` ui ${JSON.stringify(ui)}`;
         if (name === 'scene.usda') {
             const size = await evaluate('[innerWidth, innerHeight]');
@@ -219,7 +238,7 @@ for (const file of [...fixtures(dir), ...extraFiles.map(file => path.resolve(fil
         })`);
         camera += ` perf ${JSON.stringify(perf)}`;
     }
-    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false && state.uiOk !== false && state.redOk !== false && state.treeOk !== false;
+    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false && state.uiOk !== false && state.redOk !== false && state.treeOk !== false && state.cacheOk !== false;
     results.push(ok);
     console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${Math.round((Date.now() - started) / 100) / 10}s ${state.error || ''} ${state.csp.join(', ')}${camera}\n  ${String(state.info).replace(/\n/g, ' | ')}`);
     if (shots) {
@@ -235,5 +254,6 @@ server.close();
 await sleep(1000);
 try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
 fs.rmSync(dir, { recursive: true, force: true });
+fs.rmSync(globalStorage, { recursive: true, force: true });
 console.log(`${results.filter(Boolean).length}/${results.length} passed`);
 process.exit(results.every(Boolean) ? 0 : 1);

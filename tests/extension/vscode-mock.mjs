@@ -50,7 +50,7 @@ export async function copyFixture() {
     return dir;
 }
 
-export function loadExtension({ workspace, config = {}, extension: extensionFile = extensionPath }) {
+export function loadExtension({ workspace, config = {}, extension: extensionFile = extensionPath, globalStorage }) {
     const listeners = {};
     const on = name => callback => {
         (listeners[name] ||= []).push(callback);
@@ -155,7 +155,10 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             fs: {
                 readFile: async uri => fsp.readFile(uri.fsPath),
                 stat: async uri => { const s = await fsp.stat(uri.fsPath); return { size: s.size, mtime: s.mtimeMs }; },
-                writeFile: async (uri, data) => fsp.writeFile(uri.fsPath, data)
+                writeFile: async (uri, data) => fsp.writeFile(uri.fsPath, data),
+                createDirectory: async uri => fsp.mkdir(uri.fsPath, { recursive: true }),
+                readDirectory: async uri => (await fsp.readdir(uri.fsPath)).map(name => [name, 1]),
+                delete: async uri => fsp.rm(uri.fsPath)
             },
             createFileSystemWatcher: () => ({ onDidChange() {}, onDidCreate() {}, onDidDelete() {}, dispose() {} }),
             onDidChangeTextDocument: on('change'),
@@ -228,6 +231,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
 
     const context = {
         extensionUri: { fsPath: path.dirname(extensionFile) },
+        globalStorageUri: globalStorage && { fsPath: globalStorage, path: globalStorage },
         subscriptions: [],
         globalState: { get: key => state.globalState.get(key), update: async (key, value) => state.globalState.set(key, value) },
         workspaceState: { get: (key, fallback) => state.workspaceState.get(key) ?? fallback, update: async (key, value) => state.workspaceState.set(key, value) }

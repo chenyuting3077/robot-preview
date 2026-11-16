@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up as most CAD exports are. A 39 MB assembly shows in about 8 s (was about 100 s), with under 1% of faces left as small holes; later opens of the unchanged file load a cached copy in about 1 s.
+
 ## 0.2.0
 
 - Files start with +Z up, as in ROS, unless they declare their own up axis (glTF and VRML +Y, DAE `<up_axis>`, USD `upAxis`). Gaussian splats too: raw COLMAP / 3DGS output needs -Y from the up menu.
