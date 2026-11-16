@@ -221,7 +221,7 @@ index 7e00a09..d0bef87 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..3a64679 100644
+index ad4ba6e..3b63c41 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
 @@ -23,6 +23,11 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
@@ -329,7 +329,7 @@ index ad4ba6e..3a64679 100644
                  }
                  (mesh, stats)
              });
-@@ -320,44 +338,53 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
+@@ -320,44 +338,54 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
  fn axis2_placement_3d(s: &StepFile, t: Id<Axis2Placement3d_>) -> (DVec3, DVec3, DVec3) {
      let a = s.entity(t).expect("Could not get Axis2Placement3d");
      let location = cartesian_point(s, a.location);
@@ -341,7 +341,8 @@ index ad4ba6e..3a64679 100644
 +    // Defaults and projection from ISO 10303-42 `build_axes`: an omitted
 +    // ref_direction along the axis would make the frame singular.
 +    let axis = a.axis.map(|d| direction(s, d)).unwrap_or(DVec3::new(0.0, 0.0, 1.0)).normalize();
-+    let default_ref = if (axis - DVec3::new(1.0, 0.0, 0.0)).norm() > 1e-9 {
++    // Unlike build_axes, an axis along -X also takes +Z, which would otherwise project to zero.
++    let default_ref = if axis.x.abs() < 1.0 - 1e-9 {
 +        DVec3::new(1.0, 0.0, 0.0)
 +    } else {
 +        DVec3::new(0.0, 0.0, 1.0)
@@ -397,7 +398,7 @@ index ad4ba6e..3a64679 100644
                   stats: &mut Stats) -> Result<(), Error>
  {
      let face = s.entity(f).expect("Could not get AdvancedFace");
-@@ -497,6 +524,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -497,6 +525,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
@@ -408,7 +409,7 @@ index ad4ba6e..3a64679 100644
      Ok(())
  }
  
-@@ -609,6 +640,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -609,6 +641,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
@@ -426,7 +427,7 @@ index ad4ba6e..3a64679 100644
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,6 +658,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,6 +659,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
