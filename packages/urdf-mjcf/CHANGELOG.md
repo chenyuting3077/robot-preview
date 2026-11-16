@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.4
+
+- DAE meshes without normals (SketchUp exports such as the RealSense `d435.dae`) are lit instead of black; normals are computed as RViz does.
+- Small models are no longer cut by the near plane: it follows the fitted camera distance instead of a fixed 0.1 m.
+- The grid follows the model size (1 cm cells for a 9 cm camera, up to 0.5 m for robots over 1 m; 40 cells across) and fades toward its edge, so far lines no longer pile into a flickering band at low view angles.
+- The Grid button reads "Grid: auto (1 cm)" with the current cell size, or "Grid: off".
+
 ## 0.4.3
 
 - A single STL, OBJ or DAE preview now starts Z-up and follows the up menu like robots do; DAE files are placed by their `<up_axis>`, a missing one counting as Z-up.
