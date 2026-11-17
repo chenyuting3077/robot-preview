@@ -41,7 +41,7 @@ foxtrot (Rust, patched) tessellates; OpenCascade (`occt-import-js`, rebuilt at `
 - foxtrot leaves under 1% of faces as holes (native: AMR 117 of 18,255 faces). Filling them would mean an OpenCascade run (table) on every open, so the holes stay.
 - OpenCascade is rebuilt at `-O3` (12.1 MB of WASM against 7.6 MB) from the shipped `-Oz`: the AMR in 55–59 s against 80–82 s, EEP500T in 17.8 s against 20.1–20.2 s, with the same faces.
 - foxtrot runs up to 4 workers, each parsing the whole file, fewer for big files so their memory stays under 1.5 GB. One worker against that: EEP500T 3.9–4.0 s against 2.4 s, the AMR 5.9–6.0 s against 2.9–3.1 s, the 161 MB file 24.1–24.2 s against 14.0–14.1 s for 0.2–0.3 GB less memory.
-- Memory peaks the second before the first frame, while every worker is alive, and WASM memory never shrinks: the 161 MB first open grows the webview by 1.56–1.69 GB, against the 1.5 GB aimed for. One worker holds 512 MB of WASM (Node 22).
+- Memory peaks the second before the first frame, while every worker is alive, and WASM memory never shrinks: the 161 MB first open grows the webview by 1.56–1.69 GB, against the 1.5 GB aimed for.
 - The cache is meshopt buffers, not glTF: 25.6 MB against 139 MB as GLB for the 161 MB assembly, and glTF's meshopt extension would have meant writing its accessors by hand for no reader but ours.
 - truck (`truck-stepio` 0.3.0) is no replacement: EEP500T took 8.7 s native against foxtrot's 2.9 s in one WASM worker (Node), the 161 MB file went past 6 GB, and it drops assembly placements.
 - STEP has no up axis; it starts `+Y` because the AMR (Autodesk) is Y-up.

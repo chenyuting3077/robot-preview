@@ -43,8 +43,8 @@ function runWorker(message, transfer, workers = []) {
 // reaching the webview's service worker, which serves extension files in VS Code.
 const wasmOf = url => fetch(new URL(url, document.baseURI)).then(response => response.arrayBuffer());
 
-// Each worker parses the whole file and triangulates every parts-th face. A worker peaks at about 3.3x
-// the file (161 MB file: 512 MB); budgeting 8x keeps that file at two workers.
+// Each worker parses the whole file and triangulates every parts-th face. A worker's WASM peaks at about
+// 3.3x the file (161 MB file: 512 MB, Node 22); budgeting 8x keeps that file at two workers.
 // ponytail: the 8x budget and the 1.5 GB total are fixed, not read from the machine's free memory; scale
 // them with navigator.deviceMemory if small machines run out.
 async function foxtrotJob(bytes) {
