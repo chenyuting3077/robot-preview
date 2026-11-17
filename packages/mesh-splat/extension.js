@@ -52,11 +52,16 @@ function activate(context) {
             // The page names the cache key it was rendered with: a save during tessellation re-renders with a
             // new key, and the old page's model must not be filed under it.
             const keys = new Map();
+            // A save can fire two events whose renders finish out of order; only the latest one writes the page.
+            let renders = 0;
             const render = async () => {
+                const turn = ++renders;
                 const stat = await vscode.workspace.fs.stat(document.uri);
                 const cache = stepCache(cacheDir, document.uri, stat, manifest.version);
+                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
+                if (turn !== renders) return;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
-                panel.webview.html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
+                panel.webview.html = html;
             };
             const post = message => panel.webview.postMessage(message);
             const writer = cacheWriter(cacheDir?.fsPath, keys, post);
