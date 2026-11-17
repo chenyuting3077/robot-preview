@@ -4,7 +4,8 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 
 ## Splats: Spark
 
-- Spark, not PlayCanvas: PlayCanvas rendered nothing under ANGLE's Vulkan backend, and Spark is three.js, so meshes and splats share one scene. Both stay far above 60 FPS (headless Chrome, RTX PRO 1000, 881 k splats: Spark 330–380, PlayCanvas 390–400).
+- Spark, not PlayCanvas: PlayCanvas rendered nothing under ANGLE's Vulkan backend, and Spark is three.js, so meshes and splats share one scene.
+- Spark is 2.4 MB of inlined WASM and loads only when a splat opens. 881 k splats show in 2.1–2.2 s and orbit at the 60 fps vsync limit, as with 0.2.0 (2.0–2.1 s); 243 k splats in 1.3–1.4 s.
 - Spark needs three ≥ 0.180 while the URDF viewer is on 0.163, so this package keeps its own `node_modules`.
 - 2DGS PLY has no `scale_2`; one of `ln(1e-6)` is added so Spark draws each disc as a flat Gaussian (binary little-endian only).
 
