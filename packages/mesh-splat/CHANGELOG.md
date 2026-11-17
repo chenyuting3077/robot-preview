@@ -8,7 +8,7 @@
 - STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up. A 39 MB assembly shows in about 8 s (was about 100 s), with under 1% of faces left as small holes; later opens of the unchanged file load a cached copy in about 1 s. A 161 MB assembly that used to fall back to OpenCascade and never finish opens in 24 s.
 - STEP files tessellate on up to 4 threads: the 39 MB assembly 8 s -> 5 s, a 30 MB one 3.8 -> 1.9 s, the 161 MB one 24 -> 14 s, using less memory: the 161 MB file needs about 2.9 GB in VS Code instead of 4.8 GB.
 - The STEP cache is about a quarter smaller, is dropped when the extension updates, and is trimmed to 1 GB.
-- Large binary PCD files open faster with less memory: the extension streams them to the viewer. A 1.2 GB, 38.9M-point map: 18.8 -> 7.6 s, 5 -> 20 fps when orbiting, 4.3 -> 1.6 GB.
+- Large binary PCD files open faster with less memory: the extension streams them to the viewer, and past 10M points an even 10M are shown. A 1.2 GB, 38.9M-point map: 18.8 -> 7.6 s, 5 -> 20 fps when orbiting, 4.3 -> 1.6 GB.
 
 ## 0.2.0
 

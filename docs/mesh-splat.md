@@ -66,6 +66,8 @@ The camera key handling creates vectors only by cloning the camera's own, so one
 
 VS Code hands a webview a fetched resource only after reading all of it into memory: a 1.2 GB binary PCD (Livox Mid-360 + FAST-LIO2 map, 38.9M points) grew the webview by 1.6 GB even when the viewer kept a single point. Binary PCD is therefore read by the extension and posted in 16 MB pieces, three in flight; one at a time took 17 s instead of 7.6 s. ASCII and `binary_compressed` PCD still go through PCDLoader with the whole file.
 
+Past 10M points an evenly spaced 10M are shown, and the info popover says how many of the total; zooming in never shows the dropped points. A Potree-style octree would, at the cost of a converter and a second viewer.
+
 In VS Code 1.144 that file opened in 18.8 s, orbited at 5 fps and grew all processes by 4.3 GB; now 7.5-7.8 s, 19-23 fps, +1.6-1.7 GB.
 
 ## Not supported

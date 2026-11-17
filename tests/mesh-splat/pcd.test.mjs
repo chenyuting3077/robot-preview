@@ -41,3 +41,9 @@ test('streamed chunks of any size give the same points', () => {
     }
 });
 
+test('keeps exactly limit evenly spaced points past the limit', () => {
+    const rows = Array.from({ length: 10 }, (_, i) => [i, 0, 0]);
+    const points = readPcdPoints(binaryPcd(['x', 'y', 'z'], rows), 4);
+    assert.equal(points.total, 10);
+    assert.deepEqual([...points.positions].filter((_, i) => i % 3 === 0), [0, 3, 5, 8]);
+});

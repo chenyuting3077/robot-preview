@@ -4,10 +4,10 @@ import { linearByteTable } from './ply.mjs';
 // binary cloud (38.9M points, x y z intensity normal curvature) runs the
 // webview out of memory. This reads binary x y z (+ rgb)
 // into typed arrays as the file streams in, so the file itself is never held
-// whole, and drops normals and intensity, which PointsMaterial never uses.
-// Anything else (push
+// whole, and drops normals and intensity, which PointsMaterial never uses. Past `limit`
+// points it keeps an evenly spaced `limit` of them. Anything else (push
 // returns false, or finish returns null) goes to PCDLoader.
-export function pcdReader() {
+export function pcdReader(limit = Infinity) {
     let head = new Uint8Array(0), layout = null, failed = false, partial, filled = 0, row = 0, kept = 0, result;
     function setup(text, data) {
         if (data[2] !== 'binary') return false;
@@ -22,17 +22,19 @@ export function pcdReader() {
         const [x, y, z] = ['x', 'y', 'z'].map(name => fields.indexOf(name));
         if ([x, y, z].some(i => i < 0 || types[i] !== 'F' || sizes[i] !== 4) || !stride) return false;
         const rgb = fields.indexOf('rgb');
-        const keep = count;
+        const keep = Math.min(count, limit);
         layout = { count, keep, stride, x: offsets[x], y: offsets[y], z: offsets[z],
             rgb: rgb >= 0 && sizes[rgb] === 4 ? offsets[rgb] : -1 };
         partial = new Uint8Array(stride);
-        result = { positions: new Float32Array(keep * 3),
+        result = { total: count, positions: new Float32Array(keep * 3),
             colors: layout.rgb >= 0 ? new Uint8Array(keep * 3) : null };
         return true;
     }
     const table = linearByteTable();
     function readRow(view, at) {
-        row++;
+        const { count, keep } = layout;
+        // Keeps exactly `keep` of `count` rows, evenly spaced (Bresenham).
+        if ((row++ * keep) % count >= keep || kept >= keep) return;
         const { positions, colors } = result;
         positions[kept * 3] = view.getFloat32(at + layout.x, true);
         positions[kept * 3 + 1] = view.getFloat32(at + layout.y, true);
@@ -84,7 +86,7 @@ export function pcdReader() {
     };
 }
 
-export function readPcdPoints(bytes) {
-    const reader = pcdReader();
+export function readPcdPoints(bytes, limit) {
+    const reader = pcdReader(limit);
     return reader.push(bytes) ? reader.finish() : null;
 }
