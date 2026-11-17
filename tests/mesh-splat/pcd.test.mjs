@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PCDLoader } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/PCDLoader.js';
-import { readPcdPoints, pcdReader } from '../../packages/mesh-splat/webview/pcd.mjs';
+import { readPcdPoints, pcdReader, dropNaNPoints } from '../../packages/mesh-splat/webview/pcd.mjs';
 import { linearByteTable } from '../../packages/mesh-splat/webview/geometry.mjs';
 
 function binaryPcd(fields, rows, points = rows.length) {
@@ -72,4 +72,12 @@ test('a NaN row gives its sample slot to the next finite row', () => {
     // Rows 0, 3, 5, 8 are sampled; 3 and 5 are NaN, so 4 and 6 stand in for them.
     assert.deepEqual([...points.positions].filter((_, i) => i % 3 === 0), [0, 4, 6, 8]);
     assert.equal(points.total, 8);
+});
+
+test('dropNaNPoints removes the rows that are not points from every attribute', () => {
+    const attributes = { position: { array: new Float32Array([1, 2, 3, NaN, NaN, NaN, 4, 5, 6]), itemSize: 3 }, intensity: { array: new Float32Array([7, 8, 9]), itemSize: 1 } };
+    const kept = dropNaNPoints(attributes);
+    assert.deepEqual([...kept.position], [1, 2, 3, 4, 5, 6]);
+    assert.deepEqual([...kept.intensity], [7, 9]);
+    assert.equal(dropNaNPoints({ position: { array: new Float32Array([1, 2, 3]), itemSize: 3 } }), null);
 });

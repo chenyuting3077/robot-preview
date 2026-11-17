@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
-import { flatNormals, percentile, colorize, colorRange, heights, finitePoints } from '../../packages/mesh-splat/webview/geometry.mjs';
+import { flatNormals, percentile, colorize, colorRange, heights } from '../../packages/mesh-splat/webview/geometry.mjs';
 
 test('flatNormals equals computeVertexNormals on non-indexed triangles', () => {
     const positions = new Float32Array(Array.from({ length: 9 * 500 }, () => Math.random() * 10 - 5));
@@ -49,7 +49,3 @@ test('heights follow the placing matrix; colorRange spans every list', () => {
     assert.ok(low < 5 && high > 140);
 });
 
-test('finitePoints lists the points with finite xyz', () => {
-    assert.equal(finitePoints(new Float32Array([1, 2, 3])), null);
-    assert.deepEqual(finitePoints(new Float32Array([1, 2, 3, NaN, NaN, NaN, 4, 5, 6])), [0, 2]);
-});

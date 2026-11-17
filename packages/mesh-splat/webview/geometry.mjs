@@ -138,10 +138,3 @@ export function heights(positions, up, matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1
     for (let i = 0; i < values.length; i++) values[i] = x * positions[i * 3] + y * positions[i * 3 + 1] + z * positions[i * 3 + 2] + w;
     return values;
 }
-
-// Indices of the points with finite xyz, or null when all are.
-export function finitePoints(positions) {
-    const keep = [];
-    for (let i = 0; i < positions.length / 3; i++) if (Number.isFinite(positions[i * 3] + positions[i * 3 + 1] + positions[i * 3 + 2])) keep.push(i);
-    return keep.length * 3 === positions.length ? null : keep;
-}

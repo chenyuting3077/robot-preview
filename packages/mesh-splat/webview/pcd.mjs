@@ -7,6 +7,24 @@ import { TYPES, linearByteTable } from './geometry.mjs';
 // whole, and drops normals, which PointsMaterial never uses. Past `limit`
 // points it keeps an evenly spaced `limit` of them. Anything else (push
 // returns false, or finish returns null) goes to PCDLoader.
+// A row with a NaN coordinate is no return of an organized cloud, not a point; one NaN point also makes
+// the bounding box, and with it the framing, NaN.
+const isPoint = (x, y, z) => Number.isFinite(x + y + z);
+
+// PCDLoader's attributes ({ name: { array, itemSize } }) without the rows that are not points, or null when
+// every row is one.
+export function dropNaNPoints(attributes) {
+    const positions = attributes.position.array;
+    const keep = [];
+    for (let i = 0; i < positions.length / 3; i++) if (isPoint(positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2])) keep.push(i);
+    if (keep.length * 3 === positions.length) return null;
+    return Object.fromEntries(Object.entries(attributes).map(([name, { array, itemSize }]) => {
+        const out = new array.constructor(keep.length * itemSize);
+        keep.forEach((i, k) => out.set(array.subarray(i * itemSize, (i + 1) * itemSize), k * itemSize));
+        return [name, out];
+    }));
+}
+
 export function pcdReader(limit = Infinity) {
     let head = new Uint8Array(0), layout = null, failed = false, partial, filled = 0, row = 0, kept = 0, owed = 0, missing = 0, result;
     function setup(text, data) {
@@ -41,7 +59,7 @@ export function pcdReader(limit = Infinity) {
         // `missing` counts NaN rows for the total.
         const sampled = (row++ * keep) % count < keep;
         const x = view.getFloat32(at + layout.x, true), y = view.getFloat32(at + layout.y, true), z = view.getFloat32(at + layout.z, true);
-        if (!Number.isFinite(x + y + z)) {
+        if (!isPoint(x, y, z)) {
             missing++;
             if (sampled) owed++;
             return;
