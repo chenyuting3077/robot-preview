@@ -7,9 +7,9 @@ const { cacheWriter, fileReader, READ_PIECE } = require('./io');
 const escapeAttr = text => String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 // Tessellating a STEP assembly takes seconds (foxtrot) to minutes (OpenCascade), so the webview sends back
-// its tessellation (meshopt-encoded, see webview/step-cache.mjs) and later opens of the same file (path, mtime, size, extension version) load that instead.
-// `build` names the extension version and the tessellators' WASM, so a rebuilt foxtrot or OpenCascade
-// drops old entries even without a version bump.
+// its tessellation (meshopt-encoded, see webview/step-cache.mjs) and later opens of the same file (path, mtime,
+// size, `build`) load that instead. `build` names the extension version and the tessellators' WASM, so a
+// rebuilt foxtrot or OpenCascade drops old entries even without a version bump.
 function stepCache(cacheDir, fileUri, stat, build) {
     if (!cacheDir || !/\.ste?p$/i.test(fileUri.path)) return null;
     const prefix = crypto.createHash('sha1').update(fileUri.path).digest('hex').slice(0, 16);
@@ -47,8 +47,12 @@ function activate(context) {
     const cacheDir = context.globalStorageUri && vscode.Uri.joinPath(context.globalStorageUri, 'step-cache');
     const template = fs.readFileSync(path.join(distUri.fsPath, 'index.html'), 'utf8');
     const manifest = JSON.parse(fs.readFileSync(path.join(context.extensionUri.fsPath, 'package.json'), 'utf8'));
+    // The USD extension shares this file but ships no tessellators: it never opens STEP.
     const tessellators = crypto.createHash('sha1');
-    for (const wasm of ['foxtrot_bg.wasm', 'occt-import-js.wasm']) tessellators.update(fs.readFileSync(path.join(distUri.fsPath, wasm)));
+    for (const wasm of ['foxtrot_bg.wasm', 'occt-import-js.wasm']) {
+        const file = path.join(distUri.fsPath, wasm);
+        if (fs.existsSync(file)) tessellators.update(fs.readFileSync(file));
+    }
     const build = `${manifest.version}-${tessellators.digest('hex').slice(0, 8)}`;
     const provider = {
         openCustomDocument: uri => ({ uri, dispose() {} }),
