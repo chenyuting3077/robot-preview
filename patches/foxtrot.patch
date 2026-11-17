@@ -126,6 +126,58 @@ index 8b1583e..2cb7528 100644
      }
  
      pub fn as_polyline(&self, u_start: f64, u_end: f64, num_points_per_knot: usize) -> Vec<DVec3> {
+diff --git a/nurbs/src/sampled_surface.rs b/nurbs/src/sampled_surface.rs
+index cd8d5ad..5e05ceb 100644
+--- a/nurbs/src/sampled_surface.rs
++++ b/nurbs/src/sampled_surface.rs
+@@ -1,6 +1,6 @@
+ use nalgebra_glm::{dot, length, length2, DMat2x2, DVec2, DVec3};
+ use crate::{abstract_surface::AbstractSurface, nd_surface::NDBSplineSurface};
+-use log::error;
++use log::warn;
+ 
+ #[derive(Debug, Clone)]
+ pub struct SampledSurface<const N: usize> {
+@@ -54,6 +54,9 @@ impl<const N: usize> SampledSurface<N>
+         let eps2 = 0.01; // a cosine error bound
+ 
+         let mut uv_i = uv_0;
++        // Boundary points can sit a little off the surface, where the convergence test never passes;
++        // the closest point seen is then a good enough projection for triangulating.
++        let mut best = (std::f64::INFINITY, uv_0);
+         for _ in 0..256 {
+             // The surface and its derivatives at uv_i
+             let derivs = self.surf.derivs::<2>(uv_i);
+@@ -64,6 +67,9 @@ impl<const N: usize> SampledSurface<N>
+             let S_uv = derivs[1][1]; // S_vu is the same
+             let S_vv = derivs[0][2];
+             let r = S - P;
++            if length(&r) < best.0 {
++                best = (length(&r), uv_i);
++            }
+ 
+             // If |S(uv_i) - P| < \epsilon_1  and
+             //    |S_u(uv_i) dot (S(uv_i) - P)| / |S_u(uv_i)| / |S(uv_i) - P| < \epsilon_2  and
+@@ -95,7 +101,7 @@ impl<const N: usize> SampledSurface<N>
+                 length2(&S_v) + dot(&r, &S_vv),
+             );
+             let delta_i = match J_i.try_inverse() {
+-                None => return None,
++                None => return Some(best.1),
+                 Some(m) => m * K_i,
+             };
+             let mut uv_ip1 = uv_i + delta_i;
+@@ -147,8 +153,8 @@ impl<const N: usize> SampledSurface<N>
+             // otherwise, iterate again
+             uv_i = uv_ip1;
+         }
+-        error!("Could not find UV coordinates");
+-        None
++        warn!("UV coordinates did not converge; using the closest point found");
++        Some(best.1)
+     }
+ 
+     pub fn uv_from_point(&self, p: DVec3) -> Option<DVec2> {
 diff --git a/step/examples/parse_step.rs b/step/examples/parse_step.rs
 deleted file mode 100644
 index e29dfac..0000000
@@ -3729,7 +3781,7 @@ index 404dfcc..b909827 100644
 +    }
 +}
 diff --git a/triangulate/src/curve.rs b/triangulate/src/curve.rs
-index c98f807..6cb020f 100644
+index c98f807..2c7d407 100644
 --- a/triangulate/src/curve.rs
 +++ b/triangulate/src/curve.rs
 @@ -3,6 +3,7 @@ use glm::{DVec3, DVec4, DMat4};
@@ -3740,7 +3792,18 @@ index c98f807..6cb020f 100644
  
  #[derive(Debug)]
  pub enum Curve {
-@@ -21,7 +22,7 @@ pub enum Curve {
+@@ -14,14 +15,16 @@ pub enum Curve {
+         dir: bool
+     },
+     Line,
+-    BSplineCurveWithKnots(SampledCurve<3>),
+-    NURBSCurve(SampledCurve<4>),
++    // The bool walks a closed curve (an edge that starts and ends at one vertex) forward, from the
++    // start of its knot range to the end, or backward.
++    BSplineCurveWithKnots(SampledCurve<3>, bool),
++    NURBSCurve(SampledCurve<4>, bool),
+ }
+ 
  impl Curve {
      pub fn new_ellipse(location: DVec3, axis: DVec3, ref_direction: DVec3,
                         radius1: f64, radius2: f64, closed: bool, dir: bool)
@@ -3749,7 +3812,7 @@ index c98f807..6cb020f 100644
      {
          // Build a rotation matrix to go from flat (XY) to 3D space
          let world_from_eplane = Surface::make_affine_transform(axis,
-@@ -30,16 +31,16 @@ impl Curve {
+@@ -30,16 +33,16 @@ impl Curve {
              location);
          let eplane_from_world = world_from_eplane
              .try_inverse()
@@ -3770,9 +3833,22 @@ index c98f807..6cb020f 100644
          Self::new_ellipse(location, axis, ref_direction,
                            radius, radius, closed, dir)
      }
-@@ -54,8 +55,10 @@ impl Curve {
-         let t_start = curve.u_from_point(u);
-         let t_end = curve.u_from_point(v);
+@@ -48,22 +51,28 @@ impl Curve {
+         Self::Line
+     }
+ 
+-    fn curve_points<const N: usize>(u: DVec3, v: DVec3, curve: &SampledCurve<N>) -> Vec<DVec3>
++    fn curve_points<const N: usize>(u: DVec3, v: DVec3, curve: &SampledCurve<N>, forward: bool) -> Vec<DVec3>
+         where NDBSplineCurve<N>: AbstractCurve
+     {
+-        let t_start = curve.u_from_point(u);
+-        let t_end = curve.u_from_point(v);
++        let (t_start, t_end) = if (u - v).norm() <= 1e-9 * (1.0 + u.norm()) {
++            let (first, last) = (curve.curve.knots.min_t(), curve.curve.knots.max_t());
++            if forward { (first, last) } else { (last, first) }
++        } else {
++            (curve.u_from_point(u), curve.u_from_point(v))
++        };
          let mut c = curve.as_polyline(t_start, t_end, 8);
 -        c[0] = u;
 -        *c.last_mut().unwrap() = v;
@@ -3783,6 +3859,16 @@ index c98f807..6cb020f 100644
          c
      }
  
+     pub fn build(&self, u: DVec3, v: DVec3) -> Vec<DVec3> {
+         match self {
+             Self::Line => vec![u, v],
+-            Self::BSplineCurveWithKnots(curve) => Self::curve_points(u, v, curve),
+-            Self::NURBSCurve(curve) => Self::curve_points(u, v, curve),
++            Self::BSplineCurveWithKnots(curve, forward) => Self::curve_points(u, v, curve, *forward),
++            Self::NURBSCurve(curve, forward) => Self::curve_points(u, v, curve, *forward),
+             Self::Ellipse {
+                 eplane_from_world, world_from_eplane, closed, dir
+             } => {
 diff --git a/triangulate/src/lib.rs b/triangulate/src/lib.rs
 index 03c5c88..67b6c41 100644
 --- a/triangulate/src/lib.rs
@@ -4039,7 +4125,7 @@ index 7e00a09..20c6e06 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..0b2207c 100644
+index ad4ba6e..3b964df 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
 @@ -23,14 +23,28 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
@@ -4559,7 +4645,58 @@ index ad4ba6e..0b2207c 100644
              }
          }
      }
-@@ -497,34 +611,38 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -460,25 +574,32 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+             }
+         }
+     });
++    let mut push = |triangles: &mut dyn Iterator<Item = (usize, usize, usize)>| {
++        for (a, b, c) in triangles {
++            let a = (a + offset) as u32;
++            let b = (b + offset) as u32;
++            let c = (c + offset) as u32;
++            mesh.triangles.push(Triangle { verts:
++                if face.same_sense {
++                    U32Vec3::new(a, b, c)
++                } else {
++                    U32Vec3::new(a, c, b)
++                }
++            });
++        }
++    };
+     match result {
+-        Ok(Ok(t)) => {
+-            for (a, b, c) in t.triangles() {
+-                let a = (a + offset) as u32;
+-                let b = (b + offset) as u32;
+-                let c = (c + offset) as u32;
+-                mesh.triangles.push(Triangle { verts:
+-                    if face.same_sense {
+-                        U32Vec3::new(a, b, c)
+-                    } else {
+-                        U32Vec3::new(a, c, b)
+-                    }
+-                });
+-            }
+-        },
+-        Ok(Err(e)) => {
+-            error!("Got error while triangulating {}: {:?}",
+-                   face.face_geometry.0, e);
+-            stats.num_errors += 1;
++        Ok(Ok(t)) => push(&mut t.triangles()),
++        Ok(Err(e)) => match fill_by_parity(&pts, &edges) {
++            Some(triangles) => {
++                info!("Filled {} by parity after {:?}", face.face_geometry.0, e);
++                push(&mut triangles.into_iter());
++            },
++            None => {
++                error!("Got error while triangulating {}: {:?}",
++                       face.face_geometry.0, e);
++                stats.num_errors += 1;
++            },
+         },
+         Err(e) => {
+             error!("Got panic while triangulating {}: {:?}",
+@@ -497,34 +618,60 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
@@ -4570,6 +4707,28 @@ index ad4ba6e..0b2207c 100644
      Ok(())
  }
  
++/// When the bound's own edges cross or touch a point once lowered to 2D, a constrained triangulation
++/// cannot exist. This triangulates the points without constraints and keeps the triangles whose
++/// centroid lies inside the bound by the even-odd rule: a face with a slightly wrong edge where the
++/// bound crosses itself, instead of a hole.
++fn fill_by_parity(pts: &[(f64, f64)], edges: &[(usize, usize)]) -> Option<Vec<(usize, usize, usize)>> {
++    let triangles = std::panic::catch_unwind(|| {
++        let mut t = cdt::Triangulation::new(pts).ok()?;
++        t.run().ok()?;
++        Some(t.triangles().collect::<Vec<_>>())
++    }).ok()??;
++    let inside = |x: f64, y: f64| edges.iter()
++        .filter(|&&(a, b)| {
++            let ((ax, ay), (bx, by)) = (pts[a], pts[b]);
++            (ay > y) != (by > y) && x < (bx - ax) * (y - ay) / (by - ay) + ax
++        })
++        .count() % 2 == 1;
++    let kept: Vec<_> = triangles.into_iter()
++        .filter(|&(a, b, c)| inside((pts[a].0 + pts[b].0 + pts[c].0) / 3.0, (pts[a].1 + pts[b].1 + pts[c].1) / 3.0))
++        .collect();
++    if kept.is_empty() { None } else { Some(kept) }
++}
++
  fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      match &s[surf] {
          Entity::CylindricalSurface(c) => {
@@ -4606,7 +4765,7 @@ index ad4ba6e..0b2207c 100644
              Ok(Surface::new_sphere(location, c.radius.0.0.0))
          },
          Entity::BSplineSurfaceWithKnots(b) =>
-@@ -532,25 +650,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -532,25 +679,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = b.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = b.u_multiplicities.iter()
@@ -4641,7 +4800,7 @@ index ad4ba6e..0b2207c 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -574,22 +692,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -574,22 +721,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = bspline.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = bspline.u_multiplicities.iter()
@@ -4671,7 +4830,7 @@ index ad4ba6e..0b2207c 100644
                  .into_iter()
                  .zip(rational.weights_data.iter())
                  .map(|(ctrl, weight)|
-@@ -600,8 +718,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -600,8 +747,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
                  .collect();
  
              let surf = NURBSSurface::new(
@@ -4682,14 +4841,26 @@ index ad4ba6e..0b2207c 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -609,6 +727,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -609,6 +756,29 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
 +        Entity::SurfaceOfLinearExtrusion(e) => {
-+            let (open, knots, points) = swept_curve(s, e.swept_curve)?;
 +            let v = s.entity(e.extrusion_axis).ok_or(Error::Malformed("missing Vector"))?;
-+            Ok(Surface::new_extrusion(open, knots, points, direction(s, v.orientation)?))
++            let dir = direction(s, v.orientation)?;
++            // A circle swept along its own axis is a cylinder, which is meshed as one.
++            let mut curve = e.swept_curve;
++            while let Entity::TrimmedCurve(t) = &s[curve] {
++                curve = t.basis_curve;
++            }
++            if let Entity::Circle(c) = &s[curve] {
++                let (location, axis, ref_direction) = axis2_placement_3d(s, c.position.cast())?;
++                if axis.cross(&dir.normalize()).norm() < 1e-6 {
++                    return Surface::new_cylinder(axis, ref_direction, location, c.radius.0.0.0);
++                }
++            }
++            let (open, knots, points) = swept_curve(s, e.swept_curve)?;
++            Ok(Surface::new_extrusion(open, knots, points, dir))
 +        },
 +        Entity::SurfaceOfRevolution(e) => {
 +            let (open, knots, points) = swept_curve(s, e.swept_curve)?;
@@ -4700,7 +4871,7 @@ index ad4ba6e..0b2207c 100644
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,11 +745,52 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,11 +786,69 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
@@ -4709,6 +4880,23 @@ index ad4ba6e..0b2207c 100644
 +/// (weight 1 for a non-rational B-spline).
 +fn swept_curve(s: &StepFile, c: ap214::Curve) -> Result<(bool, KnotVector, Vec<DVec4>), Error> {
 +    let (bspline, weights) = match &s[c] {
++        // A swept surface only lowers points onto its curve, so the trimmed curve's whole basis serves.
++        Entity::TrimmedCurve(t) => return swept_curve(s, t.basis_curve),
++        // A circle is the standard rational quadratic NURBS: nine control points, the corners weighted
++        // 1/sqrt(2). Swept along anything but its axis it makes an elliptic cylinder, no foxtrot surface.
++        Entity::Circle(c) => {
++            let (center, axis, x) = axis2_placement_3d(s, c.position.cast())?;
++            let (x, y) = (x * c.radius.0.0.0, axis.cross(&x) * c.radius.0.0.0);
++            let w = std::f64::consts::FRAC_1_SQRT_2;
++            let corners = [(1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (-1.0, 1.0), (-1.0, 0.0), (-1.0, -1.0), (0.0, -1.0), (1.0, -1.0), (1.0, 0.0)];
++            let points = corners.iter().enumerate().map(|(i, &(a, b))| {
++                let weight = if i % 2 == 1 { w } else { 1.0 };
++                let p = center + x * a + y * b;
++                DVec4::new(p.x * weight, p.y * weight, p.z * weight, weight)
++            }).collect();
++            let knots = KnotVector::from_multiplicities(2, &[0.0, 0.25, 0.5, 0.75, 1.0], &[3, 2, 2, 2, 3]);
++            return Ok((false, knots, points));
++        },
 +        Entity::BSplineCurveWithKnots(b) => (b, None),
 +        Entity::ComplexEntity(v) => {
 +            let bspline = v.iter().find_map(|e| match e {
@@ -4755,7 +4943,7 @@ index ad4ba6e..0b2207c 100644
      rows.iter()
          .map(|row| control_points_1d(s, row))
          .collect()
-@@ -630,7 +800,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -630,7 +858,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
      let (bound, orientation) = match &s[b] {
          Entity::FaceBound(b) => (b.bound, b.orientation),
          Entity::FaceOuterBound(b) => (b.bound, b.orientation),
@@ -4764,7 +4952,7 @@ index ad4ba6e..0b2207c 100644
      };
      match &s[bound] {
          Entity::EdgeLoop(e) => {
-@@ -643,9 +813,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -643,9 +871,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
          Entity::VertexLoop(v) => {
              // This is an "edge loop" with a single vertex, which is
              // used for cones and not really anything else.
@@ -4776,7 +4964,7 @@ index ad4ba6e..0b2207c 100644
      }
  }
  
-@@ -659,7 +829,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -659,7 +887,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
          if i > 0 {
              out.pop();
          }
@@ -4785,7 +4973,7 @@ index ad4ba6e..0b2207c 100644
          let o = edge_curve(s, edge.edge_element.cast(), edge.orientation)?;
          out.extend(o.into_iter());
      }
-@@ -667,7 +837,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -667,7 +895,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
  }
  
  fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3>, Error> {
@@ -4794,7 +4982,7 @@ index ad4ba6e..0b2207c 100644
      let curve = curve(s, edge_curve, edge_curve.edge_geometry, orientation)?;
  
      let (start, end) = if orientation {
-@@ -675,8 +845,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
+@@ -675,8 +903,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
      } else {
          (edge_curve.edge_end, edge_curve.edge_start)
      };
@@ -4805,7 +4993,7 @@ index ad4ba6e..0b2207c 100644
      Ok(curve.build(u, v))
  }
  
-@@ -685,17 +855,17 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -685,42 +913,40 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
  {
      Ok(match &s[curve_id] {
          Entity::Circle(c) => {
@@ -4826,8 +5014,11 @@ index ad4ba6e..0b2207c 100644
 +                               edge_curve.same_sense ^ !orientation)?
          },
          Entity::BSplineCurveWithKnots(c) => {
-             if c.closed_curve.0 != Some(false) {
-@@ -705,18 +875,18 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+-            if c.closed_curve.0 != Some(false) {
+-                return Err(Error::ClosedCurve);
+-            } else if c.self_intersect.0 != Some(false) {
++            if c.self_intersect.0 != Some(false) {
+                 return Err(Error::SelfIntersectingCurve);
              }
  
              let control_points_list = control_points_1d(
@@ -4851,7 +5042,12 @@ index ad4ba6e..0b2207c 100644
                  knot_vec,
                  control_points_list,
              );
-@@ -737,21 +907,21 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+-            Curve::BSplineCurveWithKnots(SampledCurve::new(curve))
++            Curve::BSplineCurveWithKnots(SampledCurve::new(curve), edge_curve.same_sense ^ !orientation)
+         },
+         Entity::ComplexEntity(v) if v.len() == 2 => {
+             let bspline = if let Entity::BSplineCurveWithKnots(b) = &v[0] {
+@@ -737,25 +963,25 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
              };
              let knots: Vec<f64> = bspline.knots.iter().map(|k| k.0).collect();
              let multiplicities: Vec<usize> = bspline.knot_multiplicities.iter()
@@ -4878,7 +5074,12 @@ index ad4ba6e..0b2207c 100644
                  knot_vec,
                  control_points_list,
              );
-@@ -772,10 +942,10 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+-            Curve::NURBSCurve(SampledCurve::new(curve))
++            Curve::NURBSCurve(SampledCurve::new(curve), edge_curve.same_sense ^ !orientation)
+         },
+         Entity::SurfaceCurve(v) => {
+             curve(s, edge_curve, v.curve_3d, orientation)?
+@@ -772,10 +998,28 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
      })
  }
  
@@ -4891,6 +5092,24 @@ index ad4ba6e..0b2207c 100644
              .vertex_geometry
              .cast())
  }
++
++#[cfg(test)]
++mod tests {
++    use super::fill_by_parity;
++
++    #[test]
++    fn parity_fill_keeps_the_ring_and_leaves_the_hole() {
++        // A 4x4 square with a 2x2 hole: the even-odd rule keeps only the ring.
++        let pts = [(0., 0.), (4., 0.), (4., 4.), (0., 4.), (1., 1.), (3., 1.), (3., 3.), (1., 3.)];
++        let edges = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4)];
++        let tris = fill_by_parity(&pts, &edges).unwrap();
++        let area: f64 = tris.iter().map(|&(a, b, c)| {
++            let ((ax, ay), (bx, by), (cx, cy)) = (pts[a], pts[b], pts[c]);
++            ((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)).abs() / 2.
++        }).sum();
++        assert!((area - 12.).abs() < 1e-9, "ring area {area}");
++    }
++}
 diff --git a/triangulate/tests/malformed.rs b/triangulate/tests/malformed.rs
 new file mode 100644
 index 0000000..0dc8e90
