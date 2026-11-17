@@ -8,7 +8,7 @@ import { TYPES, linearByteTable } from './geometry.mjs';
 // points it keeps an evenly spaced `limit` of them. Anything else (push
 // returns false, or finish returns null) goes to PCDLoader.
 export function pcdReader(limit = Infinity) {
-    let head = new Uint8Array(0), layout = null, failed = false, partial, filled = 0, row = 0, kept = 0, dropped = 0, missing = 0, result;
+    let head = new Uint8Array(0), layout = null, failed = false, partial, filled = 0, row = 0, kept = 0, owed = 0, missing = 0, result;
     function setup(text, data) {
         if (data[2] !== 'binary') return false;
         const field = key => new RegExp(`^${key}[ \\t]+(.*)$`, 'im').exec(text.slice(0, data.index).replace(/^#.*/gm, ''))?.[1].trim().split(/\s+/) ?? [];
@@ -36,15 +36,21 @@ export function pcdReader(limit = Infinity) {
     const table = linearByteTable();
     function readRow(view, at) {
         const { count, keep } = layout;
-        // Takes `keep` of `count` rows, evenly spaced (Bresenham). NaN rows (no return in an organized
-        // cloud) are dropped, so a cloud with them shows fewer than `keep`; `missing` counts them over
-        // every row, by x alone, for the total.
+        // Takes `keep` of `count` rows, evenly spaced (Bresenham). A NaN row (no return in an organized
+        // cloud) is skipped and its slot goes to the next finite row, so the sample stays near `keep`;
+        // `missing` counts NaN rows for the total.
         const sampled = (row++ * keep) % count < keep;
-        const x = view.getFloat32(at + layout.x, true);
-        if (Number.isNaN(x)) missing++;
-        if (!sampled || kept + dropped >= keep) return;
-        const y = view.getFloat32(at + layout.y, true), z = view.getFloat32(at + layout.z, true);
-        if (!Number.isFinite(x + y + z)) return void dropped++;
+        const x = view.getFloat32(at + layout.x, true), y = view.getFloat32(at + layout.y, true), z = view.getFloat32(at + layout.z, true);
+        if (!Number.isFinite(x + y + z)) {
+            missing++;
+            if (sampled) owed++;
+            return;
+        }
+        if (!sampled) {
+            if (!owed) return;
+            owed--;
+        }
+        if (kept >= keep) return;
         const { positions, colors, intensity } = result;
         positions[kept * 3] = x;
         positions[kept * 3 + 1] = y;
@@ -93,8 +99,9 @@ export function pcdReader(limit = Infinity) {
             return true;
         },
         // A short body means POINTS is wrong; PCDLoader decides what to show.
+        // A short body means POINTS is wrong; PCDLoader decides what to show.
         finish() {
-            if (failed || !layout || row !== layout.count || kept + dropped !== layout.keep) return null;
+            if (failed || !layout || row !== layout.count) return null;
             const { positions, colors, intensity } = result;
             return { total: layout.count - missing, positions: positions.subarray(0, kept * 3), colors: colors?.subarray(0, kept * 3) ?? null, intensity: intensity?.subarray(0, kept) ?? null };
         }

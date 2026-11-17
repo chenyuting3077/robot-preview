@@ -65,3 +65,11 @@ test('drops NaN points and leaves them out of the total', () => {
     assert.deepEqual([...points.positions], [1, 2, 3, 4, 5, 6]);
     assert.equal(points.total, 2);
 });
+
+test('a NaN row gives its sample slot to the next finite row', () => {
+    const rows = Array.from({ length: 10 }, (_, i) => (i === 3 ? [NaN, 0, 0] : i === 5 ? [0, NaN, 0] : [i, 0, 0]));
+    const points = readPcdPoints(binaryPcd(['x', 'y', 'z'], rows), 4);
+    // Rows 0, 3, 5, 8 are sampled; 3 and 5 are NaN, so 4 and 6 stand in for them.
+    assert.deepEqual([...points.positions].filter((_, i) => i % 3 === 0), [0, 4, 6, 8]);
+    assert.equal(points.total, 8);
+});
