@@ -44,3 +44,22 @@ test('files outside rust/dae fall back to ColladaLoader', async () => {
     const fast = await parseCollada(loader, new TextEncoder().encode(xml), 'blob:x');
     assert.deepEqual(describe(fast.scene), describe(loader.parse(xml, '').scene));
 });
+
+test('a stripped file ColladaLoader cannot parse is parsed again whole', async () => {
+    const bytes = fs.readFileSync(new URL('../fixtures/collada/mixed.dae', import.meta.url));
+    const loader = new ColladaLoader();
+    const parse = loader.parse.bind(loader);
+    let calls = 0;
+    loader.parse = (text, path) => {
+        if (calls++ === 0) throw new Error('stripped XML refused');
+        return parse(text, path);
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+        const result = await parseCollada(loader, new Uint8Array(bytes), 'file:///mixed.dae');
+        assert.deepEqual(describe(result.scene), describe(parse(new TextDecoder().decode(bytes), 'file:///').scene));
+    } finally {
+        console.warn = warn;
+    }
+});

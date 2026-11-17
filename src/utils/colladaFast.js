@@ -27,8 +27,16 @@ export async function splitDaeGeometry(bytes) {
 export async function parseCollada(loader, bytes, url) {
     const path = THREE.LoaderUtils.extractUrlBase(url);
     const fast = await splitDaeGeometry(bytes).catch(error => (console.warn('rust/dae failed, using ColladaLoader:', error), null));
-    if (!fast) return loader.parse(new TextDecoder().decode(bytes), path);
-    const result = loader.parse(fast.xml, path);
+    const whole = () => loader.parse(new TextDecoder().decode(bytes), path);
+    if (!fast) return whole();
+    let result;
+    try {
+        result = loader.parse(fast.xml, path);
+    } catch (error) {
+        // The stripped file is ColladaLoader's own text minus numbers; a failure there is a file rust/dae misread.
+        console.warn('ColladaLoader refused the stripped DAE, parsing it whole:', error);
+        return whole();
+    }
     for (const { id, types } of fast.geometries) {
         const build = result.library.geometries[id]?.build;
         if (!build) continue;
