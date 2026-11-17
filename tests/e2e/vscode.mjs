@@ -80,6 +80,12 @@ while (!state && Date.now() - start < 60000) {
 }
 if (!state) { console.log('viewer webview did not appear'); await killAll(); process.exit(1); }
 stage('viewer webview found');
+// SPLIT=1 opens a second editor of the same file at once (Ctrl+\), so both tessellate and write the cache together.
+if (process.env.SPLIT) {
+    const page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === 'page' && t.url.includes('workbench'));
+    const send = await connect(page.webSocketDebuggerUrl);
+    for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, modifiers: 2, key: '\\', code: 'Backslash', windowsVirtualKeyCode: 220 });
+}
 let s;
 // WAIT_S (default 600) bounds the wait for the viewer; OpenCascade on a big assembly needs longer.
 while (Date.now() - start < (+process.env.WAIT_S || 600) * 1000) {
