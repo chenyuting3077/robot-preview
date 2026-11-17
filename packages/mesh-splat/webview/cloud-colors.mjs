@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { colorize, colorRange, heights } from './geometry.mjs';
 
-const hasColor = geometry => Boolean(geometry.attributes.color);
+export const hasColor = geometry => Boolean(geometry.attributes.color);
+// Points without colors of their own.
+export const POINT_GREY = 0x9aa7b8;
 
 // The Original / Height / Intensity buttons of the Display menu, over every point cloud under `root`.
 export function createCloudColors({ root, upAxis }) {
@@ -26,7 +28,7 @@ export function createCloudColors({ root, upAxis }) {
             else if (cloud.userData.rgb) geometry.setAttribute('color', cloud.userData.rgb);
             else geometry.deleteAttribute('color');
             material.vertexColors = hasColor(geometry);
-            material.color.set(hasColor(geometry) ? 0xffffff : 0x9aa7b8);
+            material.color.set(hasColor(geometry) ? 0xffffff : POINT_GREY);
             material.needsUpdate = true;
         });
     }

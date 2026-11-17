@@ -13,7 +13,7 @@ import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
 import { flatNormals, percentile, grown, finitePoints } from './geometry.mjs';
-import { createCloudColors } from './cloud-colors.mjs';
+import { createCloudColors, hasColor, POINT_GREY } from './cloud-colors.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { loadStep as loadStepFile } from './step-load.mjs';
@@ -87,7 +87,6 @@ renderer.setAnimationLoop(() => {
 
 const fetchBytes = async () => new Uint8Array(await (await fetch(src)).arrayBuffer());
 const fetchText = async () => (await fetch(src)).text();
-const hasColor = geometry => Boolean(geometry.attributes.color);
 
 // PLY doubles arrive as Float64Array, which WebGL cannot take: the first draw throws and nothing renders.
 function float32Attributes(geometry) {
@@ -107,7 +106,7 @@ function meshOf(geometry) {
 
 let pointSize = 2;
 const pointsOf = geometry => new THREE.Points(float32Attributes(geometry), new THREE.PointsMaterial({
-    size: pointSize, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : 0x9aa7b8, vertexColors: hasColor(geometry)
+    size: pointSize, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : POINT_GREY, vertexColors: hasColor(geometry)
 }));
 
 function geometryFrom({ positions, indices, colors }) {
