@@ -58,3 +58,21 @@ test('heights share one range across clouds, in the root frame', () => {
     // The same local heights, placed 10 apart: the low cloud takes the bottom of the scale, the high one the top.
     assert.notDeepEqual(first(low), first(high));
 });
+
+test('a cloud added later takes the current mode and the loaded clouds\' range', () => {
+    page();
+    const root = new THREE.Group();
+    const base = cloud([0, 0, 0, 0, 0, 1], { intensity: [1, 2] });
+    root.add(base);
+    const colors = createCloudColors({ root, upAxis: () => '+Z' });
+    colors.setup();
+    const before = [...base.geometry.attributes.color.array];
+    const detail = cloud([0, 0, 0.5], { intensity: [100] });
+    root.add(detail);
+    colors.add(detail);
+    assert.ok(detail.geometry.attributes.color);
+    assert.deepEqual([...base.geometry.attributes.color.array], before, 'the detail does not move the range');
+    colors.remove(detail);
+    colors.setMode('rgb');
+    assert.ok(detail.geometry.attributes.color, 'a removed cloud is left alone');
+});

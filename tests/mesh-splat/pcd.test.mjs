@@ -53,6 +53,18 @@ test('keeps exactly limit evenly spaced points past the limit', () => {
     assert.deepEqual([...points.positions].filter((_, i) => i % 3 === 0), [0, 3, 5, 8]);
 });
 
+test('with a region, keeps only its points, evenly spaced over the expected count', () => {
+    const rows = Array.from({ length: 20 }, (_, i) => [i, 0, 0]).concat([[NaN, 0, 0]]);
+    const read = (expected, limit) => {
+        const reader = pcdReader(limit, { inside: x => x >= 10, expected });
+        reader.push(binaryPcd(['x', 'y', 'z'], rows));
+        return reader.finish();
+    };
+    const xs = points => [...points.positions].filter((_, i) => i % 3 === 0);
+    assert.deepEqual(xs(read(12, 100)), [10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+    assert.deepEqual(xs(read(10, 5)), [10, 12, 14, 16, 18]);
+});
+
 test('reads integer intensity', () => {
     const head = 'FIELDS x y z intensity\nSIZE 4 4 4 2\nTYPE F F F U\nCOUNT 1 1 1 1\nPOINTS 2\nDATA binary\n';
     const body = new DataView(new ArrayBuffer(2 * 14));

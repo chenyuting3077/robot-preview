@@ -25,8 +25,11 @@ export function dropNaNPoints(attributes) {
 // Streams binary, ASCII and binary_compressed bodies alike; any other header (push returns false, finish
 // returns null) goes to PCDLoader. binary_compressed is LZF over columns, so its body is inflated as it
 // arrives into one buffer the size of the uncompressed data, and read once complete.
-export function pcdReader(limit = Infinity) {
-    let head = new Uint8Array(0), layout = null, failed = false, row = 0, kept = 0, owed = 0, missing = 0, result;
+// With `inside(x, y, z)`, only the points it accepts count, and `expected` of them are assumed when
+// spacing the sample; once `limit` are kept, the rest of the file is dropped, so `expected` should not
+// fall short.
+export function pcdReader(limit = Infinity, { inside, expected } = {}) {
+    let head = new Uint8Array(0), layout = null, failed = false, row = 0, kept = 0, owed = 0, missing = 0, hits = 0, keep, population, result;
     let partial, filled = 0, text = '', carry = new Uint8Array(0), inflated = null, written = 0;
     const table = linearByteTable();
     const floatBits = new Float32Array(1), uintBits = new Uint32Array(floatBits.buffer);
@@ -57,9 +60,10 @@ export function pcdReader(limit = Infinity) {
         });
         const hasRgb = rgb >= 0 && sizes[rgb] === 4;
         const readIntensity = getterOf(intensity);
-        const keep = Math.min(count, limit);
+        keep = Math.min(inside ? Math.ceil(expected) : count, limit);
+        population = inside ? Math.max(keep, Math.ceil(expected)) : count;
         const widths = fields.map((_, i) => sizes[i] * counts[i]);
-        layout = { mode, count, keep, stride, offsets, tokens, columns, widths, read, xyz: [x, y, z], rgb: hasRgb ? rgb : -1,
+        layout = { mode, count, stride, offsets, tokens, columns, widths, read, xyz: [x, y, z], rgb: hasRgb ? rgb : -1,
             rgbFloat: types[rgb] === 'F', intensity: readIntensity ? intensity : -1, readIntensity };
         partial = new Uint8Array(stride);
         result = { total: count, positions: new Float32Array(keep * 3),
@@ -71,15 +75,16 @@ export function pcdReader(limit = Infinity) {
     // Takes `keep` of `count` rows, evenly spaced (Bresenham). A NaN row (no return in an organized cloud)
     // is skipped and its slot goes to the next finite row, so the sample stays near `keep`; `missing`
     // counts NaN rows for the total. `rgb` is 0xRRGGBB.
+    const sampled = i => (i * keep) % population < keep;
     function emit(x, y, z, rgb, value) {
-        const { count, keep } = layout;
-        const sampled = (row++ * keep) % count < keep;
+        const r = row++;
         if (!isPoint(x, y, z)) {
             missing++;
-            if (sampled) owed++;
+            if (!inside && sampled(r)) owed++;
             return;
         }
-        if (!sampled) {
+        if (inside && !inside(x, y, z)) return;
+        if (!sampled(inside ? hits++ : r)) {
             if (!owed) return;
             owed--;
         }

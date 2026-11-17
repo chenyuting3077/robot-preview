@@ -6,14 +6,18 @@ import { hasColor, POINT_GREY } from './materials.mjs';
 // The Original / Height / Intensity buttons of the Display menu, over every point cloud under `root`.
 export function createCloudColors({ root, upAxis }) {
     const clouds = [];
+    let current;
     function setMode(mode) {
+        current = mode;
         document.querySelectorAll('[data-color]').forEach(button => button.classList.toggle('active', button.dataset.color === mode));
         // Heights in the root's frame, where the up axis applies; one range over all clouds.
         root.updateMatrixWorld(true);
         const toRoot = root.matrixWorld.clone().invert();
         const values = clouds.map(({ geometry, matrixWorld }) => (mode === 'intensity' ? geometry.userData.intensity
             : mode === 'height' && heights(geometry.attributes.position.array, upAxis(), toRoot.clone().multiply(matrixWorld).elements)));
-        const range = values.some(Boolean) && colorRange(values.filter(Boolean));
+        // The range comes from the clouds as loaded, so adding detail does not recolor the rest.
+        const ranged = values.filter((value, c) => value && !clouds[c].userData.detail);
+        const range = ranged.length && colorRange(ranged);
         clouds.forEach((cloud, c) => {
             const { geometry, material } = cloud;
             // One mapped attribute per cloud, refilled in place: a replaced attribute keeps its GPU buffer until the geometry is disposed.
@@ -42,5 +46,17 @@ export function createCloudColors({ root, upAxis }) {
         if (clouds.length) setMode(has('rgb') ? 'rgb' : has('intensity') ? 'intensity' : 'height');
     }
 
-    return { setup, setMode };
+    // A cloud added after setup (the detail of a sampled one) takes the current mode and the loaded clouds' range.
+    function add(cloud) {
+        cloud.userData.detail = true;
+        clouds.push(cloud);
+        cloud.userData.rgb = cloud.geometry.attributes.color;
+        setMode(current);
+    }
+    function remove(cloud) {
+        clouds.splice(clouds.indexOf(cloud), 1);
+        setMode(current);
+    }
+
+    return { setup, setMode, add, remove };
 }

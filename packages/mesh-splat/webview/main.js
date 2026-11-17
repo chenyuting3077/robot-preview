@@ -20,9 +20,9 @@ import { pcdReader, dropNaNPoints } from './pcd.mjs';
 import { createTransport } from './transport.mjs';
 
 const STRINGS = {
-    en: { colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
-    'zh-TW': { colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element' },
-    'zh-CN': { colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element' }
+    en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
+    'zh-TW': { detailInView: '載入視野內細節', colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element' },
+    'zh-CN': { detailInView: '加载视野内细节', colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element' }
 };
 const lang = document.documentElement.lang.toLowerCase();
 const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.startsWith('zh') ? 'zh-CN' : 'en'];
@@ -167,7 +167,9 @@ function withUp(object, up) {
     return object;
 }
 const loadGltf = async () => withUp((await new GLTFLoader().loadAsync(src)).scene, '+Y');
-// ponytail: an even sample, not a LOD; zooming in never shows the dropped points. A Potree-style octree would.
+// Past the limit an even sample shows; "Load detail in view" reads the file again for the points in the view.
+// ponytail: the detail is for the view at the click, one at a time, and costs a full re-read (5 s for 1.2 GB);
+// a Potree-style octree would follow the camera but needs a converted copy of the file.
 const POINT_LIMIT = 10_000_000;
 async function loadPcd(info) {
     const reader = pcdReader(POINT_LIMIT);
@@ -187,7 +189,57 @@ async function loadPcd(info) {
     const geometry = geometryFrom(points);
     geometry.userData.intensity = points.intensity;
     info.pointsTotal = points.total;
-    return pointsOf(geometry);
+    const cloud = pointsOf(geometry);
+    if (points.total > geometry.attributes.position.count) {
+        $('detail-btn').hidden = false;
+        $('detail-btn').addEventListener('click', () => loadDetail(cloud, points.total));
+    }
+    return cloud;
+}
+
+let detail = null;
+async function loadDetail(base, total) {
+    $('detail-btn').disabled = true;
+    $('loading-indicator').hidden = false;
+    try {
+        base.updateMatrixWorld(true);
+        const toBase = base.matrixWorld.clone().invert();
+        const view = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+        const p = view.planes.flatMap(plane => {
+            const { normal, constant } = plane.clone().applyMatrix4(toBase);
+            return [normal.x, normal.y, normal.z, constant];
+        });
+        const inside = (x, y, z) => {
+            for (let i = 0; i < 24; i += 4) if (p[i] * x + p[i + 1] * y + p[i + 2] * z + p[i + 3] < 0) return false;
+            return true;
+        };
+        // The shown sample is even over the file, so its share in the view estimates the file's; the margin
+        // keeps a view a little denser than estimated from losing the end of the file.
+        const sample = base.geometry.attributes.position.array;
+        let seen = 0;
+        for (let i = 0; i < sample.length; i += 3) if (inside(sample[i], sample[i + 1], sample[i + 2])) seen++;
+        const reader = pcdReader(POINT_LIMIT, { inside, expected: 1.25 * total * seen / (sample.length / 3) + 1000 });
+        for await (const chunk of transport.fileChunks()) reader.push(chunk);
+        const points = reader.finish();
+        if (detail) {
+            cloudColors.remove(detail);
+            detail.removeFromParent();
+            detail.geometry.dispose();
+        }
+        const geometry = geometryFrom(points);
+        geometry.userData.intensity = points.intensity;
+        detail = pointsOf(geometry);
+        base.add(detail);
+        cloudColors.add(detail);
+    } catch (error) {
+        if (error?.name !== 'FileChanged') {
+            $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
+            $('load-error').hidden = false;
+        }
+    } finally {
+        $('detail-btn').disabled = false;
+        $('loading-indicator').hidden = true;
+    }
 }
 const loadTextPoints = async () => pointsOf(geometryFrom(parsePointsText(await fetchText())));
 const loadSplatFile = async info => loadSplat(await fetchBytes(), info);
