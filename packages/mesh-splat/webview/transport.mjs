@@ -70,7 +70,6 @@ export function createTransport(vscodeApi, page) {
             out.set(chunk, at);
             at += chunk.length;
         }
-        if (at !== out.length) throw changed();
         return out;
     }
 
