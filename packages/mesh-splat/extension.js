@@ -62,7 +62,6 @@ function cacheWriter(dir, keys, post) {
         if (!incoming || message.at !== incoming.written) throw new Error('cache piece out of order');
         await incoming.handle.write(chunk, 0, chunk.length, message.at);
         incoming.written += chunk.length;
-        post({ type: 'stepCacheAck' });
         if (incoming.written < message.size) return;
         const { target, part, handle } = incoming;
         incoming = null;
@@ -76,7 +75,7 @@ function cacheWriter(dir, keys, post) {
         await trimCache(dir, target);
     };
     return {
-        receive: message => receive(message).catch(error => {
+        receive: message => receive(message).then(() => post({ type: 'stepCacheAck' }), error => {
             drop();
             post({ type: 'stepCacheAck', error: String(error?.message ?? error) });
         }),
