@@ -144,6 +144,10 @@ export async function loadStep({ cached, readAll, sendCache }) {
     const foxtrotParts = unit && await foxtrotJob(bytes).catch(() => null);
     // The last foxtrot worker took the file, so OpenCascade reads it again.
     const object = foxtrotParts?.some(part => part.indices.length) ? foxtrotObject(foxtrotParts, unit) : occtObject(await occtJob(bytes.length ? bytes : await readAll()));
+    // OpenCascade can finish without a single triangle (the 161 MB assembly does); an empty view would look like a hang.
+    let triangles = 0;
+    object.traverse(child => { triangles += child.geometry?.index?.count ?? 0; });
+    if (!triangles) throw new Error('neither foxtrot nor OpenCascade produced any triangles for this file');
     if (sendCache) cacheStep(object, sendCache);
     return object;
 }
