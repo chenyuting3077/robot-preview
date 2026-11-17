@@ -7,13 +7,13 @@ import { loadExtension } from './vscode-mock.mjs';
 
 const extension = new URL('../../packages/mesh-splat/extension.js', import.meta.url).pathname;
 
-test('STEP cache drops oldest GLBs past 1 GB and keeps the new one', async () => {
+test('STEP cache drops the oldest entries past 1 GB and keeps the new one', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-cache-'));
     const storage = path.join(root, 'storage');
     const cacheDir = path.join(storage, 'step-cache');
     fs.mkdirSync(cacheDir, { recursive: true });
     // Sparse, so 1.2 GB of old entries costs no disk.
-    const old = ['a-1-1-0.glb', 'b-1-1-0.glb'].map((name, i) => {
+    const old = ['a-1-1-0.meshopt', 'b-1-1-0.meshopt'].map((name, i) => {
         const file = path.join(cacheDir, name);
         fs.closeSync(fs.openSync(file, 'w'));
         fs.truncateSync(file, 600 << 20);
