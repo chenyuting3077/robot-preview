@@ -62,13 +62,13 @@ async function htmlFor(file) {
 }
 
 const pages = new Map();
-let postedGlb = null;
+let postedCache = null;
 const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
-    if (req.method === 'POST' && url.pathname === '/glb') {
+    if (req.method === 'POST' && url.pathname === '/cache') {
         const chunks = [];
         req.on('data', chunk => chunks.push(chunk));
-        return req.on('end', () => { postedGlb = Buffer.concat(chunks); res.end(); });
+        return req.on('end', () => { postedCache = Buffer.concat(chunks); res.end(); });
     }
     const page = pages.get(decodeURIComponent(url.pathname));
     if (page) {
@@ -120,7 +120,7 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsC
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
 const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];
-// STEP files open twice: OpenCascade first, then the GLB the first open handed to the extension.
+// STEP files open twice: tessellated first, then from the cache the first open handed to the extension.
 for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) {
     const name = path.basename(file);
     const reopen = pages.has(`/page/${name}`);
@@ -135,20 +135,20 @@ for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) 
     }
     let camera = ` shown ${Math.round((Date.now() - started) / 100) / 10}s`;
     if (/\.ste?p$/i.test(name) && !state.loading && !state.error && !reopen) {
-        // POSTed, not returned through CDP: a 150 MB GLB as a base64 string stalls the protocol.
+        // POSTed, not returned through CDP: a 150 MB cache file as a base64 string stalls the protocol.
         const posted = await evaluate(`new Promise(async resolve => {
             const done = () => window.__cache?.length > 0 && window.__cache.reduce((n, m) => n + m.chunk.byteLength, 0) === window.__cache[0].size;
             for (let i = 0; !done(); i++) {
                 if (i > 300) return resolve('cache never completed: ' + JSON.stringify((window.__cache || []).map(m => [m.at, m.size, m.chunk?.byteLength])));
                 await new Promise(r => setTimeout(r, 100));
             }
-            resolve((await fetch('/glb', { method: 'POST', body: new Blob(window.__cache.map(m => m.chunk)) })).ok);
+            resolve((await fetch('/cache', { method: 'POST', body: new Blob(window.__cache.map(m => m.chunk)) })).ok);
             window.__cache = [];
         })`);
         if (posted !== true) state.error = String(posted);
         const piece = 16 << 20;
-        for (let at = 0; posted === true && at < postedGlb.length; at += piece) {
-            await panels.get(name).listener({ type: 'stepCache', at, size: postedGlb.length, chunk: new Uint8Array(postedGlb.subarray(at, at + piece)) });
+        for (let at = 0; posted === true && at < postedCache.length; at += piece) {
+            await panels.get(name).listener({ type: 'stepCache', at, size: postedCache.length, chunk: new Uint8Array(postedCache.subarray(at, at + piece)) });
         }
     }
     if (reopen) {
