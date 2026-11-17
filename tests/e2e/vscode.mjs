@@ -14,8 +14,10 @@ const procs = () => new Map(execSync('ps -eo pid=,rss=,args=').toString().split(
 const code = args => spawn('code', ['--user-data-dir', udir, '--extensions-dir', `${os.homedir()}/.vscode/extensions`, ...args], { stdio: 'ignore', detached: true }).unref();
 // A new `code` that finds a still-exiting instance of the same user-data-dir hands the file to it and nothing opens.
 const killAll = async () => {
-    for (const pid of procs().keys()) try { process.kill(pid); } catch {}
-    while (procs().size) await sleep(200);
+    for (let i = 0; procs().size; i++) {
+        for (const pid of procs().keys()) try { process.kill(pid, i < 25 ? 'SIGTERM' : 'SIGKILL'); } catch {}
+        await sleep(200);
+    }
 };
 await killAll();
 stage('launch');
