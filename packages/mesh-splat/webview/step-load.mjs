@@ -151,11 +151,12 @@ function cacheStep(object, sendCache) {
 
 // `cached` is the cache file's URL, or ''. `sendCache` is null outside VS Code.
 export async function loadStep({ cached, readAll, sendCache }) {
+    // A cache that is gone (another editor's trim) or unreadable is replaced by tessellating again.
     if (cached) {
-        const bytes = await fetch(cached).then(response => response.arrayBuffer()).then(buffer => new Uint8Array(buffer));
-        await MeshoptDecoder.ready;
-        // An unreadable cache is replaced by tessellating again.
-        const object = await Promise.resolve().then(() => cachedObject(bytes)).catch(error => (console.warn('STEP cache unreadable:', error), null));
+        const object = await fetch(cached)
+            .then(response => (response.ok ? response.arrayBuffer() : Promise.reject(new Error(response.statusText))))
+            .then(async buffer => (await MeshoptDecoder.ready, cachedObject(new Uint8Array(buffer))))
+            .catch(error => (console.warn('STEP cache unreadable:', error), null));
         if (object) return object;
     }
     const bytes = await readAll();
