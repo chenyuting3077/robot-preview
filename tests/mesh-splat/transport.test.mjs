@@ -1,0 +1,76 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { createTransport } from '../../packages/mesh-splat/webview/transport.mjs';
+
+globalThis.window ??= new EventTarget();
+const deliver = data => window.dispatchEvent(Object.assign(new Event('message'), { data }));
+
+// An extension that answers reads from `file` in `piece`-sized chunks, out of order, and records what it saw.
+function fakeExtension(file, piece, { failAt } = {}) {
+    const seen = { inFlight: 0, most: 0, done: [], cache: [] };
+    const vscodeApi = {
+        postMessage(message) {
+            if (message.type === 'readDone') return seen.done.push(message.id);
+            if (message.type === 'stepCache') {
+                seen.cache.push(message);
+                return setTimeout(() => deliver({ type: 'stepCacheAck', ...(message.at > 0 ? { error: 'disk full' } : {}) }));
+            }
+            if (message.type !== 'read') return;
+            seen.most = Math.max(seen.most, ++seen.inFlight);
+            setTimeout(() => {
+                seen.inFlight--;
+                if (message.at === failAt) return deliver({ type: 'readReply', id: message.id, at: message.at, error: 'cannot read' });
+                deliver({ type: 'readReply', id: message.id, at: message.at, chunk: file.slice(message.at, message.at + piece) });
+            }, Math.random() * 5);
+        }
+    };
+    return { vscodeApi, seen };
+}
+
+const bytes = n => Uint8Array.from({ length: n }, (_, i) => i % 251);
+
+test('reads the file in pieces, three at a time, and says when it is done', async () => {
+    const file = bytes(100);
+    const { vscodeApi, seen } = fakeExtension(file, 16);
+    const { readAll } = createTransport({ vscodeApi, src: 'unused', fileSize: 100, cacheKey: 'k', piece: 16 });
+    assert.deepEqual([...await readAll()], [...file]);
+    assert.equal(seen.most, 3);
+    assert.equal(seen.done.length, 1);
+});
+
+test('a file shorter than the page was rendered for is a FileChanged error', async () => {
+    const { vscodeApi } = fakeExtension(bytes(40), 16);
+    const { readAll } = createTransport({ vscodeApi, src: 'unused', fileSize: 100, cacheKey: 'k', piece: 16 });
+    await assert.rejects(readAll(), { name: 'FileChanged' });
+});
+
+test('falls back to fetch when the extension cannot read the file', async () => {
+    const file = bytes(30);
+    const { vscodeApi } = fakeExtension(file, 16, { failAt: 0 });
+    const fetched = [];
+    const fetch = globalThis.fetch;
+    globalThis.fetch = async url => {
+        fetched.push(url);
+        return new Response(file);
+    };
+    try {
+        const { readAll } = createTransport({ vscodeApi, src: 'file.pcd', fileSize: 30, cacheKey: 'k', piece: 16 });
+        assert.deepEqual([...await readAll()], [...file]);
+        assert.deepEqual(fetched, ['file.pcd']);
+    } finally {
+        globalThis.fetch = fetch;
+    }
+});
+
+test('sends the cache in pieces under its key and stops at an error ack', async () => {
+    const { vscodeApi, seen } = fakeExtension(bytes(0), 16);
+    const { sendCache } = createTransport({ vscodeApi, src: 'unused', fileSize: 0, cacheKey: 'part-1-2-0.meshopt', piece: 16 });
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+        await sendCache(bytes(40));
+    } finally {
+        console.warn = warn;
+    }
+    assert.deepEqual(seen.cache.map(m => [m.key, m.at, m.size, m.chunk.length]), [['part-1-2-0.meshopt', 0, 40, 16], ['part-1-2-0.meshopt', 16, 40, 16]]);
+});
