@@ -215,7 +215,11 @@ async function loadPcd(info) {
     const reader = pcdReader(POINT_LIMIT);
     for await (const chunk of fileChunks()) if (!reader.push(chunk)) break;
     const points = reader.finish();
-    if (!points) return pointsOf(new PCDLoader().parse((await fetchBytes()).buffer).geometry);
+    if (!points) {
+        const geometry = new PCDLoader().parse((await fetchBytes()).buffer).geometry;
+        geometry.userData.intensity = geometry.attributes.intensity?.array;
+        return pointsOf(geometry);
+    }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(points.positions, 3));
     if (points.colors) geometry.setAttribute('color', new THREE.BufferAttribute(points.colors, 3, true));

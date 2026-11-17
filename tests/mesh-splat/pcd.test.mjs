@@ -48,3 +48,14 @@ test('keeps exactly limit evenly spaced points past the limit', () => {
     assert.equal(points.total, 10);
     assert.deepEqual([...points.positions].filter((_, i) => i % 3 === 0), [0, 3, 5, 8]);
 });
+
+test('reads integer intensity', () => {
+    const head = 'FIELDS x y z intensity\nSIZE 4 4 4 2\nTYPE F F F U\nCOUNT 1 1 1 1\nPOINTS 2\nDATA binary\n';
+    const body = new DataView(new ArrayBuffer(2 * 14));
+    [[1, 2, 3, 500], [4, 5, 6, 65535]].forEach(([x, y, z, i], row) => {
+        [x, y, z].forEach((v, k) => body.setFloat32(row * 14 + k * 4, v, true));
+        body.setUint16(row * 14 + 12, i, true);
+    });
+    const points = readPcdPoints(new Uint8Array([...new TextEncoder().encode(head), ...new Uint8Array(body.buffer)]));
+    assert.deepEqual([...points.intensity], [500, 65535]);
+});

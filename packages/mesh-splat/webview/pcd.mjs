@@ -23,9 +23,11 @@ export function pcdReader(limit = Infinity) {
         if ([x, y, z].some(i => i < 0 || types[i] !== 'F' || sizes[i] !== 4) || !stride) return false;
         const rgb = fields.indexOf('rgb');
         const keep = Math.min(count, limit);
+        const getters = { F4: 'getFloat32', F8: 'getFloat64', U1: 'getUint8', U2: 'getUint16', U4: 'getUint32', I1: 'getInt8', I2: 'getInt16', I4: 'getInt32' };
+        const readIntensity = intensity >= 0 && getters[`${types[intensity]}${sizes[intensity]}`];
         layout = { count, keep, stride, x: offsets[x], y: offsets[y], z: offsets[z],
             rgb: rgb >= 0 && sizes[rgb] === 4 ? offsets[rgb] : -1,
-            intensity: intensity >= 0 && types[intensity] === 'F' && sizes[intensity] === 4 ? offsets[intensity] : -1 };
+            intensity: readIntensity ? offsets[intensity] : -1, readIntensity };
         partial = new Uint8Array(stride);
         result = { total: count, positions: new Float32Array(keep * 3),
             colors: layout.rgb >= 0 ? new Uint8Array(keep * 3) : null,
@@ -46,7 +48,7 @@ export function pcdReader(limit = Infinity) {
             colors[kept * 3 + 1] = table[view.getUint8(at + layout.rgb + 1)];
             colors[kept * 3 + 2] = table[view.getUint8(at + layout.rgb)];
         }
-        if (intensity) intensity[kept] = view.getFloat32(at + layout.intensity, true);
+        if (intensity) intensity[kept] = view[layout.readIntensity](at + layout.intensity, true);
         kept++;
     }
     return {
