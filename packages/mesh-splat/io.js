@@ -103,7 +103,9 @@ function fileReader(file, post) {
         handles.get(id)?.then(handle => handle.close(), () => {});
         handles.delete(id);
     };
-    const read = async (id, at) => {
+    // `mtime` is the one the page was rendered with: a file written in place mid-read would hand the page
+    // pieces of two versions, so the read stops at the first piece read after the change.
+    const read = async (id, at, mtime) => {
         try {
             if (!Number.isSafeInteger(at) || at < 0) throw new Error('bad offset');
             if (at === 0) {
@@ -111,8 +113,10 @@ function fileReader(file, post) {
                 handles.set(id, fs.promises.open(file, 'r'));
             }
             if (!handles.has(id)) throw new Error('read not open');
+            const handle = await handles.get(id);
+            if (mtime !== undefined && Math.abs((await handle.stat()).mtimeMs - mtime) >= 1) return post({ type: 'readReply', id, at, changed: true });
             const buffer = new Uint8Array(READ_PIECE);
-            const { bytesRead } = await (await handles.get(id)).read(buffer, 0, READ_PIECE, at);
+            const { bytesRead } = await handle.read(buffer, 0, READ_PIECE, at);
             post({ type: 'readReply', id, at, chunk: bytesRead < READ_PIECE ? buffer.slice(0, bytesRead) : buffer });
         } catch (error) {
             post({ type: 'readReply', id, at, error: messageOf(error) });

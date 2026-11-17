@@ -114,3 +114,9 @@ test('an ack for the same key from a page rendered before this one is ignored', 
     await sending;
     assert.equal(sent.length, 2);
 });
+
+test('a piece the extension reports changed ends the read in FileChanged', async () => {
+    const vscodeApi = { postMessage: m => m.type === 'read' && setTimeout(() => deliver({ type: 'readReply', id: m.id, at: m.at, changed: true })) };
+    const { readAll } = createTransport(vscodeApi, { src: 'unused', bytes: '40', mtime: '1', key: 'k', piece: '16' });
+    await assert.rejects(readAll(), { name: 'FileChanged' });
+});

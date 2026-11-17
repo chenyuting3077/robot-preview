@@ -7,7 +7,7 @@
 // name `key` it may write, the extension's read size `piece`, which also sizes the cache pieces, and the
 // `render` that made this page, since two renders of an unchanged file share a key.
 export function createTransport(vscodeApi, page) {
-    const { src, bytes: fileSize, key: cacheKey, piece, render } = page;
+    const { src, bytes: fileSize, mtime, key: cacheKey, piece, render } = page;
     const PIECE = Number(piece);
     const replies = new Map();
     let cacheAck = null;
@@ -36,13 +36,14 @@ export function createTransport(vscodeApi, page) {
         const id = ++reads;
         const request = at => new Promise(resolve => {
             replies.set(`${id}:${at}`, resolve);
-            vscodeApi.postMessage({ type: 'read', id, at });
+            vscodeApi.postMessage({ type: 'read', id, at, mtime: mtime === undefined ? undefined : Number(mtime) });
         }).finally(() => replies.delete(`${id}:${at}`));
         if (vscodeApi) {
             const ahead = [0, 1, 2].map(i => request(i * PIECE));
             try {
                 for (let at = 0; ; at += PIECE) {
-                    const { chunk, error } = await ahead.shift();
+                    const { chunk, error, changed: fileChanged } = await ahead.shift();
+                    if (fileChanged) throw changed();
                     if (error && at === 0) break;
                     if (error) throw new Error(error);
                     if (!chunk.byteLength) return;

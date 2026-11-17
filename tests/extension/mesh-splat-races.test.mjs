@@ -81,3 +81,19 @@ test('an empty cache is refused', async () => {
     assert.equal(fs.existsSync(path.join(root, 'storage', 'step-cache', key)), false);
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('a file written in place mid-read is reported changed, not read as a mix', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-mtime-'));
+    const file = path.join(root, 'cloud.pcd');
+    fs.writeFileSync(file, 'abcdef');
+    const replies = [];
+    const { panel } = await open(root, file, m => replies.push(m));
+    const mtime = Number(panel.webview.html.match(/data-mtime="([^"]+)"/)[1]);
+    await panel.listener({ type: 'read', id: 1, at: 0, mtime });
+    fs.writeFileSync(file, 'ABCDEF');
+    fs.utimesSync(file, new Date(), new Date(Date.now() + 5000));
+    await panel.listener({ type: 'read', id: 1, at: 3, mtime });
+    assert.equal(new TextDecoder().decode(replies[0].chunk), 'abcdef');
+    assert.equal(replies[1].changed, true);
+    fs.rmSync(root, { recursive: true, force: true });
+});

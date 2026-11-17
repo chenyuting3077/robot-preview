@@ -30,6 +30,7 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn
         src: `${webview.asWebviewUri(fileUri)}?v=${stat.mtime}`,
         name: path.basename(fileUri.path),
         bytes: stat.size,
+        mtime: stat.mtime,
         key: cache ? path.basename(cache.uri.fsPath) : '',
         piece: READ_PIECE,
         render: turn,
@@ -75,7 +76,7 @@ function activate(context) {
             const writer = cacheWriter(cacheDir?.fsPath, keys, post);
             const reader = fileReader(document.uri.fsPath, post);
             const handlers = {
-                read: message => reader.read(message.id, message.at),
+                read: message => reader.read(message.id, message.at, message.mtime),
                 readDone: message => reader.done(message.id),
                 stepCache: message => writer.receive(message)
             };
