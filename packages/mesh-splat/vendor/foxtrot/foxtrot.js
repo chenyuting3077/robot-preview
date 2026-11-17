@@ -64,9 +64,7 @@ export class StepMesh {
         } catch(e) {
             __wbg_handle_catch(e);
         }
-        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v1;
+        return ret;
     }
     /**
      * @returns {Uint32Array}
@@ -79,9 +77,7 @@ export class StepMesh {
         } catch(e) {
             __wbg_handle_catch(e);
         }
-        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v1;
+        return ret;
     }
     /**
      * @returns {Float32Array}
@@ -94,9 +90,7 @@ export class StepMesh {
         } catch(e) {
             __wbg_handle_catch(e);
         }
-        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v1;
+        return ret;
     }
     /**
      * @returns {Float32Array}
@@ -109,9 +103,7 @@ export class StepMesh {
         } catch(e) {
             __wbg_handle_catch(e);
         }
-        var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v1;
+        return ret;
     }
 }
 if (Symbol.dispose) StepMesh.prototype[Symbol.dispose] = StepMesh.prototype.free;
@@ -222,8 +214,38 @@ function __wbg_get_imports() {
         __wbg_info_ef9e889444913d2f: function(arg0) {
             console.info(arg0);
         },
+        __wbg_length_6e9d2869242cabf3: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
+        __wbg_length_c702d06d28b96b72: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
         __wbg_log_ff86bbb34c295e21: function(arg0) {
             console.log(arg0);
+        },
+        __wbg_new_with_length_00818aa0a226a550: function(arg0) {
+            const ret = new Uint32Array(arg0 >>> 0);
+            return ret;
+        },
+        __wbg_new_with_length_5c0c9043ebd9ec32: function(arg0) {
+            const ret = new Float32Array(arg0 >>> 0);
+            return ret;
+        },
+        __wbg_set_8e5ba6e4c8c3625e: function(arg0, arg1, arg2) {
+            arg0.set(getArrayU32FromWasm0(arg1, arg2));
+        },
+        __wbg_set_d0e2abd6ed08e04c: function(arg0, arg1, arg2) {
+            arg0.set(getArrayF32FromWasm0(arg1, arg2));
+        },
+        __wbg_subarray_06f4deea7e13f965: function(arg0, arg1, arg2) {
+            const ret = arg0.subarray(arg1 >>> 0, arg2 >>> 0);
+            return ret;
+        },
+        __wbg_subarray_7343a34544ab34ea: function(arg0, arg1, arg2) {
+            const ret = arg0.subarray(arg1 >>> 0, arg2 >>> 0);
+            return ret;
         },
         __wbg_warn_228ff2257384d295: function(arg0) {
             console.warn(arg0);
