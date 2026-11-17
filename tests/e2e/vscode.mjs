@@ -38,6 +38,7 @@ const start = Date.now();
 code(['-r', file]);
 
 const growth = new Map();
+const totalMB = () => [...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024;
 let sampling = true;
 (async () => {
     while (sampling) {
@@ -45,8 +46,7 @@ let sampling = true;
             const grew = p.rss - (base.get(pid)?.rss ?? 0);
             if (grew > (growth.get(pid)?.grew ?? -Infinity)) growth.set(pid, { grew, type: p.type, at: (Date.now() - start) / 1000 });
         }
-        const total = [...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024;
-        if (total > LIMIT_MB) { console.log(`over ${LIMIT_MB} MB, killed`); await killAll(); process.exit(3); }
+        if (totalMB() > LIMIT_MB) { console.log(`over ${LIMIT_MB} MB, killed`); await killAll(); process.exit(3); }
         await sleep(250);
     }
 })();
@@ -67,6 +67,7 @@ const connect = url => new Promise(resolve => {
     const send = (method, params) => new Promise(r => { pending.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
     ws.onopen = () => resolve(send);
 });
+const workbench = async () => connect((await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === 'page' && t.url.includes('workbench')).webSocketDebuggerUrl);
 const evaluate = async (send, expression) => (await send('Runtime.evaluate', { returnByValue: true, expression }))?.result?.value;
 let state;
 while (!state && Date.now() - start < 60000) {
@@ -82,8 +83,7 @@ if (!state) { console.log('viewer webview did not appear'); await killAll(); pro
 stage('viewer webview found');
 // SPLIT=1 opens a second editor of the same file at once (Ctrl+\), so both tessellate and write the cache together.
 if (process.env.SPLIT) {
-    const page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === 'page' && t.url.includes('workbench'));
-    const send = await connect(page.webSocketDebuggerUrl);
+    const send = await workbench();
     for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, modifiers: 2, key: '\\', code: 'Backslash', windowsVirtualKeyCode: 220 });
 }
 let s;
@@ -109,8 +109,7 @@ await mouse('mouseReleased', width * 2 / 3);
 const fps = Math.round(await evaluate(send, `(() => { const w = document.getElementById('active-frame').contentWindow; w.__stop = true; return w.__frames; })()`) / ((Date.now() - dragStart) / 1000));
 // SHOT=<png> saves the workbench window, to look at what the viewer drew.
 async function screenshot(path) {
-    const page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === 'page' && t.url.includes('workbench'));
-    const shot = await (await connect(page.webSocketDebuggerUrl))('Page.captureScreenshot', { format: 'png' });
+    const shot = await (await workbench())('Page.captureScreenshot', { format: 'png' });
     if (shot?.data) (await import('node:fs')).writeFileSync(path, Buffer.from(shot.data, 'base64'));
     else console.error('screenshot failed');
 }
@@ -146,6 +145,6 @@ if (process.env.SPLIT) {
 }
 const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, +(process.env.TOP || 3)).map(g => `${g.type} +${Math.round(g.grew / 1024)} MB at ${g.at.toFixed(1)} s`);
 console.log(JSON.stringify({ file: file.split('/').pop(), shown, fps, detailSeconds, cache, error: s?.error || undefined, info: s?.info, grewMostMB: top,
-    totalGrowthMB: Math.round([...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024) }));
+    totalGrowthMB: Math.round(totalMB()) }));
 await killAll();
 process.exit(0);
