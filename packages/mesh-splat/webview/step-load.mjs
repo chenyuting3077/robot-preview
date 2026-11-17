@@ -8,13 +8,12 @@ import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
 import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
 
 // STEP is B-rep and needs a CAD kernel to tessellate.
-// ponytail: foxtrot still skips a few faces (AMR: 2 of 18,255), left as small holes; run OpenCascade on
+// ponytail: foxtrot skips a few faces (AMR: 2 of 18,255), left as small holes; run OpenCascade on
 // those faces only if a model needs them. OpenCascade (C++) gets every face but takes minutes on large
 // assemblies, so it runs only when the length unit is unclear or foxtrot fails or yields no triangles (it
 // skips shapes it does not know). Both run in a worker so the view keeps turning meanwhile.
 
-// A fresh worker per job: a Rust panic aborts foxtrot's instance, and WASM memory only goes back when the
-// worker does. `workers` lets a caller stop the rest when one fails.
+// A fresh worker per job: WASM memory only goes back when the worker does. `workers` lets a caller stop the rest when one fails.
 // A worker that dies without an error event (none seen yet) is caught by these timeouts. foxtrot reports
 // progress, so its timeout counts from the last face it started; OpenCascade cannot, so its timeout covers
 // the whole run, far above the slowest measured (116 s, 161 MB file in VS Code).

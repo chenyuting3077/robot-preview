@@ -6,9 +6,6 @@ const CACHE_LIMIT = 1 << 30;
 const READ_PIECE = 16 << 20;
 const messageOf = error => String(error?.message ?? error);
 
-// `keys` maps each cache file name this editor's pages were rendered with to that STEP file's prefix.
-// Pieces go straight to disk because one 139 MB message was held by the workbench, the extension host and
-// the main process at once; each editor writes its own .part so two editors of one file don't collide.
 // Cache writes in progress in this extension host. A .part names its writer's pid, so another window's
 // write in progress is told apart from one a closed window left behind.
 const writing = new Set();
@@ -25,6 +22,9 @@ const busyPart = (full, file) => {
     return writing.has(full) || (pid > 0 && pid !== process.pid && alive(pid));
 };
 
+// `keys` maps each cache file name this editor's pages were rendered with to that STEP file's prefix.
+// Pieces go straight to disk because one 139 MB message was held by the workbench, the extension host and
+// the main process at once; each editor writes its own .part so two editors of one file don't collide.
 function cacheWriter(dir, keys, post) {
     let incoming = null;
     let queue = Promise.resolve();

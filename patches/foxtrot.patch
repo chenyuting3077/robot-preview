@@ -5115,12 +5115,11 @@ new file mode 100644
 index 0000000..0dc8e90
 --- /dev/null
 +++ b/triangulate/tests/malformed.rs
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,19 @@
 +use step::step_file::StepFile;
 +use triangulate::triangulate::triangulate;
 +
-+// A face whose surface and bound point past the last entity: before, the index panicked and aborted a
-+// WASM instance; now the face is skipped and counted as an error.
++// A face whose surface and bound point past the last entity.
 +#[test]
 +fn a_reference_past_the_last_entity_skips_the_face() {
 +    let text = b"ISO-10303-21;HEADER;ENDSEC;DATA;
