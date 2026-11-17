@@ -3,11 +3,12 @@ import { TYPES } from './ply.mjs';
 
 // PCDLoader pushes every field of every point into plain arrays; a 1.2 GB
 // binary cloud (38.9M points, x y z intensity normal curvature) runs the
-// webview out of memory. This reads binary x y z (+ rgb, + float intensity)
-// into typed arrays as the file streams in, so the file itself is never held
-// whole, and drops normals, which PointsMaterial never uses. Past `limit`
-// points it keeps an evenly spaced `limit` of them. Anything else (push
-// returns false, or finish returns null) goes to PCDLoader.
+// webview out of memory. This reads binary x y z (+ rgb, + intensity of any
+// numeric type) into typed arrays as the file streams in, so the file itself is
+// never held whole, and drops normals, which PointsMaterial never uses. Past
+// `limit` points it keeps an evenly spaced `limit` of them. A header it does not
+// handle (push returns false, finish returns null) goes to PCDLoader.
+
 // A row with a NaN coordinate is no return of an organized cloud, not a point; one NaN point also makes
 // the bounding box, and with it the framing, NaN.
 const isPoint = (x, y, z) => Number.isFinite(x + y + z);
@@ -117,7 +118,6 @@ export function pcdReader(limit = Infinity) {
             }
             return true;
         },
-        // A short body means POINTS is wrong; PCDLoader decides what to show.
         // null when the header is one this reader leaves to PCDLoader. A binary body shorter than POINTS
         // says is an error rather than a PCDLoader retry, which would hold the whole file at once.
         finish() {
