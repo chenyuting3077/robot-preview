@@ -68,7 +68,7 @@ VS Code hands a webview a fetched resource only after reading all of it into mem
 
 Past 10M points an evenly spaced 10M are shown, and the info popover says how many of the total; zooming in never shows the dropped points. A Potree-style octree would, at the cost of a converter and a second viewer.
 
-Clouds color by their own RGB, else by intensity, else by height along the chosen up axis, with turbo over the 2nd-98th percentile so a few far points don't flatten the rest into one color.
+Intensity and height colors span the 2nd-98th percentile, so a few far points don't flatten the rest into one color.
 
 In VS Code 1.144 (2026-11-17, `tests/e2e/vscode.mjs`, release 0.2.0 and this build interleaved, 3 runs each) this build opens that file in 5.2-5.3 s, grows all processes by 1.2-1.3 GB and orbits at 21 fps; 0.2.0 cannot open it ("Array buffer allocation failed" at +5.3-5.4 GB twice, past the 6 GB limit once). A 181 MB, 4.5M-face binary PLY mesh: 1.75-1.89 s and +1.05-1.07 GB, 33-35 fps; 0.2.0 went past 6 GB in all three runs.
 
