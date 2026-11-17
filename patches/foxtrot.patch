@@ -3520,10 +3520,10 @@ index d55f36f..5b73063 100644
              "VERTEX_LOOP" => VertexLoop_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexLoop(v))),
              "VERTEX_POINT" => VertexPoint_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexPoint(v))),
 diff --git a/step/src/step_file.rs b/step/src/step_file.rs
-index 404dfcc..01ecd0d 100644
+index 404dfcc..a5c3a6e 100644
 --- a/step/src/step_file.rs
 +++ b/step/src/step_file.rs
-@@ -1,64 +1,103 @@
+@@ -1,64 +1,108 @@
 -use memchr::{memchr, memchr2, memchr_iter};
 +use memchr::{memchr, memchr2, memchr_iter, memmem};
 +use std::sync::OnceLock;
@@ -3538,6 +3538,8 @@ index 404dfcc..01ecd0d 100644
      parse::{parse_entity_decl, parse_entity_fallback},
  };
  
++static EMPTY: Entity<'static> = Entity::_EmptySlot;
++
 +/// Entities are parsed on first use: a worker that triangulates part of the faces then holds only the
 +/// entities those faces reach, instead of every entity in the file (each worker parses its own copy).
  #[derive(Debug)]
@@ -3575,6 +3577,10 @@ index 404dfcc..01ecd0d 100644
 +        let cells = (0..blocks.len()).map(|_| OnceLock::new()).collect();
 +        Self { blocks, cells }
 +    }
++
++    pub fn len(&self) -> usize {
++        self.blocks.len()
++    }
  
 -        // Parse every block, accumulating a Vec of Results.  We parse in
 -        // single-threaded mode in WASM builds, because there's no thread
@@ -3586,15 +3592,15 @@ index 404dfcc..01ecd0d 100644
 -            #[cfg(not(feature = "rayon"))]
 -            { block_slice.iter() }
 -        };
-+    pub fn len(&self) -> usize {
-+        self.blocks.len()
-+    }
- 
+-
 -        let parsed: Vec<(usize, Entity)> = block_iter
 -            .filter_map(|b| parse_entity_decl(*b)
 +    /// The entity with this id, parsed now if it was not yet.
 +    pub fn get(&self, id: usize) -> &Entity<'a> {
-+        self.cells[id].get_or_init(|| {
++        // A reference past the last entity reads as an empty slot, which every caller already treats as
++        // missing, rather than an index panic that would abort a WASM instance.
++        let Some(cell) = self.cells.get(id) else { return &EMPTY };
++        cell.get_or_init(|| {
 +            let b = self.blocks[id];
 +            if b.is_empty() {
 +                return Box::new(Entity::_EmptySlot);
@@ -3611,16 +3617,22 @@ index 404dfcc..01ecd0d 100644
 -                .ok())
 -            .map(|b| b.1)
 -            .collect();
-+                .map(|b| b.1 .1)
-+                .unwrap_or(Entity::_EmptySlot))
-+        })
-+    }
- 
+-
 -        // Awkward construction because `Entity` is not `Clone`
 -        let max_id = parsed.iter().map(|b| b.0).max().unwrap_or(0);
 -        let mut out: Vec<Entity> = (0..=max_id)
 -            .map(|_| Entity::_EmptySlot)
 -            .collect();
+-
+-        for p in parsed.into_iter() {
+-            out[p.0] = p.1;
+-        }
++                .map(|b| b.1 .1)
++                .unwrap_or(Entity::_EmptySlot))
++        })
++    }
+ 
+-        Self(out)
 +    /// The entities whose text mentions any of `keywords`, parsed. STEP keywords are upper case, and
 +    /// an entity's own type is always in its text, so filtering the result by type finds them all.
 +    pub fn scan<'s>(&'s self, keywords: &'s [&[u8]]) -> impl Iterator<Item = (usize, &'s Entity<'a>)> + 's {
@@ -3628,9 +3640,7 @@ index 404dfcc..01ecd0d 100644
 +            .filter(move |(_, b)| keywords.iter().any(|k| memmem::find(b, k).is_some()))
 +            .map(move |(i, _)| (i, self.get(i)))
 +    }
- 
--        for p in parsed.into_iter() {
--            out[p.0] = p.1;
++
 +    /// [`strip_flatten`] in place: the output is never longer than the input, so it is written over
 +    /// it, and the file is in memory once instead of twice.
 +    pub fn strip_flatten_in_place(mut data: Vec<u8>) -> Vec<u8> {
@@ -3653,16 +3663,14 @@ index 404dfcc..01ecd0d 100644
 +                }
 +            }
 +            i += 1;
-         }
--
--        Self(out)
++        }
 +        data.truncate(out);
 +        data.shrink_to_fit();
 +        data
      }
  
      /// Flattens a STEP file, removing comments and whitespace
-@@ -107,8 +146,11 @@ impl<'a> StepFile<'a> {
+@@ -107,8 +151,11 @@ impl<'a> StepFile<'a> {
          blocks
      }
  
@@ -3676,7 +3684,7 @@ index 404dfcc..01ecd0d 100644
      }
  }
  
-@@ -116,10 +158,28 @@ impl<'a, T> std::ops::Index<Id<T>> for StepFile<'a> {
+@@ -116,10 +163,28 @@ impl<'a, T> std::ops::Index<Id<T>> for StepFile<'a> {
      type Output = Entity<'a>;
  
      fn index(&self, id: Id<T>) -> &Self::Output {
@@ -3706,8 +3714,77 @@ index 404dfcc..01ecd0d 100644
 +        }
 +    }
 +}
+diff --git a/triangulate/src/curve.rs b/triangulate/src/curve.rs
+index c98f807..6cb020f 100644
+--- a/triangulate/src/curve.rs
++++ b/triangulate/src/curve.rs
+@@ -3,6 +3,7 @@ use glm::{DVec3, DVec4, DMat4};
+ 
+ use nurbs::{AbstractCurve, NDBSplineCurve, SampledCurve};
+ use crate::surface::Surface;
++use crate::Error;
+ 
+ #[derive(Debug)]
+ pub enum Curve {
+@@ -21,7 +22,7 @@ pub enum Curve {
+ impl Curve {
+     pub fn new_ellipse(location: DVec3, axis: DVec3, ref_direction: DVec3,
+                        radius1: f64, radius2: f64, closed: bool, dir: bool)
+-        -> Self
++        -> Result<Self, Error>
+     {
+         // Build a rotation matrix to go from flat (XY) to 3D space
+         let world_from_eplane = Surface::make_affine_transform(axis,
+@@ -30,16 +31,16 @@ impl Curve {
+             location);
+         let eplane_from_world = world_from_eplane
+             .try_inverse()
+-            .expect("Could not invert");
+-        Self::Ellipse {
++            .ok_or(Error::Malformed("singular placement"))?;
++        Ok(Self::Ellipse {
+             world_from_eplane,
+             eplane_from_world,
+             closed, dir
+-        }
++        })
+     }
+ 
+     pub fn new_circle(location: DVec3, axis: DVec3, ref_direction: DVec3,
+-                      radius: f64, closed: bool, dir: bool) -> Self {
++                      radius: f64, closed: bool, dir: bool) -> Result<Self, Error> {
+         Self::new_ellipse(location, axis, ref_direction,
+                           radius, radius, closed, dir)
+     }
+@@ -54,8 +55,10 @@ impl Curve {
+         let t_start = curve.u_from_point(u);
+         let t_end = curve.u_from_point(v);
+         let mut c = curve.as_polyline(t_start, t_end, 8);
+-        c[0] = u;
+-        *c.last_mut().unwrap() = v;
++        if let [first, .., last] = c.as_mut_slice() {
++            *first = u;
++            *last = v;
++        }
+         c
+     }
+ 
+diff --git a/triangulate/src/lib.rs b/triangulate/src/lib.rs
+index 03c5c88..67b6c41 100644
+--- a/triangulate/src/lib.rs
++++ b/triangulate/src/lib.rs
+@@ -26,4 +26,9 @@ pub enum Error {
+ 
+     #[error("Self-intersecting NURBS and b-spline curves are not implemented")]
+     SelfIntersectingCurve,
++
++    /// A reference to a missing entity or an out-of-range value; the face is skipped, since a panic
++    /// would abort the whole WASM instance.
++    #[error("Malformed STEP data: {0}")]
++    Malformed(&'static str),
+ }
 diff --git a/triangulate/src/surface.rs b/triangulate/src/surface.rs
-index 7e00a09..d0bef87 100644
+index 7e00a09..20c6e06 100644
 --- a/triangulate/src/surface.rs
 +++ b/triangulate/src/surface.rs
 @@ -3,7 +3,7 @@ use std::f64::{EPSILON, consts::PI};
@@ -3744,10 +3821,56 @@ index 7e00a09..d0bef87 100644
  }
  
  impl Surface {
-@@ -95,6 +113,41 @@ impl Surface {
+@@ -55,15 +73,15 @@ impl Surface {
+             location, radius,
+         }
+     }
+-    pub fn new_cylinder(axis: DVec3, ref_direction: DVec3, location: DVec3, radius: f64) -> Self {
++    pub fn new_cylinder(axis: DVec3, ref_direction: DVec3, location: DVec3, radius: f64) -> Result<Self, Error> {
+         let mat = Self::make_rigid_transform(axis, ref_direction, location);
+-        Surface::Cylinder {
++        Ok(Surface::Cylinder {
+             mat,
+-            mat_i: mat.try_inverse().expect("Could not invert"),
++            mat_i: mat.try_inverse().ok_or(Error::Malformed("singular placement"))?,
+             axis, radius, location,
+             z_min: 0.0,
+             z_max: 0.0,
+-        }
++        })
+     }
+ 
+     pub fn new_torus(location: DVec3, axis: DVec3,
+@@ -77,22 +95,57 @@ impl Surface {
          }
      }
  
+-    pub fn new_plane(axis: DVec3, ref_direction: DVec3, location: DVec3) -> Self {
+-        Surface::Plane {
++    pub fn new_plane(axis: DVec3, ref_direction: DVec3, location: DVec3) -> Result<Self, Error> {
++        Ok(Surface::Plane {
+             mat_i: Self::make_rigid_transform(axis, ref_direction, location)
+                 .try_inverse()
+-                .expect("Could not invert"),
++                .ok_or(Error::Malformed("singular placement"))?,
+             normal: axis,
+-        }
++        })
+     }
+ 
+-    pub fn new_cone(axis: DVec3, ref_direction: DVec3, location: DVec3, angle: f64) -> Self {
++    pub fn new_cone(axis: DVec3, ref_direction: DVec3, location: DVec3, angle: f64) -> Result<Self, Error> {
+         let mat = Self::make_rigid_transform(axis, ref_direction, location);
+-        Surface::Cone {
++        Ok(Surface::Cone {
+             mat,
+-            mat_i: mat.try_inverse().expect("Could not invert"),
++            mat_i: mat.try_inverse().ok_or(Error::Malformed("singular placement"))?,
+             angle,
+-        }
++        })
++    }
++
 +    /// `control_points` are homogeneous (x*w, y*w, z*w, w).
 +    pub fn new_extrusion(open: bool, knots: KnotVector, control_points: Vec<DVec4>, dir: DVec3) -> Self {
 +        let dir = dir.normalize();
@@ -3781,11 +3904,18 @@ index 7e00a09..d0bef87 100644
 +            (any - axis * any.dot(&axis)).normalize()
 +        };
 +        Surface::Revolution { curve: SampledCurve::new(curve), location, axis, x, y: axis.cross(&x) }
-+    }
-+
+     }
+ 
      pub fn make_affine_transform(z_world: DVec3, x_world: DVec3, y_world: DVec3, origin_world: DVec3) -> DMat4 {
-         let mut mat = DMat4::identity();
-         mat.set_column(0, &glm::vec3_to_vec4(&x_world));
+@@ -170,7 +223,7 @@ impl Surface {
+                 let new_mat = Self::make_rigid_transform(
+                     z, DVec3::new(1.0, 0.0, 0.0), z * *major_radius);
+                 let new_mat_i = new_mat.try_inverse()
+-                    .expect("Could not invert");
++                    .ok_or(Error::CouldNotLower)?;
+                 let new_p = new_mat_i * DVec4::new(p.x, p.y, p.z, 1.0);
+ 
+                 let minor_angle = new_p.x.atan2(new_p.z);
 @@ -189,6 +242,20 @@ impl Surface {
              },
              Surface::BSpline(surf) => Self::surf_lower(p, surf),
@@ -3807,7 +3937,58 @@ index 7e00a09..d0bef87 100644
              Surface::Sphere { mat_i, radius, .. } => {
                  // mat_i is constructed in prepare to be a reasonable basis
                  let p = (mat_i * p_).xyz() / *radius;
-@@ -321,6 +388,11 @@ impl Surface {
+@@ -206,7 +273,7 @@ impl Surface {
+         }
+     }
+ 
+-    fn prepare(&mut self, verts: &[Vertex]) {
++    fn prepare(&mut self, verts: &[Vertex]) -> Result<(), Error> {
+         match self {
+             Surface::Cylinder { mat_i, z_min, z_max, .. } => {
+                 *z_min = std::f64::INFINITY;
+@@ -222,15 +289,18 @@ impl Surface {
+                 }
+             },
+             Surface::Sphere { mat, mat_i, location, .. } => {
+-                let ref_direction = (verts[0].pos - *location).normalize();
+-                let d1 = (verts.last().unwrap().pos - *location).normalize();
++                let (Some(first), Some(last)) = (verts.first(), verts.last()) else {
++                    return Err(Error::CouldNotLower);
++                };
++                let ref_direction = (first.pos - *location).normalize();
++                let d1 = (last.pos - *location).normalize();
+                 let axis = ref_direction.cross(&d1).normalize();
+ 
+                 *mat = Self::make_rigid_transform(
+                         axis, ref_direction, *location);
+                 *mat_i = mat
+                     .try_inverse()
+-                    .expect("Could not invert");
++                    .ok_or(Error::CouldNotLower)?;
+             },
+             Surface::Torus { axis, mat, mat_i, location, .. } => {
+                 let mean_dir = verts.iter()
+@@ -242,16 +312,17 @@ impl Surface {
+                     mean_perp_dir, *axis, *location);
+                 *mat_i = mat
+                     .try_inverse()
+-                    .expect("Could not invert");
++                    .ok_or(Error::CouldNotLower)?;
+             },
+             _ => (),
+         }
++        Ok(())
+     }
+ 
+     pub fn lower_verts(&mut self, verts: &mut [Vertex])
+         -> Result<Vec<(f64, f64)>, Error>
+     {
+-        self.prepare(verts);
++        self.prepare(verts)?;
+         let mut pts = Vec::with_capacity(verts.len());
+         for v in verts {
+             // Project to the 2D subspace for triangulation
+@@ -321,6 +392,11 @@ impl Surface {
          }
      }
  
@@ -3819,7 +4000,7 @@ index 7e00a09..d0bef87 100644
      fn bbox(pts: &[(f64, f64)]) -> (f64, f64, f64, f64) {
          let (mut xmin, mut xmax) = (std::f64::INFINITY, -std::f64::INFINITY);
          let (mut ymin, mut ymax) = (std::f64::INFINITY, -std::f64::INFINITY);
-@@ -401,6 +473,23 @@ impl Surface {
+@@ -401,6 +477,23 @@ impl Surface {
              },
              Surface::BSpline(surf) => Self::surf_normal(uv, surf),
              Surface::NURBS(surf) => Self::surf_normal(uv, surf),
@@ -3844,7 +4025,7 @@ index 7e00a09..d0bef87 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..3857c0b 100644
+index ad4ba6e..4fd67f2 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
 @@ -23,14 +23,19 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
@@ -3869,7 +4050,24 @@ index ad4ba6e..3857c0b 100644
              RepresentationRelationshipWithTransformation_::try_from_entity(e))
      {
          let (a, b) = if flip {
-@@ -64,18 +69,29 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
+@@ -38,10 +43,12 @@ fn build_transform_stack<'a>(s: &'a StepFile, flip: bool) -> TransformStack<'a>
+         } else {
+             (r.rep_1, r.rep_2)
+         };
+-        let mut mat = item_defined_transformation(s, r.transformation_operator.cast());
+-        if flip {
+-            mat = mat.try_inverse().expect("Could not invert transform matrix");
+-        }
++        // A placement that cannot be read or inverted drops that one part, not the whole file.
++        let Some(mat) = item_defined_transformation(s, r.transformation_operator.cast()).ok()
++            .and_then(|mat| if flip { mat.try_inverse() } else { Some(mat) }) else {
++            warn!("Skipping a transform that cannot be read or inverted");
++            continue;
++        };
+ 
+         transform_stack.entry(b)
+             .or_default()
+@@ -64,18 +71,29 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
  }
  
  pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
@@ -3907,7 +4105,7 @@ index ad4ba6e..3857c0b 100644
              })
          .collect();
  
-@@ -101,8 +117,8 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -101,8 +119,8 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
      // Store a map of ShapeRepresentationRelationships, which some models
      // use to map from axes to specific instances
      let mut shape_rep_relationship: HashMap<Id<_>, Vec<Id<_>>> = HashMap::new();
@@ -3918,7 +4116,7 @@ index ad4ba6e..3857c0b 100644
          .map(|e| (e.rep_1, e.rep_2))
      {
          shape_rep_relationship.entry(r1).or_default().push(r2);
-@@ -124,7 +140,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -124,7 +142,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                  Entity::AdvancedBrepShapeRepresentation(b) => &b.items,
                  Entity::ShapeRepresentation(b) => &b.items,
                  Entity::ManifoldSurfaceShapeRepresentation(b) => &b.items,
@@ -3931,7 +4129,7 @@ index ad4ba6e..3857c0b 100644
              };
  
              for m in items.iter() {
-@@ -142,8 +162,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -142,8 +164,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
      // If there are items in breps that aren't attached to a transformation
      // chain, then draw them individually (with an identity matrix)
      if to_mesh.is_empty() {
@@ -3941,7 +4139,7 @@ index ad4ba6e..3857c0b 100644
              .filter(|(_i, e)|
                  match e {
                      Entity::ManifoldSolidBrep(_)
-@@ -169,18 +188,19 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -169,18 +190,19 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
  
              // Fold operation
              |(mut mesh, mut stats), (id, mats)| {
@@ -3964,7 +4162,7 @@ index ad4ba6e..3857c0b 100644
                      _ => {
                          warn!("Skipping {:?} (not a known solid)", s[*id]);
                          return (mesh, stats);
-@@ -189,9 +209,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -189,9 +211,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
  
                  // Pick out a color from the color map and apply it to each
                  // newly-created vertex
@@ -3978,7 +4176,7 @@ index ad4ba6e..3857c0b 100644
  
                  // Build copies of the mesh by copying and applying transforms
                  let v_end = mesh.verts.len();
-@@ -205,6 +228,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -205,6 +230,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                          let n = mesh.verts[v].norm;
                          let norm = (mat * glm::vec3_to_vec4(&n)).xyz();
  
@@ -3986,7 +4184,7 @@ index ad4ba6e..3857c0b 100644
                          mesh.verts.push(mesh::Vertex { pos, norm, color });
                      }
                      let offset = mesh.verts.len() - v_end;
-@@ -226,7 +250,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -226,7 +252,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                      let n = mesh.verts[v].norm;
                      mesh.verts[v].norm = (mat * glm::vec3_to_vec4(&n)).xyz();
  
@@ -3995,18 +4193,88 @@ index ad4ba6e..3857c0b 100644
                  }
                  (mesh, stats)
              });
-@@ -320,44 +344,67 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
- fn axis2_placement_3d(s: &StepFile, t: Id<Axis2Placement3d_>) -> (DVec3, DVec3, DVec3) {
-     let a = s.entity(t).expect("Could not get Axis2Placement3d");
-     let location = cartesian_point(s, a.location);
+@@ -248,24 +274,24 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+     (mesh, stats)
+ }
+ 
+-fn item_defined_transformation(s: &StepFile, t: Id<ItemDefinedTransformation_>) -> DMat4 {
+-    let i = s.entity(t).expect("Could not get ItemDefinedTransform");
++fn item_defined_transformation(s: &StepFile, t: Id<ItemDefinedTransformation_>) -> Result<DMat4, Error> {
++    let i = s.entity(t).ok_or(Error::Malformed("missing ItemDefinedTransform"))?;
+ 
+     let (location, axis, ref_direction) = axis2_placement_3d(s,
+-        i.transform_item_1.cast());
++        i.transform_item_1.cast())?;
+     let t1 = Surface::make_affine_transform(axis,
+         ref_direction,
+         axis.cross(&ref_direction),
+         location);
+ 
+     let (location, axis, ref_direction) = axis2_placement_3d(s,
+-        i.transform_item_2.cast());
++        i.transform_item_2.cast())?;
+     let t2 = Surface::make_affine_transform(axis,
+         ref_direction,
+         axis.cross(&ref_direction),
+         location);
+ 
+-    t2 * t1.try_inverse().expect("Could not invert transform matrix")
++    Ok(t2 * t1.try_inverse().ok_or(Error::Malformed("singular transform"))?)
+ }
+ 
+ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+@@ -293,8 +319,7 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+             } else {
+                 s.entity(surf.styles[0].cast::<SurfaceStyleFillArea_>())
+             })
+-        .map(|surf: &SurfaceStyleFillArea_|
+-            s.entity(surf.fill_area).expect("Could not get fill_area"))
++        .and_then(|surf: &SurfaceStyleFillArea_| s.entity(surf.fill_area))
+         .and_then(|fill: &FillAreaStyle_| if fill.fill_styles.len() != 1 {
+                 None
+             } else {
+@@ -305,62 +330,97 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+         .map(|c| DVec3::new(c.red, c.green, c.blue))
+ }
+ 
+-fn cartesian_point(s: &StepFile, a: Id<CartesianPoint_>) -> DVec3 {
+-    let p = s.entity(a).expect("Could not get cartesian point");
+-    DVec3::new(p.coordinates[0].0, p.coordinates[1].0, p.coordinates[2].0)
++fn cartesian_point(s: &StepFile, a: Id<CartesianPoint_>) -> Result<DVec3, Error> {
++    let p = s.entity(a).ok_or(Error::Malformed("missing cartesian point"))?;
++    match p.coordinates.as_slice() {
++        [x, y, z, ..] => Ok(DVec3::new(x.0, y.0, z.0)),
++        _ => Err(Error::Malformed("cartesian point without three coordinates")),
++    }
+ }
+ 
+-fn direction(s: &StepFile, a: Direction) -> DVec3 {
+-    let p = s.entity(a).expect("Could not get cartesian point");
+-    DVec3::new(p.direction_ratios[0],
+-               p.direction_ratios[1],
+-               p.direction_ratios[2])
++fn direction(s: &StepFile, a: Direction) -> Result<DVec3, Error> {
++    let p = s.entity(a).ok_or(Error::Malformed("missing direction"))?;
++    match p.direction_ratios.as_slice() {
++        [x, y, z, ..] => Ok(DVec3::new(*x, *y, *z)),
++        _ => Err(Error::Malformed("direction without three ratios")),
++    }
+ }
+ 
+-fn axis2_placement_3d(s: &StepFile, t: Id<Axis2Placement3d_>) -> (DVec3, DVec3, DVec3) {
+-    let a = s.entity(t).expect("Could not get Axis2Placement3d");
+-    let location = cartesian_point(s, a.location);
 -    // TODO: this doesn't necessarily match the behavior of `build_axes`
 -    let axis = direction(s, a.axis.expect("Missing axis"));
 -    let ref_direction = match a.ref_direction {
 -        None => DVec3::new(1.0, 0.0, 0.0),
 -        Some(r) => direction(s, r),
++fn axis2_placement_3d(s: &StepFile, t: Id<Axis2Placement3d_>) -> Result<(DVec3, DVec3, DVec3), Error> {
++    let a = s.entity(t).ok_or(Error::Malformed("missing Axis2Placement3d"))?;
++    let location = cartesian_point(s, a.location)?;
 +    // Defaults and projection from ISO 10303-42 `build_axes`: an omitted
 +    // ref_direction along the axis would make the frame singular.
-+    let axis = a.axis.map(|d| direction(s, d)).unwrap_or(DVec3::new(0.0, 0.0, 1.0)).normalize();
++    let axis = a.axis.map(|d| direction(s, d)).transpose()?.unwrap_or(DVec3::new(0.0, 0.0, 1.0)).normalize();
 +    // Unlike build_axes, an axis along -X also takes +Z, which would otherwise project to zero.
 +    let default_ref = if axis.x.abs() < 1.0 - 1e-9 {
 +        DVec3::new(1.0, 0.0, 0.0)
@@ -4015,11 +4283,11 @@ index ad4ba6e..3857c0b 100644
      };
 -    (location, axis, ref_direction)
 +    let project = |r: DVec3| r - axis * r.dot(&axis);
-+    let mut ref_direction = project(a.ref_direction.map(|r| direction(s, r)).unwrap_or(default_ref));
++    let mut ref_direction = project(a.ref_direction.map(|r| direction(s, r)).transpose()?.unwrap_or(default_ref));
 +    if ref_direction.norm() < 1e-9 {
 +        ref_direction = project(default_ref);
 +    }
-+    (location, axis, ref_direction.normalize())
++    Ok((location, axis, ref_direction.normalize()))
  }
  
 -fn shell(s: &StepFile, c: Shell, mesh: &mut Mesh, stats: &mut Stats) {
@@ -4041,10 +4309,15 @@ index ad4ba6e..3857c0b 100644
  }
  
 -fn open_shell(s: &StepFile, c: OpenShell, mesh: &mut Mesh, stats: &mut Stats) {
-+fn open_shell(s: &StepFile, c: OpenShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
-     let cs = s.entity(c).expect("Could not get OpenShell");
+-    let cs = s.entity(c).expect("Could not get OpenShell");
 -    for face in &cs.cfs_faces {
 -        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
++fn open_shell(s: &StepFile, c: OpenShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
++    let Some(cs) = s.entity(c) else {
++        warn!("Skipping a missing OpenShell");
++        stats.num_errors += 1;
++        return;
++    };
 +    for (i, face) in cs.cfs_faces.iter().enumerate() {
 +        if !split.mine(i) {
 +            continue;
@@ -4058,10 +4331,15 @@ index ad4ba6e..3857c0b 100644
  }
  
 -fn closed_shell(s: &StepFile, c: ClosedShell, mesh: &mut Mesh, stats: &mut Stats) {
-+fn closed_shell(s: &StepFile, c: ClosedShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
-     let cs = s.entity(c).expect("Could not get ClosedShell");
+-    let cs = s.entity(c).expect("Could not get ClosedShell");
 -    for face in &cs.cfs_faces {
 -        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
++fn closed_shell(s: &StepFile, c: ClosedShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
++    let Some(cs) = s.entity(c) else {
++        warn!("Skipping a missing ClosedShell");
++        stats.num_errors += 1;
++        return;
++    };
 +    for (i, face) in cs.cfs_faces.iter().enumerate() {
 +        if !split.mine(i) {
 +            continue;
@@ -4078,8 +4356,32 @@ index ad4ba6e..3857c0b 100644
 +fn advanced_face(s: &StepFile, f: AdvancedFace, colors: &Colors, mesh: &mut Mesh,
                   stats: &mut Stats) -> Result<(), Error>
  {
-     let face = s.entity(f).expect("Could not get AdvancedFace");
-@@ -497,6 +544,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+-    let face = s.entity(f).expect("Could not get AdvancedFace");
++    let face = s.entity(f).ok_or(Error::Malformed("missing AdvancedFace"))?;
+     stats.num_faces += 1;
+ 
+     // Grab the surface, returning early if it's unimplemented
+@@ -379,7 +439,7 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+ 
+         match bound_contours.len() {
+             // We should always have non-zero items in the contour
+-            0 => panic!("Got empty contours for {:?}", face),
++            0 => return Err(Error::Malformed("empty face bound")),
+ 
+             // Special case for a single-vertex point, which shows up in
+             // cones: we push it as a Steiner point, but without any
+@@ -417,7 +477,9 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+ 
+                 // Close the loop by returning to the starting point
+                 edges.pop();
+-                edges.last_mut().unwrap().1 = start;
++                if let Some(last) = edges.last_mut() {
++                    last.1 = start;
++                }
+             }
+         }
+     }
+@@ -497,34 +559,38 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
@@ -4090,28 +4392,141 @@ index ad4ba6e..3857c0b 100644
      Ok(())
  }
  
-@@ -609,6 +660,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+     match &s[surf] {
+         Entity::CylindricalSurface(c) => {
+-            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position);
+-            Ok(Surface::new_cylinder(axis, ref_direction, location, c.radius.0.0.0))
++            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position)?;
++            Surface::new_cylinder(axis, ref_direction, location, c.radius.0.0.0)
+         },
+         Entity::ToroidalSurface(c) => {
+-            let (location, axis, _ref_direction) = axis2_placement_3d(s, c.position);
++            let (location, axis, _ref_direction) = axis2_placement_3d(s, c.position)?;
+             Ok(Surface::new_torus(location, axis, c.major_radius.0.0.0, c.minor_radius.0.0.0))
+         },
+         Entity::Plane(p) => {
+             // We'll ignore axis and ref_direction in favor of building an
+             // orthonormal basis later on
+-            let (location, axis, ref_direction) = axis2_placement_3d(s, p.position);
+-            Ok(Surface::new_plane(axis, ref_direction, location))
++            let (location, axis, ref_direction) = axis2_placement_3d(s, p.position)?;
++            Surface::new_plane(axis, ref_direction, location)
+         },
+         // We treat cones like planes, since that's a valid mapping into 2D
+         Entity::ConicalSurface(c) => {
+-            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position);
+-            Ok(Surface::new_cone(axis, ref_direction, location, c.semi_angle.0))
++            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position)?;
++            Surface::new_cone(axis, ref_direction, location, c.semi_angle.0)
+         },
+         Entity::SphericalSurface(c) => {
+             // We'll ignore axis and ref_direction in favor of building an
+             // orthonormal basis later on
+-            let (location, _axis, _ref_direction) = axis2_placement_3d(s, c.position);
++            let (location, _axis, _ref_direction) = axis2_placement_3d(s, c.position)?;
+             Ok(Surface::new_sphere(location, c.radius.0.0.0))
+         },
+         Entity::BSplineSurfaceWithKnots(b) =>
+@@ -532,25 +598,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+             // TODO: make KnotVector::from_multiplicies accept iterators?
+             let u_knots: Vec<f64> = b.u_knots.iter().map(|k| k.0).collect();
+             let u_multiplicities: Vec<usize> = b.u_multiplicities.iter()
+-                .map(|&k| k.try_into().expect("Got negative multiplicity"))
+-                .collect();
++                .map(|&k| k.try_into().map_err(|_| Error::Malformed("negative knot multiplicity")))
++                .collect::<Result<_, _>>()?;
+             let u_knot_vec = KnotVector::from_multiplicities(
+-                b.u_degree.try_into().expect("Got negative degree"),
++                b.u_degree.try_into().map_err(|_| Error::Malformed("negative degree"))?,
+                 &u_knots, &u_multiplicities);
+ 
+             let v_knots: Vec<f64> = b.v_knots.iter().map(|k| k.0).collect();
+             let v_multiplicities: Vec<usize> = b.v_multiplicities.iter()
+-                .map(|&k| k.try_into().expect("Got negative multiplicity"))
+-                .collect();
++                .map(|&k| k.try_into().map_err(|_| Error::Malformed("negative knot multiplicity")))
++                .collect::<Result<_, _>>()?;
+             let v_knot_vec = KnotVector::from_multiplicities(
+-                b.v_degree.try_into().expect("Got negative degree"),
++                b.v_degree.try_into().map_err(|_| Error::Malformed("negative degree"))?,
+                 &v_knots, &v_multiplicities);
+ 
+-            let control_points_list = control_points_2d(s, &b.control_points_list);
++            let control_points_list = control_points_2d(s, &b.control_points_list)?;
+ 
+             let surf = BSplineSurface::new(
+-                b.u_closed.0.unwrap() == false,
+-                b.v_closed.0.unwrap() == false,
++                b.u_closed.0.ok_or(Error::Malformed("unknown closed flag"))? == false,
++                b.v_closed.0.ok_or(Error::Malformed("unknown closed flag"))? == false,
+                 u_knot_vec,
+                 v_knot_vec,
+                 control_points_list,
+@@ -574,22 +640,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+             // TODO: make KnotVector::from_multiplicies accept iterators?
+             let u_knots: Vec<f64> = bspline.u_knots.iter().map(|k| k.0).collect();
+             let u_multiplicities: Vec<usize> = bspline.u_multiplicities.iter()
+-                .map(|&k| k.try_into().expect("Got negative multiplicity"))
+-                .collect();
++                .map(|&k| k.try_into().map_err(|_| Error::Malformed("negative knot multiplicity")))
++                .collect::<Result<_, _>>()?;
+             let u_knot_vec = KnotVector::from_multiplicities(
+-                bspline.u_degree.try_into().expect("Got negative degree"),
++                bspline.u_degree.try_into().map_err(|_| Error::Malformed("negative degree"))?,
+                 &u_knots, &u_multiplicities);
+ 
+             let v_knots: Vec<f64> = bspline.v_knots.iter().map(|k| k.0).collect();
+             let v_multiplicities: Vec<usize> = bspline.v_multiplicities.iter()
+-                .map(|&k| k.try_into().expect("Got negative multiplicity"))
+-                .collect();
++                .map(|&k| k.try_into().map_err(|_| Error::Malformed("negative knot multiplicity")))
++                .collect::<Result<_, _>>()?;
+             let v_knot_vec = KnotVector::from_multiplicities(
+-                bspline.v_degree.try_into().expect("Got negative degree"),
++                bspline.v_degree.try_into().map_err(|_| Error::Malformed("negative degree"))?,
+                 &v_knots, &v_multiplicities);
+ 
+             let control_points_list = control_points_2d(
+-                    s, &bspline.control_points_list)
++                    s, &bspline.control_points_list)?
+                 .into_iter()
+                 .zip(rational.weights_data.iter())
+                 .map(|(ctrl, weight)|
+@@ -600,8 +666,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+                 .collect();
+ 
+             let surf = NURBSSurface::new(
+-                bspline.u_closed.0.unwrap() == false,
+-                bspline.v_closed.0.unwrap() == false,
++                bspline.u_closed.0.ok_or(Error::Malformed("unknown closed flag"))? == false,
++                bspline.v_closed.0.ok_or(Error::Malformed("unknown closed flag"))? == false,
+                 u_knot_vec,
+                 v_knot_vec,
+                 control_points_list,
+@@ -609,6 +675,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
 +        Entity::SurfaceOfLinearExtrusion(e) => {
 +            let (open, knots, points) = swept_curve(s, e.swept_curve)?;
-+            let v = s.entity(e.extrusion_axis).expect("Could not get Vector");
-+            Ok(Surface::new_extrusion(open, knots, points, direction(s, v.orientation)))
++            let v = s.entity(e.extrusion_axis).ok_or(Error::Malformed("missing Vector"))?;
++            Ok(Surface::new_extrusion(open, knots, points, direction(s, v.orientation)?))
 +        },
 +        Entity::SurfaceOfRevolution(e) => {
 +            let (open, knots, points) = swept_curve(s, e.swept_curve)?;
-+            let a = s.entity(e.axis_position).expect("Could not get Axis1Placement");
-+            let axis = a.axis.map(|d| direction(s, d)).unwrap_or_else(|| DVec3::new(0.0, 0.0, 1.0));
-+            Ok(Surface::new_revolution(open, knots, points, cartesian_point(s, a.location), axis))
++            let a = s.entity(e.axis_position).ok_or(Error::Malformed("missing Axis1Placement"))?;
++            let axis = a.axis.map(|d| direction(s, d)).transpose()?.unwrap_or_else(|| DVec3::new(0.0, 0.0, 1.0));
++            Ok(Surface::new_revolution(open, knots, points, cartesian_point(s, a.location)?, axis))
 +        },
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,6 +678,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,11 +693,52 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
+-fn control_points_1d(s: &StepFile, row: &Vec<CartesianPoint>) -> Vec<DVec3> {
 +/// The curve a swept surface is built from, as homogeneous control points
 +/// (weight 1 for a non-rational B-spline).
 +fn swept_curve(s: &StepFile, c: ap214::Curve) -> Result<(bool, KnotVector, Vec<DVec4>), Error> {
@@ -4138,12 +4553,12 @@ index ad4ba6e..3857c0b 100644
 +    };
 +    let knots: Vec<f64> = bspline.knots.iter().map(|k| k.0).collect();
 +    let multiplicities: Vec<usize> = bspline.knot_multiplicities.iter()
-+        .map(|&k| k.try_into().expect("Got negative multiplicity"))
-+        .collect();
++        .map(|&k| k.try_into().map_err(|_| Error::Malformed("negative knot multiplicity")))
++        .collect::<Result<_, _>>()?;
 +    let knot_vec = KnotVector::from_multiplicities(
-+        bspline.degree.try_into().expect("Got negative degree"),
++        bspline.degree.try_into().map_err(|_| Error::Malformed("negative degree"))?,
 +        &knots, &multiplicities);
-+    let points = control_points_1d(s, &bspline.control_points_list);
++    let points = control_points_1d(s, &bspline.control_points_list)?;
 +    let points = match weights {
 +        Some(w) => points.iter().zip(w.iter())
 +            .map(|(p, w)| DVec4::new(p.x * w, p.y * w, p.z * w, *w))
@@ -4153,9 +4568,177 @@ index ad4ba6e..3857c0b 100644
 +    Ok((bspline.closed_curve.0 != Some(true), knot_vec, points))
 +}
 +
- fn control_points_1d(s: &StepFile, row: &Vec<CartesianPoint>) -> Vec<DVec3> {
++fn control_points_1d(s: &StepFile, row: &Vec<CartesianPoint>) -> Result<Vec<DVec3>, Error> {
      row.iter().map(|p| cartesian_point(s, *p)).collect()
  }
+ 
+-fn control_points_2d(s: &StepFile, rows: &Vec<Vec<CartesianPoint>>) -> Vec<Vec<DVec3>> {
++fn control_points_2d(s: &StepFile, rows: &Vec<Vec<CartesianPoint>>) -> Result<Vec<Vec<DVec3>>, Error> {
+     rows.iter()
+         .map(|row| control_points_1d(s, row))
+         .collect()
+@@ -630,7 +748,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+     let (bound, orientation) = match &s[b] {
+         Entity::FaceBound(b) => (b.bound, b.orientation),
+         Entity::FaceOuterBound(b) => (b.bound, b.orientation),
+-        e => panic!("Could not get bound from {:?} at {:?}", e, b),
++        _ => return Err(Error::Malformed("face bound of an unknown type")),
+     };
+     match &s[bound] {
+         Entity::EdgeLoop(e) => {
+@@ -643,9 +761,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+         Entity::VertexLoop(v) => {
+             // This is an "edge loop" with a single vertex, which is
+             // used for cones and not really anything else.
+-            Ok(vec![vertex_point(s, v.loop_vertex)])
++            Ok(vec![vertex_point(s, v.loop_vertex)?])
+         }
+-        e => panic!("{:?} is not an EdgeLoop", e),
++        _ => Err(Error::Malformed("bound that is not an edge or vertex loop")),
+     }
+ }
+ 
+@@ -659,7 +777,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+         if i > 0 {
+             out.pop();
+         }
+-        let edge = s.entity(*e).expect("Could not get OrientedEdge");
++        let edge = s.entity(*e).ok_or(Error::Malformed("missing OrientedEdge"))?;
+         let o = edge_curve(s, edge.edge_element.cast(), edge.orientation)?;
+         out.extend(o.into_iter());
+     }
+@@ -667,7 +785,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+ }
+ 
+ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3>, Error> {
+-    let edge_curve = s.entity(e).expect("Could not get EdgeCurve");
++    let edge_curve = s.entity(e).ok_or(Error::Malformed("missing EdgeCurve"))?;
+     let curve = curve(s, edge_curve, edge_curve.edge_geometry, orientation)?;
+ 
+     let (start, end) = if orientation {
+@@ -675,8 +793,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
+     } else {
+         (edge_curve.edge_end, edge_curve.edge_start)
+     };
+-    let u = vertex_point(s, start);
+-    let v = vertex_point(s, end);
++    let u = vertex_point(s, start)?;
++    let v = vertex_point(s, end)?;
+     Ok(curve.build(u, v))
+ }
+ 
+@@ -685,17 +803,17 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+ {
+     Ok(match &s[curve_id] {
+         Entity::Circle(c) => {
+-            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position.cast());
++            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position.cast())?;
+             Curve::new_circle(location, axis, ref_direction, c.radius.0.0.0,
+                               edge_curve.edge_start == edge_curve.edge_end,
+-                              edge_curve.same_sense ^ !orientation)
++                              edge_curve.same_sense ^ !orientation)?
+         },
+         Entity::Ellipse(c) => {
+-            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position.cast());
++            let (location, axis, ref_direction) = axis2_placement_3d(s, c.position.cast())?;
+             Curve::new_ellipse(location, axis, ref_direction,
+                                c.semi_axis_1.0.0.0, c.semi_axis_2.0.0.0,
+                                edge_curve.edge_start == edge_curve.edge_end,
+-                               edge_curve.same_sense ^ !orientation)
++                               edge_curve.same_sense ^ !orientation)?
+         },
+         Entity::BSplineCurveWithKnots(c) => {
+             if c.closed_curve.0 != Some(false) {
+@@ -705,18 +823,18 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+             }
+ 
+             let control_points_list = control_points_1d(
+-                s, &c.control_points_list);
++                s, &c.control_points_list)?;
+ 
+             let knots: Vec<f64> = c.knots.iter().map(|k| k.0).collect();
+             let multiplicities: Vec<usize> = c.knot_multiplicities.iter()
+-                .map(|&k| k.try_into().expect("Got negative multiplicity"))
+-                .collect();
++                .map(|&k| k.try_into().map_err(|_| Error::Malformed("negative knot multiplicity")))
++                .collect::<Result<_, _>>()?;
+             let knot_vec = KnotVector::from_multiplicities(
+-                c.degree.try_into().expect("Got negative degree"),
++                c.degree.try_into().map_err(|_| Error::Malformed("negative degree"))?,
+                 &knots, &multiplicities);
+ 
+             let curve = nurbs::BSplineCurve::new(
+-                c.closed_curve.0.unwrap() == false,
++                c.closed_curve.0.ok_or(Error::Malformed("unknown closed flag"))? == false,
+                 knot_vec,
+                 control_points_list,
+             );
+@@ -737,21 +855,21 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+             };
+             let knots: Vec<f64> = bspline.knots.iter().map(|k| k.0).collect();
+             let multiplicities: Vec<usize> = bspline.knot_multiplicities.iter()
+-                .map(|&k| k.try_into().expect("Got negative multiplicity"))
+-                .collect();
++                .map(|&k| k.try_into().map_err(|_| Error::Malformed("negative knot multiplicity")))
++                .collect::<Result<_, _>>()?;
+             let knot_vec = KnotVector::from_multiplicities(
+-                bspline.degree.try_into().expect("Got negative degree"),
++                bspline.degree.try_into().map_err(|_| Error::Malformed("negative degree"))?,
+                 &knots, &multiplicities);
+ 
+             let control_points_list = control_points_1d(
+-                    s, &bspline.control_points_list)
++                    s, &bspline.control_points_list)?
+                 .into_iter()
+                 .zip(rational.weights_data.iter())
+                 .map(|(p, w)| DVec4::new(p.x * w, p.y * w, p.z * w, *w))
+                 .collect();
+ 
+             let curve = nurbs::NURBSCurve::new(
+-                bspline.closed_curve.0.unwrap() == false,
++                bspline.closed_curve.0.ok_or(Error::Malformed("unknown closed flag"))? == false,
+                 knot_vec,
+                 control_points_list,
+             );
+@@ -772,10 +890,10 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+     })
+ }
+ 
+-fn vertex_point(s: &StepFile, v: Vertex) -> DVec3 {
++fn vertex_point(s: &StepFile, v: Vertex) -> Result<DVec3, Error> {
+     cartesian_point(s,
+         s.entity(v.cast::<VertexPoint_>())
+-            .expect("Could not get VertexPoint")
++            .ok_or(Error::Malformed("missing VertexPoint"))?
+             .vertex_geometry
+             .cast())
+ }
+diff --git a/triangulate/tests/malformed.rs b/triangulate/tests/malformed.rs
+new file mode 100644
+index 0000000..0dc8e90
+--- /dev/null
++++ b/triangulate/tests/malformed.rs
+@@ -0,0 +1,20 @@
++use step::step_file::StepFile;
++use triangulate::triangulate::triangulate;
++
++// A face whose surface and bound point past the last entity: before, the index panicked and aborted a
++// WASM instance; now the face is skipped and counted as an error.
++#[test]
++fn a_reference_past_the_last_entity_skips_the_face() {
++    let text = b"ISO-10303-21;HEADER;ENDSEC;DATA;
++#1=MANIFOLD_SOLID_BREP('',#2);
++#2=CLOSED_SHELL('',(#3));
++#3=ADVANCED_FACE('',(#90),#99,.T.);
++ENDSEC;END-ISO-10303-21;";
++    let flat = StepFile::strip_flatten(text);
++    let step = StepFile::parse(&flat);
++    let (mesh, stats) = triangulate(&step);
++    assert_eq!(mesh.triangles.len(), 0);
++    assert_eq!(stats.num_faces, 1);
++    assert_eq!(stats.num_errors, 1);
++    assert_eq!(stats.num_panics, 0);
++}
 diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
 index 0e65527..cb773a3 100644
 --- a/wasm/src/lib.rs
