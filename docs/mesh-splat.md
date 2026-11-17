@@ -46,7 +46,7 @@ foxtrot (Rust, patched) tessellates; OpenCascade (`occt-import-js`, rebuilt at `
 - The cache is meshopt buffers, not glTF: 25.6 MB against 139 MB as GLB for the 161 MB assembly, and glTF's meshopt extension would have meant writing its accessors by hand for no reader but ours.
 - truck (`truck-stepio` 0.3.0) is no replacement: EEP500T took 8.7 s native against foxtrot's 2.9 s in one WASM worker (Node), the 161 MB file went past 6 GB, and it drops assembly placements.
 - STEP has no up axis; it starts `+Y` because the AMR (Autodesk) is Y-up.
-- Panics foxtrot still has abort the whole file: issue #3.
+- foxtrot's WASM is built with unwinding (nightly `-Zbuild-std`, `vendor/build.sh`), so a panic skips its face instead of aborting the file, as the release build's `panic=abort` std did.
 
 ## Not supported
 
