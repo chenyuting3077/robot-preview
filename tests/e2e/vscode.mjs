@@ -54,19 +54,27 @@ const STATE = `(() => {
     const doc = document.getElementById('active-frame')?.contentDocument || document;
     const loading = doc.getElementById('loading-indicator');
     const error = doc.getElementById('load-error');
-    return { ready: !!loading, loading: loading ? !loading.hidden : true, error: error && !error.hidden ? error.textContent : '',
+    // The URDF viewer hides its indicator with display: none and starts with it hidden, so it also waits for a model.
+    const app = doc.defaultView.app;
+    return { ready: !!loading && (!app || !!app.currentModel), loading: loading ? !(loading.hidden || loading.style.display === 'none') : true, error: error && !error.hidden ? error.textContent : '',
         info: [...(doc.getElementById('info-table')?.rows ?? [])].map(r => [...r.cells].map(c => c.textContent).join(' ')).join(' | ') };
 })()`;
 const connect = url => new Promise(resolve => {
     const ws = new WebSocket(url);
     let id = 0; const pending = new Map();
     ws.onmessage = ({ data }) => { const m = JSON.parse(data); if (m.id) pending.get(m.id)?.(m.result); };
-    ws.onopen = () => resolve(async () => (await new Promise(r => { pending.set(++id, r); ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { returnByValue: true, expression: STATE } })); })).result?.value);
+    const send = (method, params) => new Promise(r => { pending.set(++id, r); ws.send(JSON.stringify({ id, method, params })); });
+    ws.onopen = () => resolve(send);
 });
+const evaluate = async (send, expression) => (await send('Runtime.evaluate', { returnByValue: true, expression }))?.result?.value;
 let state;
 while (!state && Date.now() - start < 60000) {
     const fresh = (await iframes()).find(t => !before.has(t.id));
-    if (fresh) state = await connect(fresh.webSocketDebuggerUrl);
+    if (fresh) {
+        const send = await connect(fresh.webSocketDebuggerUrl);
+        state = () => evaluate(send, STATE);
+        state.send = send;
+    }
     else await sleep(100);
 }
 if (!state) { console.log('viewer webview did not appear'); await killAll(); process.exit(1); }
@@ -80,10 +88,28 @@ while (Date.now() - start < 600000) {
 const shown = (Date.now() - start) / 1000;
 stage('shown');
 await sleep(6000); // the STEP cache export runs 500 ms after the first frame
+// Frames per second while orbiting: real mouse input drags across the middle of the view for 3 s.
+const send = state.send;
+const [width, height] = await evaluate(send, `(() => { const w = document.getElementById('active-frame').contentWindow;
+    w.__frames = 0; w.__stop = false; const tick = () => { w.__frames++; if (!w.__stop) w.requestAnimationFrame(tick); }; w.requestAnimationFrame(tick);
+    return [innerWidth, innerHeight]; })()`) ?? [0, 0];
+const mouse = (type, x) => send('Input.dispatchMouseEvent', { type, x, y: height / 2, button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
+await mouse('mousePressed', width / 3);
+const dragStart = Date.now();
+while (Date.now() - dragStart < 3000) { await mouse('mouseMoved', width / 3 + (Date.now() - dragStart) / 3000 * width / 3); await sleep(16); }
+await mouse('mouseReleased', width * 2 / 3);
+const fps = Math.round(await evaluate(send, `(() => { const w = document.getElementById('active-frame').contentWindow; w.__stop = true; return w.__frames; })()`) / ((Date.now() - dragStart) / 1000));
 sampling = false;
 await sleep(300);
+// SHOT=<png> saves the workbench window, to look at what the viewer drew.
+if (process.env.SHOT) {
+    const page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === 'page' && t.url.includes('workbench'));
+    const shot = await (await connect(page.webSocketDebuggerUrl))('Page.captureScreenshot', { format: 'png' });
+    if (shot?.data) (await import('node:fs')).writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
+    else console.error('screenshot failed');
+}
 const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, 3).map(g => `${g.type} +${Math.round(g.grew / 1024)} MB`);
-console.log(JSON.stringify({ file: file.split('/').pop(), shown, error: s?.error || undefined, info: s?.info, grewMostMB: top,
+console.log(JSON.stringify({ file: file.split('/').pop(), shown, fps, error: s?.error || undefined, info: s?.info, grewMostMB: top,
     totalGrowthMB: Math.round([...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024) }));
 await killAll();
 process.exit(0);

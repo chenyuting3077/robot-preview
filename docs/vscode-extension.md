@@ -68,6 +68,8 @@ ColladaLoader spends its time in `DOMParser` and in splitting `<float_array>` / 
 
 Headless Chrome, 2026-11-17, Intel Arrow Lake, best of 3: `l515.dae` 33 MB 438 -> 155 ms, `d435.dae` 16 MB 202 -> 63 ms, `oakd_pro.dae` 12 MB 212 -> 55 ms. Whole preview from the load message to the last mesh: RealSense `test_d435_camera.urdf.xacro` 1.19-1.20 -> 0.78-0.86 s, a 14 MB-DAE quadruped 0.85-0.90 -> 0.54-0.59 s. `rust/dae/build.sh` rebuilds `src/wasm/dae.wasm`.
 
+In VS Code 1.144 (`tests/e2e/vscode.mjs`, from `code -r` to the last mesh, so it includes opening the editor and expanding xacro): the RealSense xacro 3.5-3.7 -> 3.15-3.17 s, Franka `panda_arm_hand.urdf` 2.26-2.34 -> 2.09-2.18 s with the webview growing +227-265 -> +190-194 MB. The first run of each build on a fresh profile came out 1-1.5 s faster than the rest and was left out.
+
 ## Content Security Policy needs `unsafe-eval`
 
 The webview only loads the extension's own files plus `blob:` / `data:` (meshes and the embedded WASM). `script-src` still includes `'unsafe-eval'` because mujoco-js (embind) builds its bindings with `new Function` when the module starts; without it MuJoCo simulation fails.
