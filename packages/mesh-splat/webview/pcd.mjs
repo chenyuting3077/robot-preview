@@ -35,13 +35,16 @@ export function pcdReader(limit = Infinity) {
         let stride = 0;
         fields.forEach((_, i) => { offsets.push(stride); stride += sizes[i] * (counts[i] ?? 1); });
         const [x, y, z, intensity] = ['x', 'y', 'z', 'intensity'].map(name => fields.indexOf(name));
-        if ([x, y, z].some(i => i < 0 || types[i] !== 'F' || sizes[i] !== 4) || !stride) return false;
+        // Any numeric type, as DataView getter names; F8 positions are narrowed to Float32 like PCDLoader's.
+        const getterOf = i => i >= 0 && TYPES[`${{ F: 'float', U: 'uint', I: 'int' }[types[i]]}${sizes[i] * 8}`]?.getter;
+        const read = [x, y, z].map(getterOf);
+        if (!read.every(Boolean) || !stride) return false;
         const rgb = fields.indexOf('rgb');
         const keep = Math.min(count, limit);
-        const readIntensity = intensity >= 0 && TYPES[`${{ F: 'float', U: 'uint', I: 'int' }[types[intensity]]}${sizes[intensity] * 8}`]?.getter;
+        const readIntensity = getterOf(intensity);
         layout = { count, keep, stride, x: offsets[x], y: offsets[y], z: offsets[z],
             rgb: rgb >= 0 && sizes[rgb] === 4 ? offsets[rgb] : -1,
-            intensity: readIntensity ? offsets[intensity] : -1, readIntensity };
+            intensity: readIntensity ? offsets[intensity] : -1, readIntensity, read };
         partial = new Uint8Array(stride);
         result = { total: count, positions: new Float32Array(keep * 3),
             colors: layout.rgb >= 0 ? new Uint8Array(keep * 3) : null,
@@ -55,7 +58,8 @@ export function pcdReader(limit = Infinity) {
         // cloud) is skipped and its slot goes to the next finite row, so the sample stays near `keep`;
         // `missing` counts NaN rows for the total.
         const sampled = (row++ * keep) % count < keep;
-        const x = view.getFloat32(at + layout.x, true), y = view.getFloat32(at + layout.y, true), z = view.getFloat32(at + layout.z, true);
+        const [readX, readY, readZ] = layout.read;
+        const x = view[readX](at + layout.x, true), y = view[readY](at + layout.y, true), z = view[readZ](at + layout.z, true);
         if (!isPoint(x, y, z)) {
             missing++;
             if (sampled) owed++;

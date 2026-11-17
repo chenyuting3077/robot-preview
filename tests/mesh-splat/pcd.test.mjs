@@ -30,10 +30,9 @@ test('reads packed rgb as linear bytes', () => {
     assert.deepEqual([...points.colors], [table[255], table[128], table[0]]);
 });
 
-test('leaves ascii and double positions to PCDLoader and refuses a short binary body', () => {
+test('leaves ascii to PCDLoader and refuses a short binary body', () => {
     assert.equal(readPcdPoints(new TextEncoder().encode('FIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nPOINTS 1\nDATA ascii\n1 2 3\n')), null);
     assert.throws(() => readPcdPoints(binaryPcd(['x', 'y', 'z'], [[1, 2, 3]], 1000)), /ends after 1 of its 1000 points/);
-    assert.equal(readPcdPoints(new TextEncoder().encode('FIELDS x y z\nSIZE 8 8 8\nTYPE F F F\nCOUNT 1 1 1\nPOINTS 0\nDATA binary\n')), null);
 });
 
 test('streamed chunks of any size give the same points', () => {
@@ -86,4 +85,12 @@ test('dropNaNPoints removes the rows that are not points from every attribute', 
     assert.deepEqual([...kept.position], [1, 2, 3, 4, 5, 6]);
     assert.deepEqual([...kept.intensity], [7, 9]);
     assert.equal(dropNaNPoints({ position: { array: new Float32Array([1, 2, 3]), itemSize: 3 } }), null);
+});
+
+test('reads double-precision binary positions instead of handing the file to PCDLoader', () => {
+    const head = 'FIELDS x y z\nSIZE 8 8 8\nTYPE F F F\nCOUNT 1 1 1\nPOINTS 2\nDATA binary\n';
+    const body = new DataView(new ArrayBuffer(2 * 24));
+    [[1.5, 2, 3], [4, 5, 6.25]].forEach((row, r) => row.forEach((v, k) => body.setFloat64(r * 24 + k * 8, v, true)));
+    const points = readPcdPoints(new Uint8Array([...new TextEncoder().encode(head), ...new Uint8Array(body.buffer)]));
+    assert.deepEqual([...points.positions], [1.5, 2, 3, 4, 5, 6.25]);
 });
