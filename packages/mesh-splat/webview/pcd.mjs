@@ -2,9 +2,9 @@ import { linearByteTable } from './ply.mjs';
 
 // PCDLoader pushes every field of every point into plain arrays; a 1.2 GB
 // binary cloud (38.9M points, x y z intensity normal curvature) runs the
-// webview out of memory. This reads binary x y z (+ rgb)
+// webview out of memory. This reads binary x y z (+ rgb, + float intensity)
 // into typed arrays as the file streams in, so the file itself is never held
-// whole, and drops normals and intensity, which PointsMaterial never uses. Past `limit`
+// whole, and drops normals, which PointsMaterial never uses. Past `limit`
 // points it keeps an evenly spaced `limit` of them. Anything else (push
 // returns false, or finish returns null) goes to PCDLoader.
 export function pcdReader(limit = Infinity) {
@@ -19,15 +19,17 @@ export function pcdReader(limit = Infinity) {
         const offsets = [];
         let stride = 0;
         fields.forEach((_, i) => { offsets.push(stride); stride += sizes[i] * (counts[i] ?? 1); });
-        const [x, y, z] = ['x', 'y', 'z'].map(name => fields.indexOf(name));
+        const [x, y, z, intensity] = ['x', 'y', 'z', 'intensity'].map(name => fields.indexOf(name));
         if ([x, y, z].some(i => i < 0 || types[i] !== 'F' || sizes[i] !== 4) || !stride) return false;
         const rgb = fields.indexOf('rgb');
         const keep = Math.min(count, limit);
         layout = { count, keep, stride, x: offsets[x], y: offsets[y], z: offsets[z],
-            rgb: rgb >= 0 && sizes[rgb] === 4 ? offsets[rgb] : -1 };
+            rgb: rgb >= 0 && sizes[rgb] === 4 ? offsets[rgb] : -1,
+            intensity: intensity >= 0 && types[intensity] === 'F' && sizes[intensity] === 4 ? offsets[intensity] : -1 };
         partial = new Uint8Array(stride);
         result = { total: count, positions: new Float32Array(keep * 3),
-            colors: layout.rgb >= 0 ? new Uint8Array(keep * 3) : null };
+            colors: layout.rgb >= 0 ? new Uint8Array(keep * 3) : null,
+            intensity: layout.intensity >= 0 ? new Float32Array(keep) : null };
         return true;
     }
     const table = linearByteTable();
@@ -35,7 +37,7 @@ export function pcdReader(limit = Infinity) {
         const { count, keep } = layout;
         // Keeps exactly `keep` of `count` rows, evenly spaced (Bresenham).
         if ((row++ * keep) % count >= keep || kept >= keep) return;
-        const { positions, colors } = result;
+        const { positions, colors, intensity } = result;
         positions[kept * 3] = view.getFloat32(at + layout.x, true);
         positions[kept * 3 + 1] = view.getFloat32(at + layout.y, true);
         positions[kept * 3 + 2] = view.getFloat32(at + layout.z, true);
@@ -44,6 +46,7 @@ export function pcdReader(limit = Infinity) {
             colors[kept * 3 + 1] = table[view.getUint8(at + layout.rgb + 1)];
             colors[kept * 3 + 2] = table[view.getUint8(at + layout.rgb)];
         }
+        if (intensity) intensity[kept] = view.getFloat32(at + layout.intensity, true);
         kept++;
     }
     return {

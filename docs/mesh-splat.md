@@ -68,6 +68,8 @@ VS Code hands a webview a fetched resource only after reading all of it into mem
 
 Past 10M points an evenly spaced 10M are shown, and the info popover says how many of the total; zooming in never shows the dropped points. A Potree-style octree would, at the cost of a converter and a second viewer.
 
+Clouds color by their own RGB, else by intensity, else by height along the chosen up axis, with turbo over the 2nd-98th percentile so a few far points don't flatten the rest into one color.
+
 In VS Code 1.144 that file opened in 18.8 s, orbited at 5 fps and grew all processes by 4.3 GB; now 7.5-7.8 s, 19-23 fps, +1.6-1.7 GB.
 
 ## Not supported

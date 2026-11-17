@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
-import { flatNormals, percentile } from '../../packages/mesh-splat/webview/geometry.mjs';
+import { flatNormals, percentile, colorize, heights } from '../../packages/mesh-splat/webview/geometry.mjs';
 
 test('flatNormals equals computeVertexNormals on non-indexed triangles', () => {
     const positions = new Float32Array(Array.from({ length: 9 * 500 }, () => Math.random() * 10 - 5));
@@ -18,4 +18,18 @@ test('percentile gives the same value as sorting', () => {
     for (const q of [0, 0.02, 0.5, 0.98, 1]) {
         assert.equal(percentile(values.slice(), q), sorted[Math.floor((values.length - 1) * q)]);
     }
+});
+
+test('colorize spans turbo over the 2-98th percentile and clamps outliers', () => {
+    const values = Float32Array.from({ length: 101 }, (_, i) => i);
+    values[100] = 1e9;
+    const colors = colorize(values);
+    // The outlier gets the top color, the same as the 98th-percentile value.
+    assert.deepEqual([...colors.subarray(300, 303)], [...colors.subarray(98 * 3, 99 * 3)]);
+    assert.deepEqual([...colors.subarray(0, 3)], [...colors.subarray(6, 9)]);
+    assert.notDeepEqual([...colors.subarray(0, 3)], [...colors.subarray(150, 153)]);
+});
+
+test('heights reads the signed up axis', () => {
+    assert.deepEqual([...heights(new Float32Array([1, 2, 3, 4, 5, 6]), '-Y')], [-2, -5]);
 });

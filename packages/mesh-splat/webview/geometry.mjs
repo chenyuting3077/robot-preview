@@ -1,3 +1,4 @@
+import { linearByteTable } from './ply.mjs';
 // Typed-array replacements with exactly the results of the three.js / sort code
 // they replace (the tests compare them). 3M splats, percentile per axis: sort
 // 1554 -> 26 ms; 5M STL triangles, normals 226 -> 204 ms (Node 22, Apple M2,
@@ -58,4 +59,46 @@ export function grown(array, minLength = 0) {
     const bigger = new array.constructor(Math.max(array.length * 2, minLength));
     bigger.set(array);
     return bigger;
+}
+
+// Turbo (Google's polynomial fit) as linear bytes for a normalized color attribute.
+let turboTable;
+function turbo() {
+    if (turboTable) return turboTable;
+    const srgb = linearByteTable();
+    const poly = (t, c) => c.reduceRight((sum, k) => sum * t + k, 0);
+    const channels = [
+        [0.13572138, 4.6153926, -42.66032258, 132.13108234, -152.94239396, 59.28637943],
+        [0.09140261, 2.19418839, 4.84296658, -14.18503333, 4.27729857, 2.82956604],
+        [0.1066733, 12.64194608, -60.58204836, 110.36276771, -89.90310912, 27.34824973]
+    ];
+    turboTable = new Uint8Array(256 * 3);
+    for (let i = 0; i < 256; i++) channels.forEach((c, j) => {
+        turboTable[i * 3 + j] = srgb[Math.round(Math.min(1, Math.max(0, poly(i / 255, c))) * 255)];
+    });
+    return turboTable;
+}
+
+// Per-point turbo colors over the 2nd-98th percentile, so a few outliers don't
+// squash the rest into one color.
+export function colorize(values, colors = new Uint8Array(values.length * 3)) {
+    const sorted = values.slice();
+    const low = percentile(sorted, 0.02), high = percentile(sorted, 0.98);
+    const scale = 255 / (high - low || 1);
+    const table = turbo();
+    for (let i = 0; i < values.length; i++) {
+        const k = Math.min(255, Math.max(0, Math.round((values[i] - low) * scale))) * 3 || 0;
+        colors[i * 3] = table[k];
+        colors[i * 3 + 1] = table[k + 1];
+        colors[i * 3 + 2] = table[k + 2];
+    }
+    return colors;
+}
+
+// Height along an up axis such as '-Z', from interleaved xyz.
+export function heights(positions, up) {
+    const axis = 'XYZ'.indexOf(up[1]), sign = up[0] === '-' ? -1 : 1;
+    const values = new Float32Array(positions.length / 3);
+    for (let i = 0; i < values.length; i++) values[i] = sign * positions[i * 3 + axis];
+    return values;
 }

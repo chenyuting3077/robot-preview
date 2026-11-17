@@ -34,6 +34,7 @@ test('streamed chunks of any size give the same points', () => {
     const rows = Array.from({ length: 50 }, (_, i) => [i, -i, i / 2, i * 10, 0]);
     const bytes = binaryPcd(['x', 'y', 'z', 'intensity', 'normal_x'], rows);
     const whole = readPcdPoints(bytes);
+    assert.deepEqual([...whole.intensity], rows.map(r => r[3]));
     for (const size of [1, 7, 20, 333]) {
         const reader = pcdReader();
         for (let at = 0; at < bytes.length; at += size) assert.ok(reader.push(bytes.subarray(at, at + size)));

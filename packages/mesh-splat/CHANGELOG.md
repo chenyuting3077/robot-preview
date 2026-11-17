@@ -9,6 +9,7 @@
 - STEP files tessellate on up to 4 threads: the 39 MB assembly 8 s -> 5 s, a 30 MB one 3.8 -> 1.9 s, the 161 MB one 24 -> 14 s, using less memory: the 161 MB file needs about 2.9 GB in VS Code instead of 4.8 GB.
 - The STEP cache is about a quarter smaller, is dropped when the extension updates, and is trimmed to 1 GB.
 - Large binary PCD files open faster with less memory: the extension streams them to the viewer, and past 10M points an even 10M are shown. A 1.2 GB, 38.9M-point map: 18.8 -> 7.6 s, 5 -> 20 fps when orbiting, 4.3 -> 1.6 GB.
+- Point clouds can be colored by original color, height or intensity (Display menu); clouds without RGB start in intensity or height.
 
 ## 0.2.0
 
