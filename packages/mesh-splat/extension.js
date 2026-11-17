@@ -30,6 +30,7 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache) {
         src: `${webview.asWebviewUri(fileUri)}?v=${stat.mtime}`,
         name: path.basename(fileUri.path),
         bytes: stat.size,
+        key: cache ? path.basename(cache.uri.fsPath) : '',
         cached: cache ? await vscode.workspace.fs.stat(cache.uri).then(() => webview.asWebviewUri(cache.uri), () => '') : ''
     };
     return template
@@ -49,11 +50,13 @@ function activate(context) {
             const dir = vscode.Uri.joinPath(document.uri, '..');
             const folder = vscode.workspace.getWorkspaceFolder(document.uri)?.uri;
             panel.webview.options = { enableScripts: true, localResourceRoots: [distUri, dir, ...(folder ? [folder] : []), ...(cacheDir ? [cacheDir] : [])] };
-            // Keyed by the file as rendered, so a save during tessellation cannot file the old model under the new mtime.
-            let cache = null;
+            // The page names the cache key it was rendered with: a save during tessellation re-renders with a
+            // new key, and the old page's model must not be filed under it.
+            const keys = new Set();
             const render = async () => {
                 const stat = await vscode.workspace.fs.stat(document.uri);
-                cache = stepCache(cacheDir, document.uri, stat, manifest.version);
+                const cache = stepCache(cacheDir, document.uri, stat, manifest.version);
+                if (cache) keys.add(path.basename(cache.uri.fsPath));
                 panel.webview.html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
             };
             // The cache arrives in pieces, each acknowledged before the next is sent, and goes straight to disk:
@@ -77,11 +80,11 @@ function activate(context) {
             });
             const receiveCache = async message => {
                 const chunk = message.chunk instanceof ArrayBuffer ? new Uint8Array(message.chunk) : message.chunk;
-                if (!cache || !(chunk instanceof Uint8Array) || !Number.isInteger(message.size)) throw new Error('bad cache piece');
+                if (!keys.has(message.key) || !(chunk instanceof Uint8Array) || !Number.isInteger(message.size)) throw new Error('bad cache piece');
                 if (message.at === 0) {
                     await incoming?.handle.close();
                     await fs.promises.mkdir(cacheDir.fsPath, { recursive: true });
-                    const target = cache.uri.fsPath;
+                    const target = path.join(cacheDir.fsPath, message.key);
                     incoming = { target, written: 0, handle: await fs.promises.open(`${target}.part`, 'w') };
                 }
                 if (!incoming || message.at !== incoming.written) throw new Error('cache piece out of order');

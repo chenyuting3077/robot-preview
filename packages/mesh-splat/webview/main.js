@@ -33,7 +33,7 @@ const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.starts
 const t = key => strings[key] ?? STRINGS.en[key];
 const $ = id => document.getElementById(id);
 
-const { src, name, bytes: fileSize, cached } = document.body.dataset;
+const { src, name, bytes: fileSize, cached, key: cacheKey } = document.body.dataset;
 const vscodeApi = globalThis.acquireVsCodeApi?.();
 const ext = name.split('.').pop().toLowerCase();
 
@@ -387,7 +387,7 @@ window.addEventListener('message', ({ data }) => {
 async function sendCache(bytes) {
     for (let at = 0; at < bytes.byteLength; at += PIECE) {
         const acked = new Promise(resolve => { cacheAck = resolve; });
-        vscodeApi.postMessage({ type: 'stepCache', at, size: bytes.byteLength, chunk: bytes.slice(at, at + PIECE) });
+        vscodeApi.postMessage({ type: 'stepCache', key: cacheKey, at, size: bytes.byteLength, chunk: bytes.slice(at, at + PIECE) });
         const { error } = await acked;
         if (error) return console.warn('STEP cache not written:', error);
     }

@@ -147,8 +147,9 @@ for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) 
         })`);
         if (posted !== true) state.error = String(posted);
         const piece = 16 << 20;
+        const key = pages.get(`/page/${name}`).match(/data-key="([^"]+)"/)?.[1];
         for (let at = 0; posted === true && at < postedCache.length; at += piece) {
-            await panels.get(name).listener({ type: 'stepCache', at, size: postedCache.length, chunk: new Uint8Array(postedCache.subarray(at, at + piece)) });
+            await panels.get(name).listener({ type: 'stepCache', key, at, size: postedCache.length, chunk: new Uint8Array(postedCache.subarray(at, at + piece)) });
         }
     }
     if (reopen) {
