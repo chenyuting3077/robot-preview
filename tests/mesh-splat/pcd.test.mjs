@@ -24,9 +24,9 @@ test('reads packed rgb as linear bytes', () => {
     assert.deepEqual([...points.colors], [table[255], table[128], table[0]]);
 });
 
-test('leaves ascii, short bodies and double positions to PCDLoader', () => {
+test('leaves ascii and double positions to PCDLoader and refuses a short binary body', () => {
     assert.equal(readPcdPoints(new TextEncoder().encode('FIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nPOINTS 1\nDATA ascii\n1 2 3\n')), null);
-    assert.equal(readPcdPoints(binaryPcd(['x', 'y', 'z'], [[1, 2, 3]], 1000)), null);
+    assert.throws(() => readPcdPoints(binaryPcd(['x', 'y', 'z'], [[1, 2, 3]], 1000)), /ends after 1 of its 1000 points/);
     assert.equal(readPcdPoints(new TextEncoder().encode('FIELDS x y z\nSIZE 8 8 8\nTYPE F F F\nCOUNT 1 1 1\nPOINTS 0\nDATA binary\n')), null);
 });
 

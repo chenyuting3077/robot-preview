@@ -99,9 +99,11 @@ export function pcdReader(limit = Infinity) {
             return true;
         },
         // A short body means POINTS is wrong; PCDLoader decides what to show.
-        // A short body means POINTS is wrong; PCDLoader decides what to show.
+        // null when the header is one this reader leaves to PCDLoader. A binary body shorter than POINTS
+        // says is an error rather than a PCDLoader retry, which would hold the whole file at once.
         finish() {
-            if (failed || !layout || row !== layout.count) return null;
+            if (failed || !layout) return null;
+            if (row !== layout.count) throw new Error(`the PCD ends after ${row} of its ${layout.count} points`);
             const { positions, colors, intensity } = result;
             return { total: layout.count - missing, positions: positions.subarray(0, kept * 3), colors: colors?.subarray(0, kept * 3) ?? null, intensity: intensity?.subarray(0, kept) ?? null };
         }
