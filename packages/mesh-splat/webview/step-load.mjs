@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
 import { decodeStepCache } from './step-cache.mjs';
-import { stepLengthUnit } from './step.mjs';
+import { groupByFace, stepLengthUnit } from './step.mjs';
 import StepWorker from './step-worker.js?worker&inline';
 import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
 import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
@@ -92,36 +92,10 @@ function foxtrotObject(parts, unit) {
     return group;
 }
 
-// Faces may carry their own color over the part's; each face is a run of triangles [first, last].
-// Triangles are regrouped by color so a part draws once per color, not once per face.
 function occtObject({ meshes }) {
     const group = new THREE.Group();
     for (const mesh of meshes) {
-        const base = mesh.color ?? [0.69, 0.69, 0.69];
-        const colors = [base];
-        const runs = [[]];
-        for (const { first, last, color } of mesh.faces ?? []) {
-            const material = stepMaterial(color ?? base);
-            let slot = colors.findIndex(c => stepMaterial(c) === material);
-            if (slot < 0) slot = colors.push(color) - 1;
-            (runs[slot] ??= []).push(first * 3, (last + 1) * 3);
-        }
-        const source = mesh.indices;
-        const covered = runs.flat().reduce((sum, value, i) => sum + (i % 2 ? value : -value), 0);
-        let indices = source, groups = [{ start: 0, count: source.length, color: base }];
-        if (runs.length > 1 && covered === source.length) {
-            indices = new Uint32Array(source.length);
-            groups = [];
-            let offset = 0;
-            runs.forEach((ranges, slot) => {
-                const start = offset;
-                for (let i = 0; i < ranges.length; i += 2) {
-                    indices.set(source.subarray(ranges[i], ranges[i + 1]), offset);
-                    offset += ranges[i + 1] - ranges[i];
-                }
-                groups.push({ start, count: offset - start, color: colors[slot] });
-            });
-        }
+        const { indices, groups } = groupByFace(mesh.indices, mesh.faces, mesh.color ?? [0.69, 0.69, 0.69]);
         group.add(stepMesh({ name: mesh.name, positions: mesh.positions, normal: mesh.normals && new THREE.BufferAttribute(mesh.normals, 3), indices, groups }));
     }
     return group;

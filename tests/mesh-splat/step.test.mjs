@@ -34,3 +34,14 @@ test('groupByColor sorts triangles into one group per face color', async () => {
     assert.deepEqual(groups, [{ color: [1, 0, 0], start: 0, count: 6 }, { color: [0, 0, 1], start: 6, count: 3 }]);
     assert.equal(groupByColor(colors, indices.subarray(0, 3)).indices.length, 3);
 });
+
+test('groupByFace gives face colors over the part color and keeps uncolored triangles in it', async () => {
+    const { groupByFace } = await import('../../packages/mesh-splat/webview/step.mjs');
+    const indices = new Uint32Array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    const red = [1, 0, 0], grey = [0.5, 0.5, 0.5];
+    const { indices: sorted, groups } = groupByFace(indices, [{ first: 1, last: 1, color: red }, { first: 2, last: 3 }], grey);
+    assert.deepEqual(groups.map(g => [g.start, g.count]), [[0, 9], [9, 3]]);
+    assert.deepEqual(groups[1].color, red);
+    assert.deepEqual([...sorted.subarray(9)], [3, 4, 5]);
+    assert.equal(groupByFace(indices, undefined, grey).groups.length, 1);
+});
