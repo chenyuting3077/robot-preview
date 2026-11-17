@@ -29,9 +29,9 @@ const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.starts
 const t = key => strings[key] ?? STRINGS.en[key];
 const $ = id => document.getElementById(id);
 
-const { src, name, bytes: fileSize, cached, key: cacheKey } = document.body.dataset;
+const { src, name, bytes: fileSize, cached, key: cacheKey, piece } = document.body.dataset;
 const vscodeApi = globalThis.acquireVsCodeApi?.();
-const { fileChunks, readAll, sendCache } = createTransport({ vscodeApi, src, fileSize, cacheKey });
+const { fileChunks, readAll, sendCache } = createTransport({ vscodeApi, src, fileSize, cacheKey, piece });
 const ext = name.split('.').pop().toLowerCase();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });

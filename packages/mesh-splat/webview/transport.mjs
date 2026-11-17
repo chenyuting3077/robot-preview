@@ -2,10 +2,11 @@
 // by 1.6 GB before parsing), so in VS Code the extension reads the file and sends it in pieces on request;
 // elsewhere, and when the extension cannot read it, fetch streams it. The STEP cache goes the other way in
 // pieces, each acknowledged before the next, so the workbench and the extension host never hold all of it.
-export const PIECE = 16 << 20; // READ_PIECE in extension.js
 
-// `fileSize` is the size the page was rendered with; `cacheKey` names the cache file it may write.
-export function createTransport({ vscodeApi, src, fileSize, cacheKey }) {
+// `fileSize` is the size the page was rendered with; `cacheKey` names the cache file it may write; `piece`
+// is the extension's read size, which also sizes the cache pieces sent back.
+export function createTransport({ vscodeApi, src, fileSize, cacheKey, piece }) {
+    const PIECE = Number(piece);
     const replies = new Map();
     let cacheAck = null;
     let reads = 0;

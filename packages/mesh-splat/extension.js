@@ -31,6 +31,7 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache) {
         name: path.basename(fileUri.path),
         bytes: stat.size,
         key: cache ? path.basename(cache.uri.fsPath) : '',
+        piece: READ_PIECE,
         cached: cache ? await vscode.workspace.fs.stat(cache.uri).then(() => webview.asWebviewUri(cache.uri), () => '') : ''
     };
     return template
