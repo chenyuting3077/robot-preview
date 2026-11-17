@@ -12,7 +12,8 @@ import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
-import { flatNormals, percentile, grown, colorize, colorRange, heights, finitePoints } from './geometry.mjs';
+import { flatNormals, percentile, grown, finitePoints } from './geometry.mjs';
+import { createCloudColors } from './cloud-colors.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { loadStep as loadStepFile } from './step-load.mjs';
@@ -50,6 +51,7 @@ const root = new THREE.Group();
 scene.add(root);
 const UP = { '+Y': [0, 0, 0], '-Y': [Math.PI, 0, 0], '+Z': [-Math.PI / 2, 0, 0], '-Z': [Math.PI / 2, 0, 0], '+X': [0, 0, Math.PI / 2], '-X': [0, 0, -Math.PI / 2] };
 let localBox = null;
+const cloudColors = createCloudColors({ root, upAxis: () => $('up-select').value });
 
 function syncTheme() {
     const theme = /\bvscode-(high-contrast-)?light\b/.test(document.body.className) ? 'light' : 'dark';
@@ -366,43 +368,6 @@ function setPointSize(size) {
     });
 }
 
-let clouds = [];
-function setColorMode(mode) {
-    document.querySelectorAll('[data-color]').forEach(button => button.classList.toggle('active', button.dataset.color === mode));
-    // Heights in the root's frame, where the up axis applies; one range over all clouds.
-    root.updateMatrixWorld(true);
-    const toRoot = root.matrixWorld.clone().invert();
-    const values = clouds.map(({ geometry, matrixWorld }) => (mode === 'intensity' ? geometry.userData.intensity
-        : mode === 'height' && heights(geometry.attributes.position.array, $('up-select').value, toRoot.clone().multiply(matrixWorld).elements)));
-    const range = values.some(Boolean) && colorRange(values.filter(Boolean));
-    clouds.forEach((cloud, c) => {
-        const { geometry, material } = cloud;
-        // One mapped attribute per cloud, refilled in place: a replaced attribute keeps its GPU buffer until the geometry is disposed.
-        if (values[c]) {
-            const mapped = cloud.userData.mapped ??= new THREE.BufferAttribute(new Uint8Array(values[c].length * 3), 3, true);
-            colorize(values[c], mapped.array, range);
-            mapped.needsUpdate = true;
-            geometry.setAttribute('color', mapped);
-        }
-        else if (cloud.userData.rgb) geometry.setAttribute('color', cloud.userData.rgb);
-        else geometry.deleteAttribute('color');
-        material.vertexColors = hasColor(geometry);
-        material.color.set(hasColor(geometry) ? 0xffffff : 0x9aa7b8);
-        material.needsUpdate = true;
-    });
-}
-
-// Runs before setMode can add points to meshes, so every Points here is a point cloud.
-function setupColors() {
-    root.traverse(child => { if (child.isPoints) clouds.push(child); });
-    for (const cloud of clouds) cloud.userData.rgb = cloud.geometry.attributes.color;
-    const has = key => clouds.some(cloud => key === 'rgb' ? cloud.userData.rgb : cloud.geometry.userData.intensity);
-    document.querySelectorAll('[data-color], #color-separator').forEach(element => { element.hidden = !clouds.length; });
-    $('color-intensity').hidden = !has('intensity');
-    document.querySelectorAll('[data-color]').forEach(button => button.addEventListener('click', () => setColorMode(button.dataset.color)));
-    if (clouds.length) setColorMode(has('rgb') ? 'rgb' : has('intensity') ? 'intensity' : 'height');
-}
-
 function setupUi(hasMesh, hasPoints, up) {
     $('display-menu-btn').closest('.control-bar-section').hidden = !hasMesh && !hasPoints;
     document.querySelectorAll('[data-mode], #size-separator').forEach(element => { element.hidden = !hasMesh; });
@@ -424,9 +389,9 @@ function setupUi(hasMesh, hasPoints, up) {
     $('up-select').value = up;
     $('up-select').addEventListener('change', () => {
         setUp($('up-select').value);
-        if ($('color-height').classList.contains('active')) setColorMode('height');
+        if ($('color-height').classList.contains('active')) cloudColors.setMode('height');
     });
-    setupColors();
+    cloudColors.setup();
 }
 
 
