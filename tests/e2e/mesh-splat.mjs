@@ -55,7 +55,7 @@ const panels = new Map();
 async function htmlFor(file) {
     const env = loadExtension({ workspace: path.dirname(file), extension, globalStorage });
     env.activate();
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
+    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage() {}, onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
     panels.set(path.basename(file), panel);
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
     return panel.webview.html.replaceAll('vscode-webview:', "'self'");
@@ -109,7 +109,7 @@ const send = (method, params = {}) => new Promise(resolve => {
 });
 const evaluate = async expression => (await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
 await send('Page.enable');
-await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ postMessage: message => { window.__posted = message; } }); window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
+await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ postMessage: message => { if (message.type === 'stepCache') { (window.__cache ||= []).push(message); window.postMessage({ type: 'stepCacheAck' }, '*'); } else window.__posted = message; } }); window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
 const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];
@@ -129,11 +129,20 @@ for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) 
     let camera = ` shown ${Math.round((Date.now() - started) / 100) / 10}s`;
     if (/\.ste?p$/i.test(name) && !state.loading && !state.error && !reopen) {
         // POSTed, not returned through CDP: a 150 MB GLB as a base64 string stalls the protocol.
-        await evaluate(`new Promise(async resolve => {
-            while (window.__posted?.type !== 'stepCache') await new Promise(r => setTimeout(r, 100));
-            resolve((await fetch('/glb', { method: 'POST', body: window.__posted.glb })).ok);
+        const posted = await evaluate(`new Promise(async resolve => {
+            const done = () => window.__cache?.length > 0 && window.__cache.reduce((n, m) => n + m.chunk.byteLength, 0) === window.__cache[0].size;
+            for (let i = 0; !done(); i++) {
+                if (i > 300) return resolve('cache never completed: ' + JSON.stringify((window.__cache || []).map(m => [m.at, m.size, m.chunk?.byteLength])));
+                await new Promise(r => setTimeout(r, 100));
+            }
+            resolve((await fetch('/glb', { method: 'POST', body: new Blob(window.__cache.map(m => m.chunk)) })).ok);
+            window.__cache = [];
         })`);
-        await panels.get(name).listener({ type: 'stepCache', glb: new Uint8Array(postedGlb) });
+        if (posted !== true) state.error = String(posted);
+        const piece = 16 << 20;
+        for (let at = 0; posted === true && at < postedGlb.length; at += piece) {
+            await panels.get(name).listener({ type: 'stepCache', at, size: postedGlb.length, chunk: new Uint8Array(postedGlb.subarray(at, at + piece)) });
+        }
     }
     if (reopen) {
         state.cacheOk = /data-cached="[^"]+"/.test(pages.get(`/page/${name}`));

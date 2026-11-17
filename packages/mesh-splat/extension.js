@@ -55,22 +55,41 @@ function activate(context) {
                 cache = stepCache(cacheDir, document.uri, stat, manifest.version);
                 panel.webview.html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
             };
+            // The GLB arrives in pieces, each acknowledged before the next is sent, and goes straight to disk:
+            // one 139 MB message was held by the workbench, the extension host and the main process at once.
+            let incoming = null;
             panel.webview.onDidReceiveMessage(async message => {
-                if (message?.type !== 'stepCache' || !cache || !(message.glb instanceof Uint8Array)) return;
-                await vscode.workspace.fs.createDirectory(cacheDir);
-                for (const [file] of await vscode.workspace.fs.readDirectory(cacheDir)) {
-                    if (file.startsWith(`${cache.prefix}-`)) await vscode.workspace.fs.delete(vscode.Uri.joinPath(cacheDir, file));
+                if (message?.type !== 'stepCache' || !cache) return;
+                const chunk = message.chunk instanceof ArrayBuffer ? new Uint8Array(message.chunk) : message.chunk;
+                if (!(chunk instanceof Uint8Array) || !Number.isInteger(message.size)) return;
+                if (message.at === 0) {
+                    await incoming?.handle.close();
+                    await fs.promises.mkdir(cacheDir.fsPath, { recursive: true });
+                    const target = cache.uri;
+                    incoming = { target, written: 0, handle: await fs.promises.open(`${target.fsPath}.part`, 'w') };
                 }
-                await vscode.workspace.fs.writeFile(cache.uri, message.glb);
+                if (!incoming || message.at !== incoming.written) return;
+                await incoming.handle.write(chunk, 0, chunk.length, message.at);
+                incoming.written += chunk.length;
+                panel.webview.postMessage({ type: 'stepCacheAck' });
+                if (incoming.written < message.size) return;
+                const { target, handle } = incoming;
+                incoming = null;
+                await handle.close();
+                const prefix = path.basename(target.fsPath).split('-')[0];
+                for (const file of await fs.promises.readdir(cacheDir.fsPath)) {
+                    if (file.startsWith(`${prefix}-`) && !file.endsWith('.part')) await fs.promises.rm(path.join(cacheDir.fsPath, file), { force: true });
+                }
+                await fs.promises.rename(`${target.fsPath}.part`, target.fsPath);
                 // Oldest first until the folder fits; the 39 MB AMR caches as 85 MB.
-                const files = await Promise.all((await vscode.workspace.fs.readDirectory(cacheDir)).map(async ([file]) => {
-                    const uri = vscode.Uri.joinPath(cacheDir, file);
-                    return { uri, ...(await vscode.workspace.fs.stat(uri)) };
+                const files = await Promise.all((await fs.promises.readdir(cacheDir.fsPath)).map(async file => {
+                    const full = path.join(cacheDir.fsPath, file);
+                    return { full, ...(await fs.promises.stat(full)) };
                 }));
                 let total = files.reduce((sum, file) => sum + file.size, 0);
-                for (const file of files.sort((a, b) => a.mtime - b.mtime)) {
-                    if (total <= CACHE_LIMIT || file.uri.path === cache.uri.path) break;
-                    await vscode.workspace.fs.delete(file.uri);
+                for (const file of files.sort((a, b) => a.mtimeMs - b.mtimeMs)) {
+                    if (total <= CACHE_LIMIT || file.full === target.fsPath) break;
+                    await fs.promises.rm(file.full, { force: true });
                     total -= file.size;
                 }
             });

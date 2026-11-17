@@ -291,7 +291,21 @@ function occtObject({ meshes }) {
 function cacheStep(object) {
     let triangles = 0;
     object.traverse(child => { triangles += child.geometry?.index?.count ?? 0; });
-    if (vscodeApi && triangles) setTimeout(() => new GLTFExporter().parseAsync(object, { binary: true }).then(glb => vscodeApi.postMessage({ type: 'stepCache', glb: new Uint8Array(glb) })), 500);
+    if (vscodeApi && triangles) setTimeout(() => new GLTFExporter().parseAsync(object, { binary: true })
+        .then(sendCache), 500);
+}
+
+// One 16 MB piece at a time, each acknowledged by the extension, so the workbench and the extension host
+// never hold the whole GLB.
+let cacheAck = null;
+window.addEventListener('message', ({ data }) => { if (data?.type === 'stepCacheAck') cacheAck?.(); });
+async function sendCache(glb) {
+    const piece = 16 << 20;
+    for (let at = 0; at < glb.byteLength; at += piece) {
+        const acked = new Promise(resolve => { cacheAck = resolve; });
+        vscodeApi.postMessage({ type: 'stepCache', at, size: glb.byteLength, chunk: glb.slice(at, at + piece) });
+        await acked;
+    }
 }
 
 async function loadStep(info) {

@@ -24,9 +24,14 @@ test('STEP cache drops oldest GLBs past 1 GB and keeps the new one', async () =>
     fs.writeFileSync(step, 'ISO-10303-21;');
     const env = loadExtension({ workspace: root, extension, globalStorage: storage });
     env.activate();
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
+    const acks = [];
+    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => acks.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
-    await panel.listener({ type: 'stepCache', glb: new Uint8Array(10) });
+    await panel.listener({ type: 'stepCache', at: 0, size: 10, chunk: new Uint8Array([1, 2, 3, 4, 5, 6]).buffer });
+    await panel.listener({ type: 'stepCache', at: 6, size: 10, chunk: new Uint8Array([7, 8, 9, 10]).buffer });
+    assert.equal(acks.length, 2);
+    const written = fs.readdirSync(cacheDir).find(name => name.endsWith('.glb') && !old.some(file => file.endsWith(name)));
+    assert.deepEqual([...fs.readFileSync(path.join(cacheDir, written))], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     const left = fs.readdirSync(cacheDir);
     assert.equal(fs.existsSync(old[0]), false);
     assert.equal(fs.existsSync(old[1]), true);
