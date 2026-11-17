@@ -144,7 +144,7 @@ if (process.env.SPLIT) {
     const names = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
     cache = { meshopt: names.filter(n => n.endsWith('.meshopt')).length, part: names.filter(n => n.endsWith('.part')).length };
 }
-const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, 3).map(g => `${g.type} +${Math.round(g.grew / 1024)} MB at ${g.at.toFixed(1)} s`);
+const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, +(process.env.TOP || 3)).map(g => `${g.type} +${Math.round(g.grew / 1024)} MB at ${g.at.toFixed(1)} s`);
 console.log(JSON.stringify({ file: file.split('/').pop(), shown, fps, detailSeconds, cache, error: s?.error || undefined, info: s?.info, grewMostMB: top,
     totalGrowthMB: Math.round([...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024) }));
 await killAll();
