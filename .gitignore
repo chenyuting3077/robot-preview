@@ -34,3 +34,4 @@ Thumbs.db
 
 # VS Code extension package
 *.vsix
+target/

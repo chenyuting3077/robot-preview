@@ -62,6 +62,12 @@ Expansion uses xacro-parser 0.3.11 with a local patch (`patches/xacro-parser@0.3
 
 `<xacro:arg>` defaults containing `$(...)` or `${...}` are left to the parser to evaluate; prefilling them as text (the previous behaviour) passed `$(find x)` through verbatim, and an empty default became `false`.
 
+## DAE geometry is parsed in Rust
+
+ColladaLoader spends its time in `DOMParser` and in splitting `<float_array>` / `<p>` text, which together are about half of a URDF load with large DAE meshes. `rust/dae` (no crates, 100 KB of WASM) builds the vertex data the way ColladaLoader does and returns the file with those numbers removed; ColladaLoader then parses the small remainder for materials, textures, units, up axis and the node tree, and the Rust buffers replace its empty geometries. Rewriting all of ColladaLoader in Rust would have to match its material, transparency and node-collapse rules by hand; this split keeps them by construction. Files outside the handled subset (vertex colors, a second UV set, skinning, UVs on only some primitives, CDATA, entities in ids) go to ColladaLoader alone. Every DAE in the Jazzy TurtleBot 4 meshes, the RealSense `d435.dae` and a CAD-exported robot gave the same attributes, groups, materials and matrices both ways.
+
+Headless Chrome, 2026-11-17, Intel Arrow Lake, best of 3: `l515.dae` 33 MB 438 -> 155 ms, `d435.dae` 16 MB 202 -> 63 ms, `oakd_pro.dae` 12 MB 212 -> 55 ms. Whole preview from the load message to the last mesh: RealSense `test_d435_camera.urdf.xacro` 1.19-1.20 -> 0.78-0.86 s, a 14 MB-DAE quadruped 0.85-0.90 -> 0.54-0.59 s. `rust/dae/build.sh` rebuilds `src/wasm/dae.wasm`.
+
 ## Content Security Policy needs `unsafe-eval`
 
 The webview only loads the extension's own files plus `blob:` / `data:` (meshes and the embedded WASM). `script-src` still includes `'unsafe-eval'` because mujoco-js (embind) builds its bindings with `new Function` when the module starts; without it MuJoCo simulation fails.

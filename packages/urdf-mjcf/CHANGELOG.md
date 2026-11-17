@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Large DAE meshes load about 3x faster: their geometry is parsed in WebAssembly (16 MB RealSense `d435.dae`: 202 -> 63 ms; the whole camera preview 1.2 -> 0.8 s).
+
 ## 0.4.4
 
 - DAE meshes without normals (SketchUp exports such as the RealSense `d435.dae`) are lit instead of black; normals are computed as RViz does.

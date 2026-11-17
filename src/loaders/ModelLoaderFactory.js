@@ -8,6 +8,7 @@ import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
 import { resolveFileFromMap, resolveMeshFile, fileUrlModifier, directoryOf } from '../utils/FileUtils.js';
 import { trackMeshLoads, cachedMeshParse, ensureMeshNormals } from '../utils/MeshLoader.js';
+import { parseCollada } from '../utils/colladaFast.js';
 
 export class ModelLoaderFactory {
     /**
@@ -493,9 +494,7 @@ export class ModelLoaderFactory {
                 case 'dae': {
                     const { ColladaLoader } = await import('three/examples/jsm/loaders/ColladaLoader.js');
                     const colladaLoader = new ColladaLoader(manager);
-                    const colladaModel = await new Promise((resolve, reject) => {
-                        colladaLoader.load(blobUrl, resolve, undefined, reject);
-                    });
+                    const colladaModel = await parseCollada(colladaLoader, new Uint8Array(await file.arrayBuffer()), blobUrl);
                     // ColladaLoader returns an object, scene property is the scene
                     meshObject = colladaModel.scene;
 

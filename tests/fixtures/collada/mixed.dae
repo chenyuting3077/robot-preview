@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Triangles, a quad and a pentagon polylist, lines, Z_UP in millimetres, a library node instanced twice. -->
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset><unit name="millimeter" meter="0.001"/><up_axis>Z_UP</up_axis></asset>
+  <library_effects>
+    <effect id="red-fx"><profile_COMMON><technique sid="common"><phong>
+      <diffuse><color>0.8 0.1 0.1 1</color></diffuse>
+      <transparent opaque="A_ONE"><color>1 1 1 0.5</color></transparent>
+      <transparency><float>1</float></transparency>
+    </phong></technique></profile_COMMON></effect>
+    <effect id="grey-fx"><profile_COMMON><technique sid="common"><lambert>
+      <diffuse><color>0.5 0.5 0.5 1</color></diffuse>
+    </lambert></technique></profile_COMMON></effect>
+  </library_effects>
+  <library_materials>
+    <material id="red" name="red"><instance_effect url="#red-fx"/></material>
+    <material id="grey" name="grey"><instance_effect url="#grey-fx"/></material>
+  </library_materials>
+  <library_geometries>
+    <geometry id="shape" name="shape"><mesh>
+      <source id="shape-pos"><float_array id="shape-pos-array" count="18">0 0 0 1 0 0 1 1 0 0 1 0 0.5 1.5 0 -1e-3 2.5E2 3</float_array>
+        <technique_common><accessor source="#shape-pos-array" count="6" stride="3"/></technique_common></source>
+      <source id="shape-nrm"><float_array id="shape-nrm-array" count="3">0 0 1</float_array>
+        <technique_common><accessor source="#shape-nrm-array" count="1" stride="3"/></technique_common></source>
+      <source id="shape-uv"><float_array id="shape-uv-array" count="12">0 0 1 0 1 1 0 1 0.5 1 0.25 0.75</float_array>
+        <technique_common><accessor source="#shape-uv-array" count="6" stride="2"/></technique_common></source>
+      <vertices id="shape-vtx"><input semantic="POSITION" source="#shape-pos"/></vertices>
+      <triangles material="mat-red" count="2">
+        <input semantic="VERTEX" source="#shape-vtx" offset="0"/>
+        <input semantic="NORMAL" source="#shape-nrm" offset="1"/>
+        <input semantic="TEXCOORD" source="#shape-uv" offset="2" set="0"/>
+        <p>0 0 0 1 0 1 2 0 2 0 0 0 2 0 2 3 0 3</p>
+      </triangles>
+      <polylist material="mat-grey" count="2">
+        <input semantic="VERTEX" source="#shape-vtx" offset="0"/>
+        <input semantic="NORMAL" source="#shape-nrm" offset="1"/>
+        <vcount>4 5</vcount>
+        <p>0 0 1 0 2 0 3 0 0 0 1 0 2 0 4 0 3 0</p>
+      </polylist>
+      <triangles material="mat-grey" count="1">
+        <input semantic="VERTEX" source="#shape-vtx" offset="0"/>
+        <input semantic="NORMAL" source="#shape-nrm" offset="1"/>
+        <input semantic="TEXCOORD" source="#shape-uv" offset="2"/>
+        <p>3 0 3 4 0 4 5 0 5</p>
+      </triangles>
+      <lines count="1"><input semantic="VERTEX" source="#shape-vtx" offset="0"/><p>0 5</p></lines>
+    </mesh></geometry>
+    <geometry id="bare"><mesh>
+      <source id="bare-pos"><float_array id="bare-pos-array" count="9">0 0 0 0 1 0 0 0 1</float_array>
+        <technique_common><accessor source="#bare-pos-array" count="3" stride="3"/></technique_common></source>
+      <vertices id="bare-vtx"><input semantic="POSITION" source="#bare-pos"/></vertices>
+      <triangles count="1"><input semantic="VERTEX" source="#bare-vtx" offset="0"/><p>0 1 2</p></triangles>
+    </mesh></geometry>
+  </library_geometries>
+  <library_nodes>
+    <node id="part" name="part"><instance_geometry url="#bare"/></node>
+  </library_nodes>
+  <library_visual_scenes>
+    <visual_scene id="scene">
+      <node id="root" name="root">
+        <translate>1 2 3</translate><rotate>0 0 1 90</rotate><scale>2 2 2</scale>
+        <instance_geometry url="#shape"><bind_material><technique_common>
+          <instance_material symbol="mat-red" target="#red"/>
+          <instance_material symbol="mat-grey" target="#grey"/>
+        </technique_common></bind_material></instance_geometry>
+        <node id="a" name="a"><matrix>1 0 0 5 0 1 0 0 0 0 1 0 0 0 0 1</matrix><instance_node url="#part"/></node>
+        <node id="b" name="b"><instance_node url="#part"/></node>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene><instance_visual_scene url="#scene"/></scene>
+</COLLADA>

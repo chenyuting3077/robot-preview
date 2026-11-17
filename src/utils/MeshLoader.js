@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { normalizePath, resolveFileFromMap } from './FileUtils.js';
+import { parseCollada } from './colladaFast.js';
 
 // Cache loaders for performance
 let loadersCache = null;
@@ -118,9 +119,7 @@ async function parseMeshFile(file, fileExt, meshPath, fileMap) {
                 break;
 
             case 'dae':
-                const daeResult = await new Promise((resolve, reject) => {
-                    loaders.ColladaLoader.load(url, resolve, undefined, reject);
-                });
+                const daeResult = await parseCollada(loaders.ColladaLoader, new Uint8Array(await file.arrayBuffer()), url);
                 geometry = daeResult ? daeResult.scene : null;
                 break;
 
