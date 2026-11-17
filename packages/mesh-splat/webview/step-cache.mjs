@@ -4,7 +4,7 @@
 // The index codec may rotate a triangle's corners, which keeps its winding.
 const FORMAT = 'robot-preview-step-cache-3';
 
-// meshes: [{ name, positions: Float32Array, normals: Float32Array, indices: Uint32Array, groups: [{ start, count, color }] }]
+/** @param {import('./step.mjs').StepMesh[]} meshes */
 export function encodeStepCache(encoder, meshes) {
     const parts = [];
     let size = 0;
@@ -37,7 +37,7 @@ export function encodeStepCache(encoder, meshes) {
     return out;
 }
 
-// Normals come back as 4 normalized Int8 per vertex; the 4th byte is padding.
+/** @returns {import('./step.mjs').StepMesh[]} with Int8 normals */
 export function decodeStepCache(decoder, bytes) {
     const length = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0, true);
     const { format, meshes } = JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length)));

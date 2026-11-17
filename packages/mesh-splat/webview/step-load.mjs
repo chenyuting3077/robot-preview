@@ -74,7 +74,7 @@ const stepMaterial = color => {
     return stepMaterials.get(key);
 };
 
-// groups: [{ start, count, color }], color in 0-1 sRGB.
+/** @param {Omit<import('./step.mjs').StepMesh, 'normals'> & { normalAttribute?: THREE.BufferAttribute | THREE.InterleavedBufferAttribute }} mesh */
 function stepMesh({ name = '', positions, normalAttribute, indices, groups }) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));

@@ -70,3 +70,10 @@ export function groupByFace(indices, faces, base) {
     for (const { first, last, color } of faces ?? []) if (color) keys.fill(rgbKey(...color), first, last + 1);
     return groupTriangles(indices, t => keys[t]);
 }
+
+/**
+ * A STEP part as the workers, the cache and the page pass it: one material per group, colors in 0-1 sRGB.
+ * Normals are Float32 xyz, or Int8 xyz + padding as the cache decodes them.
+ * @typedef {{ name?: string, positions: Float32Array, normals: Float32Array | Int8Array, indices: Uint32Array,
+ *   groups: { start: number, count: number, color: number[] }[] }} StepMesh
+ */
