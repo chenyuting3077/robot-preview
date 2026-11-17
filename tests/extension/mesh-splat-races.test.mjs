@@ -3,17 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension } from './vscode-mock.mjs';
+import { openMeshSplat } from './vscode-mock.mjs';
 
-const extension = new URL('../../packages/mesh-splat/extension.js', import.meta.url).pathname;
 
-async function open(root, file, postMessage = () => {}) {
-    const env = loadExtension({ workspace: root, extension, globalStorage: path.join(root, 'storage') });
-    env.activate();
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage, onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
-    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
-    return { env, panel };
-}
+const open = (root, file, postMessage) => openMeshSplat(root, file, { postMessage });
 
 test('two saves whose renders finish out of order leave the page for the newer file', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-render-'));

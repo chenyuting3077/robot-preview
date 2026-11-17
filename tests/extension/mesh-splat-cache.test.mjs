@@ -3,9 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension } from './vscode-mock.mjs';
+import { openMeshSplat } from './vscode-mock.mjs';
 
-const extension = new URL('../../packages/mesh-splat/extension.js', import.meta.url).pathname;
 
 test('STEP cache drops the oldest entries past 1 GB and keeps the new one', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-cache-'));
@@ -31,11 +30,8 @@ test('STEP cache drops the oldest entries past 1 GB and keeps the new one', asyn
     fs.utimesSync(stale, 999, 999);
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
-    const env = loadExtension({ workspace: root, extension, globalStorage: storage });
-    env.activate();
     const acks = [];
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => acks.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
-    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+    const { panel } = await openMeshSplat(root, step, { postMessage: m => acks.push(m), storage });
     const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
     // The key names the extension version and a fingerprint of the tessellators' WASM.
     assert.match(key, /-\d+\.\d+\.\d+-[0-9a-f]{8}\.meshopt$/);
@@ -60,11 +56,8 @@ test('reads the opened file in pieces on request', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-read-'));
     const file = path.join(root, 'cloud.pcd');
     fs.writeFileSync(file, 'abcdef');
-    const env = loadExtension({ workspace: root, extension, globalStorage: path.join(root, 'storage') });
-    env.activate();
     const replies = [];
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => replies.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
-    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
+    const { panel } = await openMeshSplat(root, file, { postMessage: m => replies.push(m) });
     await panel.listener({ type: 'read', id: 1, at: 0 });
     await panel.listener({ type: 'read', id: 1, at: 6 });
     await panel.listener({ type: 'read', id: 1, at: -1 });
@@ -86,11 +79,8 @@ test('a cache write cut short leaves no .part behind', async () => {
     const storage = path.join(root, 'storage');
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
-    const env = loadExtension({ workspace: root, extension, globalStorage: storage });
-    env.activate();
     const acks = [];
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => acks.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose: f => { panel.dispose = f; } };
-    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+    const { panel } = await openMeshSplat(root, step, { postMessage: m => acks.push(m), storage });
     const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
     await panel.listener({ type: 'stepCache', key, at: 0, size: 10, chunk: new Uint8Array(6).buffer });
     // Out of order: refused, and the write so far is dropped.
@@ -106,11 +96,8 @@ test('a cache piece past the announced size is refused', async () => {
     const storage = path.join(root, 'storage');
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
-    const env = loadExtension({ workspace: root, extension, globalStorage: storage });
-    env.activate();
     const acks = [];
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => acks.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
-    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+    const { panel } = await openMeshSplat(root, step, { postMessage: m => acks.push(m), storage });
     const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
     await panel.listener({ type: 'stepCache', key, at: 0, size: 4, chunk: new Uint8Array(6).buffer });
     assert.ok(acks.pop().error);
@@ -126,10 +113,7 @@ test('a save that renames a new file over the old one re-renders with a new cach
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-rename-'));
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
-    const env = loadExtension({ workspace: root, extension, globalStorage: path.join(root, 'storage') });
-    env.activate();
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage() {}, onDidReceiveMessage() {} }, onDidDispose() {} };
-    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+    const { env, panel } = await openMeshSplat(root, step);
     const before = panel.webview.html.match(/data-key="([^"]+)"/)[1];
     fs.writeFileSync(`${step}.tmp`, 'ISO-10303-21; changed');
     fs.renameSync(`${step}.tmp`, step);
@@ -147,10 +131,7 @@ test('a rebuilt tessellator changes the cache key, and an extension without one 
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
     const keyOf = async () => {
-        const env = loadExtension({ workspace: root, extension: path.join(root, 'extension.js'), globalStorage: path.join(root, 'storage') });
-        env.activate();
-        const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage() {}, onDidReceiveMessage() {} }, onDidDispose() {} };
-        await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+        const { panel } = await openMeshSplat(root, step, { extension: path.join(root, 'extension.js') });
         return panel.webview.html.match(/data-key="([^"]+)"/)[1];
     };
     const without = await keyOf();

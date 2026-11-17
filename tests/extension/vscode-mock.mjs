@@ -9,6 +9,26 @@ const extensionPath = new URL('../../packages/urdf-mjcf/extension.js', import.me
 export const fixtureWorkspace = new URL('../fixtures/ros_ws', import.meta.url).pathname;
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// A custom editor's panel; it keeps the message listener and dispose callback the extension registers.
+export function fakePanel(postMessage = () => {}) {
+    const panel = {
+        webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage, onDidReceiveMessage: listener => { panel.listener = listener; } },
+        onDidDispose: callback => { panel.dispose = callback; }
+    };
+    return panel;
+}
+
+const meshSplatPath = new URL('../../packages/mesh-splat/extension.js', import.meta.url).pathname;
+
+// Activates the mesh-splat extension (or a copy of it at `extension`) and opens `file` in its viewer.
+export async function openMeshSplat(root, file, { postMessage, storage = path.join(root, 'storage'), extension = meshSplatPath } = {}) {
+    const env = loadExtension({ workspace: root, extension, globalStorage: storage });
+    env.activate();
+    const panel = fakePanel(postMessage);
+    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
+    return { env, panel };
+}
+
 class Range {
     constructor(a, b, c, d) {
         Object.assign(this, typeof a === 'number'

@@ -3,7 +3,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension, sleep } from '../extension/vscode-mock.mjs';
+import { loadExtension, sleep, fakePanel } from '../extension/vscode-mock.mjs';
 
 const extension = new URL('../../packages/mesh-splat/extension.js', import.meta.url).pathname;
 const shots = process.env.SHOTS;
@@ -55,7 +55,7 @@ const panels = new Map();
 async function htmlFor(file) {
     const env = loadExtension({ workspace: path.dirname(file), extension, globalStorage });
     env.activate();
-    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage() {}, onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
+    const panel = fakePanel();
     panels.set(path.basename(file), panel);
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
     return panel.webview.html.replaceAll('vscode-webview:', "'self'");

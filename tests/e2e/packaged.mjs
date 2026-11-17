@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension } from '../extension/vscode-mock.mjs';
+import { loadExtension, fakePanel } from '../extension/vscode-mock.mjs';
 
 const packages = new URL('../../packages/', import.meta.url).pathname;
 const required = { 'mesh-splat': ['dist/foxtrot_bg.wasm', 'dist/occt-import-js.wasm', 'dist/step-load.js', 'dist/spark.module.js'], usd: ['dist/usd.js', 'dist/stage.js', 'dist/spark.module.js'], 'urdf-mjcf': [] };
@@ -45,7 +45,7 @@ for (const name of Object.keys(required)) {
     for (const { viewType, selector } of manifest.contributes.customEditors ?? []) {
         const sample = path.join(root, selector[0].filenamePattern.replace('*', 'sample'));
         fs.writeFileSync(sample, '');
-        const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage() {}, onDidReceiveMessage() {} }, onDidDispose() {} };
+        const panel = fakePanel();
         try {
             await env.state.customEditors[viewType].resolveCustomEditor({ uri: env.vscode.Uri.file(sample) }, panel);
         } catch (error) {
