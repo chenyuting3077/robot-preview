@@ -106,12 +106,18 @@ function turbo() {
     return turboTable;
 }
 
-// Per-point turbo colors over the 2nd-98th percentile, so a few outliers don't
-// squash the rest into one color.
-// Non-finite values (NaN points of an organized cloud) get the lowest color and stay out of the range.
-export function colorize(values, colors = new Uint8Array(values.length * 3)) {
-    const sorted = values.filter(Number.isFinite);
-    const low = percentile(sorted, 0.02), high = percentile(sorted, 0.98);
+// The 2nd-98th percentile of the finite values of all `lists`, so a few outliers don't squash the rest into
+// one color, and clouds shown together share one scale.
+export function colorRange(lists) {
+    const finite = new Float32Array(lists.reduce((n, values) => n + values.length, 0));
+    let n = 0;
+    for (const values of lists) for (const value of values) if (Number.isFinite(value)) finite[n++] = value;
+    const sorted = finite.subarray(0, n);
+    return [percentile(sorted, 0.02), percentile(sorted, 0.98)];
+}
+
+// Per-point turbo colors over `range`; non-finite values get the lowest color.
+export function colorize(values, colors = new Uint8Array(values.length * 3), [low, high] = colorRange([values])) {
     const scale = 255 / (high - low || 1);
     const table = turbo();
     for (let i = 0; i < values.length; i++) {
@@ -123,10 +129,19 @@ export function colorize(values, colors = new Uint8Array(values.length * 3)) {
     return colors;
 }
 
-// Height along an up axis such as '-Z', from interleaved xyz.
-export function heights(positions, up) {
+// Height along an up axis such as '-Z', from interleaved xyz placed by `matrix` (column-major 4x4
+// elements, as three.js keeps them).
+export function heights(positions, up, matrix = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]) {
     const axis = 'XYZ'.indexOf(up[1]), sign = up[0] === '-' ? -1 : 1;
+    const [x, y, z, w] = [0, 4, 8, 12].map(column => sign * matrix[column + axis]);
     const values = new Float32Array(positions.length / 3);
-    for (let i = 0; i < values.length; i++) values[i] = sign * positions[i * 3 + axis];
+    for (let i = 0; i < values.length; i++) values[i] = x * positions[i * 3] + y * positions[i * 3 + 1] + z * positions[i * 3 + 2] + w;
     return values;
+}
+
+// Indices of the points with finite xyz, or null when all are.
+export function finitePoints(positions) {
+    const keep = [];
+    for (let i = 0; i < positions.length / 3; i++) if (Number.isFinite(positions[i * 3] + positions[i * 3 + 1] + positions[i * 3 + 2])) keep.push(i);
+    return keep.length * 3 === positions.length ? null : keep;
 }

@@ -12,7 +12,7 @@ import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
-import { flatNormals, percentile, grown, colorize, heights } from './geometry.mjs';
+import { flatNormals, percentile, grown, colorize, colorRange, heights, finitePoints } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { loadStep as loadStepFile } from './step-load.mjs';
@@ -177,6 +177,13 @@ async function loadPcd(info) {
     const points = reader.finish();
     if (!points) {
         const geometry = new PCDLoader().parse((await fetchBytes()).buffer).geometry;
+        // A NaN point makes the bounding box, and with it the framing, NaN.
+        const keep = finitePoints(geometry.attributes.position.array);
+        if (keep) for (const [key, { array, itemSize, normalized }] of Object.entries(geometry.attributes)) {
+            const out = new array.constructor(keep.length * itemSize);
+            keep.forEach((i, k) => out.set(array.subarray(i * itemSize, (i + 1) * itemSize), k * itemSize));
+            geometry.setAttribute(key, new THREE.BufferAttribute(out, itemSize, normalized));
+        }
         geometry.userData.intensity = geometry.attributes.intensity?.array;
         return pointsOf(geometry);
     }

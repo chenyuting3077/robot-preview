@@ -59,3 +59,9 @@ test('reads integer intensity', () => {
     const points = readPcdPoints(new Uint8Array([...new TextEncoder().encode(head), ...new Uint8Array(body.buffer)]));
     assert.deepEqual([...points.intensity], [500, 65535]);
 });
+
+test('drops NaN points and leaves them out of the total', () => {
+    const points = readPcdPoints(binaryPcd(['x', 'y', 'z'], [[1, 2, 3], [NaN, NaN, NaN], [4, 5, 6]]));
+    assert.deepEqual([...points.positions], [1, 2, 3, 4, 5, 6]);
+    assert.equal(points.total, 2);
+});

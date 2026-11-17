@@ -8,7 +8,7 @@ import { TYPES, linearByteTable } from './geometry.mjs';
 // points it keeps an evenly spaced `limit` of them. Anything else (push
 // returns false, or finish returns null) goes to PCDLoader.
 export function pcdReader(limit = Infinity) {
-    let head = new Uint8Array(0), layout = null, failed = false, partial, filled = 0, row = 0, kept = 0, result;
+    let head = new Uint8Array(0), layout = null, failed = false, partial, filled = 0, row = 0, kept = 0, dropped = 0, missing = 0, result;
     function setup(text, data) {
         if (data[2] !== 'binary') return false;
         const field = key => new RegExp(`^${key}[ \\t]+(.*)$`, 'im').exec(text.slice(0, data.index).replace(/^#.*/gm, ''))?.[1].trim().split(/\s+/) ?? [];
@@ -36,12 +36,19 @@ export function pcdReader(limit = Infinity) {
     const table = linearByteTable();
     function readRow(view, at) {
         const { count, keep } = layout;
-        // Keeps exactly `keep` of `count` rows, evenly spaced (Bresenham).
-        if ((row++ * keep) % count >= keep || kept >= keep) return;
+        // Takes `keep` of `count` rows, evenly spaced (Bresenham). NaN rows (no return in an organized
+        // cloud) are dropped, so a cloud with them shows fewer than `keep`; `missing` counts them over
+        // every row, by x alone, for the total.
+        const sampled = (row++ * keep) % count < keep;
+        const x = view.getFloat32(at + layout.x, true);
+        if (Number.isNaN(x)) missing++;
+        if (!sampled || kept + dropped >= keep) return;
+        const y = view.getFloat32(at + layout.y, true), z = view.getFloat32(at + layout.z, true);
+        if (!Number.isFinite(x + y + z)) return void dropped++;
         const { positions, colors, intensity } = result;
-        positions[kept * 3] = view.getFloat32(at + layout.x, true);
-        positions[kept * 3 + 1] = view.getFloat32(at + layout.y, true);
-        positions[kept * 3 + 2] = view.getFloat32(at + layout.z, true);
+        positions[kept * 3] = x;
+        positions[kept * 3 + 1] = y;
+        positions[kept * 3 + 2] = z;
         if (colors) {
             colors[kept * 3] = table[view.getUint8(at + layout.rgb + 2)];
             colors[kept * 3 + 1] = table[view.getUint8(at + layout.rgb + 1)];
@@ -86,7 +93,11 @@ export function pcdReader(limit = Infinity) {
             return true;
         },
         // A short body means POINTS is wrong; PCDLoader decides what to show.
-        finish: () => (!failed && layout && row === layout.count && kept === layout.keep ? result : null)
+        finish() {
+            if (failed || !layout || row !== layout.count || kept + dropped !== layout.keep) return null;
+            const { positions, colors, intensity } = result;
+            return { total: layout.count - missing, positions: positions.subarray(0, kept * 3), colors: colors?.subarray(0, kept * 3) ?? null, intensity: intensity?.subarray(0, kept) ?? null };
+        }
     };
 }
 
