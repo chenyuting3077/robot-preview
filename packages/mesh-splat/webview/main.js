@@ -167,10 +167,14 @@ function withUp(object, up) {
     return object;
 }
 const loadGltf = async () => withUp((await new GLTFLoader().loadAsync(src)).scene, '+Y');
-// Past the limit an even sample shows; "Load detail in view" reads the file again for the points in the view.
-// ponytail: the detail is for the view at the click, one at a time, and costs a full re-read (5 s for 1.2 GB);
-// a Potree-style octree would follow the camera but needs a converted copy of the file.
+// ponytail: past the limit an even sample shows, and the detail in view is read for the view at the click,
+// one at a time, with a full re-read of the file (docs/mesh-splat.md).
 const POINT_LIMIT = 10_000_000;
+const cloudOf = points => {
+    const geometry = geometryFrom(points);
+    geometry.userData.intensity = points.intensity;
+    return pointsOf(geometry);
+};
 async function loadPcd(info) {
     const reader = pcdReader(POINT_LIMIT);
     for await (const chunk of transport.fileChunks()) if (!reader.push(chunk)) break;
@@ -186,15 +190,21 @@ async function loadPcd(info) {
         geometry.userData.intensity = geometry.attributes.intensity?.array;
         return pointsOf(geometry);
     }
-    const geometry = geometryFrom(points);
-    geometry.userData.intensity = points.intensity;
     info.pointsTotal = points.total;
-    const cloud = pointsOf(geometry);
-    if (points.total > geometry.attributes.position.count) {
+    const cloud = cloudOf(points);
+    if (points.total > cloud.geometry.attributes.position.count) {
         $('detail-btn').hidden = false;
         $('detail-btn').addEventListener('click', () => loadDetail(cloud, points.total));
     }
     return cloud;
+}
+
+// The extension re-renders the page after a save, and the new one loads the file, so that is no error.
+function showError(error) {
+    if (error?.name === 'FileChanged') return false;
+    $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
+    $('load-error').hidden = false;
+    return true;
 }
 
 let detail = null;
@@ -226,16 +236,11 @@ async function loadDetail(base, total) {
             detail.removeFromParent();
             detail.geometry.dispose();
         }
-        const geometry = geometryFrom(points);
-        geometry.userData.intensity = points.intensity;
-        detail = pointsOf(geometry);
+        detail = cloudOf(points);
         base.add(detail);
         cloudColors.add(detail);
     } catch (error) {
-        if (error?.name !== 'FileChanged') {
-            $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
-            $('load-error').hidden = false;
-        }
+        showError(error);
     } finally {
         $('detail-btn').disabled = false;
         $('loading-indicator').hidden = true;
@@ -261,7 +266,6 @@ async function loadUsd(info) {
 
 const loadStep = async info => {
     info.format = 'STEP';
-    // STEP declares no up axis; the AMR (Autodesk) export is Y-up, Z-up exports need the up menu.
     return withUp(await (await import('./step-load.mjs')).stepModel(cached, transport), '+Y');
 };
 
@@ -463,10 +467,8 @@ async function main() {
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
     } catch (error) {
-        // The extension re-renders the page after a save; the new one loads the file.
-        if (error?.name === 'FileChanged') return;
-        $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
-        $('load-error').hidden = false;
+        // A page whose file changed keeps showing that it loads.
+        if (!showError(error)) return;
     }
     $('loading-indicator').hidden = true;
 }
