@@ -61,6 +61,7 @@ function activate(context) {
             };
             // The cache arrives in pieces, each acknowledged before the next is sent, and goes straight to disk:
             // one 139 MB message was held by the workbench, the extension host and the main process at once.
+            // Each panel writes its own .part, so two editors of one file don't write over each other.
             let incoming = null;
             let reading = null;
             panel.onDidDispose(() => {
@@ -85,14 +86,15 @@ function activate(context) {
                     await incoming?.handle.close();
                     await fs.promises.mkdir(cacheDir.fsPath, { recursive: true });
                     const target = path.join(cacheDir.fsPath, message.key);
-                    incoming = { target, written: 0, handle: await fs.promises.open(`${target}.part`, 'w') };
+                    const part = `${target}.${crypto.randomBytes(4).toString('hex')}.part`;
+                    incoming = { target, part, written: 0, handle: await fs.promises.open(part, 'w') };
                 }
                 if (!incoming || message.at !== incoming.written) throw new Error('cache piece out of order');
                 await incoming.handle.write(chunk, 0, chunk.length, message.at);
                 incoming.written += chunk.length;
                 panel.webview.postMessage({ type: 'stepCacheAck' });
                 if (incoming.written < message.size) return;
-                const { target, handle } = incoming;
+                const { target, part, handle } = incoming;
                 incoming = null;
                 await handle.close();
                 const prefix = path.basename(target).split('-')[0];
@@ -100,7 +102,7 @@ function activate(context) {
                     const full = path.join(cacheDir.fsPath, file);
                     if (file.startsWith(`${prefix}-`) && !file.endsWith('.part') && full !== target) await fs.promises.rm(full, { force: true });
                 }
-                await fs.promises.rename(`${target}.part`, target);
+                await fs.promises.rename(part, target);
                 // Oldest first until the folder fits; the 39 MB AMR caches as 85 MB.
                 const files = await Promise.all((await fs.promises.readdir(cacheDir.fsPath)).map(async file => {
                     const full = path.join(cacheDir.fsPath, file);
