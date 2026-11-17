@@ -1,3 +1,46 @@
+diff --git a/cdt/src/lib.rs b/cdt/src/lib.rs
+index 80b5479..0921689 100644
+--- a/cdt/src/lib.rs
++++ b/cdt/src/lib.rs
+@@ -98,6 +98,10 @@ pub enum Error {
+     /// This indicates a logic error in the crate, but it happens occasionally
+     #[error("escaped wedge when searching fixed edge")]
+     WedgeEscape,
++
++    /// Nearly collinear points broke a hull invariant while inserting a point
++    #[error("degenerate points broke the hull")]
++    Degenerate,
+ }
+ 
+ ////////////////////////////////////////////////////////////////////////////////
+diff --git a/cdt/src/triangulate.rs b/cdt/src/triangulate.rs
+index 55a7601..c684f16 100644
+--- a/cdt/src/triangulate.rs
++++ b/cdt/src/triangulate.rs
+@@ -587,8 +587,10 @@ impl Triangulation {
+             h_ap
+         } else {
+             let f = self.half.insert(b, a, p, EMPTY_EDGE, EMPTY_EDGE, e_ab);
+-            assert!(o != 0.0);
+-            assert!(o > 0.0);
++            // A panic aborts the whole WASM instance; the caller skips the face instead.
++            if !(o > 0.0) {
++                return Err(Error::Degenerate);
++            }
+ 
+             // Replaces the previous item in the hull
+             self.hull.update(h_ab, self.half.prev(f));
+@@ -619,7 +621,9 @@ impl Triangulation {
+                 let h_ca = self.hull.right_hull(h_ab);
+                 let e_ca = self.hull.edge(h_ca);
+                 let edge_ca = self.half.edge(e_ca);
+-                assert!(a == edge_ca.dst);
++                if a != edge_ca.dst {
++                    return Err(Error::Degenerate);
++                }
+                 let c = edge_ca.src;
+                 let g = self.half.insert(a, c, p,
+                     EMPTY_EDGE, self.half.next(f), e_ca);
 diff --git a/nurbs/src/sampled_curve.rs b/nurbs/src/sampled_curve.rs
 index 8b1583e..2cb7528 100644
 --- a/nurbs/src/sampled_curve.rs
