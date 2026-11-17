@@ -5,11 +5,9 @@ const crypto = require('crypto');
 const CACHE_LIMIT = 1 << 30;
 const READ_PIECE = 16 << 20;
 
-// `keys` maps each cache file name a page of this editor was rendered with to the file's prefix, shared by
-// every cache of the same STEP file. The cache arrives in pieces, each acknowledged before the next is sent, and goes straight to disk: one
-// 139 MB message was held by the workbench, the extension host and the main process at once. Each editor
-// writes its own .part, so two editors of one file don't write over each other. Every piece gets an ack,
-// carrying the error when it was refused or could not be written, so the page never waits forever.
+// `keys` maps each cache file name this editor's pages were rendered with to that STEP file's prefix.
+// Pieces go straight to disk because one 139 MB message was held by the workbench, the extension host and
+// the main process at once; each editor writes its own .part so two editors of one file don't collide.
 function cacheWriter(dir, keys, post) {
     let incoming = null;
     let queue = Promise.resolve();

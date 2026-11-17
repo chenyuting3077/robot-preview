@@ -39,7 +39,6 @@ const JOBS = {
     }
 };
 
-// One job per worker: a Rust panic aborts the foxtrot instance, so the caller starts a fresh worker each time.
 self.onmessage = async ({ data }) => {
     try {
         const job = Object.hasOwn(JOBS, data.job) && JOBS[data.job];

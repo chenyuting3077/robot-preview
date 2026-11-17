@@ -13,8 +13,8 @@ import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
 // kills the whole WASM instance) or yields no triangles (it skips shapes it does not know). Both run in a
 // worker so the view keeps turning meanwhile.
 
-// One job per worker, which is terminated once it answers. `workers` collects it, so a caller can stop the
-// rest when one fails.
+// A fresh worker per job: a Rust panic aborts foxtrot's instance, and WASM memory only goes back when the
+// worker does. `workers` lets a caller stop the rest when one fails.
 // ponytail: a worker that dies without an error event (none seen yet) is only caught by the timeout, which
 // must also outlast a slow OpenCascade run; report its progress from the worker if 30 minutes ever bites.
 const WORKER_TIMEOUT = 30 * 60e3;
