@@ -53,25 +53,3 @@ export function groupByColor(colors, indices) {
     }
     return { indices: sorted, groups };
 }
-
-export function mergeMeshes(meshes) {
-    if (meshes.length === 1) return meshes[0];
-    const concat = (key, Type) => {
-        const out = new Type(meshes.reduce((n, mesh) => n + mesh[key].length, 0));
-        let at = 0;
-        for (const mesh of meshes) {
-            out.set(mesh[key], at);
-            at += mesh[key].length;
-        }
-        return out;
-    };
-    const indices = concat('indices', Uint32Array);
-    let at = 0;
-    let base = 0;
-    for (const mesh of meshes) {
-        for (let i = 0; i < mesh.indices.length; i++) indices[at + i] += base;
-        at += mesh.indices.length;
-        base += mesh.positions.length / 3;
-    }
-    return { positions: concat('positions', Float32Array), normals: concat('normals', Float32Array), colors: concat('colors', Float32Array), indices };
-}

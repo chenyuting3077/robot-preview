@@ -34,11 +34,3 @@ test('groupByColor sorts triangles into one group per face color', async () => {
     assert.deepEqual(groups, [{ color: [1, 0, 0], start: 0, count: 6 }, { color: [0, 0, 1], start: 6, count: 3 }]);
     assert.equal(groupByColor(colors, indices.subarray(0, 3)).indices.length, 3);
 });
-
-test('mergeMeshes offsets each share by the vertices before it', async () => {
-    const { mergeMeshes } = await import('../../packages/mesh-splat/webview/step.mjs');
-    const share = n => ({ positions: new Float32Array(9).fill(n), normals: new Float32Array(9), colors: new Float32Array(9), indices: new Uint32Array([0, 1, 2]) });
-    const merged = mergeMeshes([share(1), share(2)]);
-    assert.deepEqual([...merged.indices], [0, 1, 2, 3, 4, 5]);
-    assert.deepEqual([...merged.positions.subarray(8, 10)], [1, 2]);
-});

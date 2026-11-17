@@ -79,6 +79,17 @@ export function init_log() {
 }
 
 /**
+ * Room for the file inside WASM memory: the caller writes the bytes there and can then free its own
+ * copy before `step_to_mesh_input` runs, which `step_to_mesh(Vec<u8>)` cannot allow.
+ * @param {number} len
+ * @returns {number}
+ */
+export function reserve_input(len) {
+    const ret = wasm.reserve_input(len);
+    return ret >>> 0;
+}
+
+/**
  * @param {Uint8Array | number[]} data
  * @param {number} part
  * @param {number} parts
@@ -90,6 +101,16 @@ export function step_to_mesh(data, part, parts) {
     const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.step_to_mesh(ptr0, len0, val2, val3);
+    return StepMesh.__wrap(ret);
+}
+
+/**
+ * @param {number} part
+ * @param {number} parts
+ * @returns {StepMesh}
+ */
+export function step_to_mesh_input(part, parts) {
+    const ret = wasm.step_to_mesh_input(part, parts);
     return StepMesh.__wrap(ret);
 }
 

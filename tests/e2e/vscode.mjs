@@ -42,7 +42,7 @@ let sampling = true;
     while (sampling) {
         for (const [pid, p] of procs()) {
             const grew = p.rss - (base.get(pid)?.rss ?? 0);
-            if (grew > (growth.get(pid)?.grew ?? -Infinity)) growth.set(pid, { grew, type: p.type });
+            if (grew > (growth.get(pid)?.grew ?? -Infinity)) growth.set(pid, { grew, type: p.type, at: (Date.now() - start) / 1000 });
         }
         const total = [...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024;
         if (total > LIMIT_MB) { console.log(`over ${LIMIT_MB} MB, killed`); await killAll(); process.exit(3); }
@@ -108,7 +108,7 @@ if (process.env.SHOT) {
     if (shot?.data) (await import('node:fs')).writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
     else console.error('screenshot failed');
 }
-const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, 3).map(g => `${g.type} +${Math.round(g.grew / 1024)} MB`);
+const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, 3).map(g => `${g.type} +${Math.round(g.grew / 1024)} MB at ${g.at.toFixed(1)} s`);
 console.log(JSON.stringify({ file: file.split('/').pop(), shown, fps, error: s?.error || undefined, info: s?.info, grewMostMB: top,
     totalGrowthMB: Math.round([...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024) }));
 await killAll();

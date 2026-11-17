@@ -3520,12 +3520,61 @@ index d55f36f..5b73063 100644
              "VERTEX_LOOP" => VertexLoop_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexLoop(v))),
              "VERTEX_POINT" => VertexPoint_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexPoint(v))),
 diff --git a/step/src/step_file.rs b/step/src/step_file.rs
-index 404dfcc..ef9414c 100644
+index 404dfcc..01ecd0d 100644
 --- a/step/src/step_file.rs
 +++ b/step/src/step_file.rs
-@@ -25,40 +25,50 @@ impl<'a> StepFile<'a> {
+@@ -1,64 +1,103 @@
+-use memchr::{memchr, memchr2, memchr_iter};
++use memchr::{memchr, memchr2, memchr_iter, memmem};
++use std::sync::OnceLock;
+ use log::warn;
+ 
+-#[cfg(feature = "rayon")]
+-use rayon::prelude::*;
+-
+ use crate::{
+     ap214::Entity,
+     id::Id,
+     parse::{parse_entity_decl, parse_entity_fallback},
+ };
+ 
++/// Entities are parsed on first use: a worker that triangulates part of the faces then holds only the
++/// entities those faces reach, instead of every entity in the file (each worker parses its own copy).
+ #[derive(Debug)]
+-pub struct StepFile<'a>(pub Vec<Entity<'a>>);
++pub struct StepFile<'a> {
++    blocks: Vec<&'a [u8]>,
++    cells: Vec<OnceLock<Box<Entity<'a>>>>,
++}
+ impl<'a> StepFile<'a> {
+-    /// Parses a STEP file from a raw array of bytes
++    /// Indexes a STEP file from a raw array of bytes
+     /// `data` must be preprocessed by [`strip_flatten`] first
+     pub fn parse(data: &'a [u8]) -> Self {
+-        let blocks = Self::into_blocks(&data);
+-        let data_start = blocks.iter()
++        let all = Self::into_blocks(&data);
++        let data_start = all.iter()
+             .position(|b| b == b"DATA;")
+             .unwrap_or(0) + 1;
+-        let data_end = blocks.iter()
++        let data_end = all.iter()
+             .skip(data_start)
              .position(|b| b == b"ENDSEC;")
              .unwrap_or(0) + data_start;
++        let mut blocks: Vec<&[u8]> = Vec::new();
++        for b in &all[data_start..data_end] {
++            if let Some(id) = entity_id(b) {
++                if id >= blocks.len() {
++                    blocks.resize(id + 1, &[]);
++                }
++                blocks[id] = b;
++            }
++        }
++        drop(all);
++        let cells = (0..blocks.len()).map(|_| OnceLock::new()).collect();
++        Self { blocks, cells }
++    }
  
 -        // Parse every block, accumulating a Vec of Results.  We parse in
 -        // single-threaded mode in WASM builds, because there's no thread
@@ -3537,86 +3586,125 @@ index 404dfcc..ef9414c 100644
 -            #[cfg(not(feature = "rayon"))]
 -            { block_slice.iter() }
 -        };
--
++    pub fn len(&self) -> usize {
++        self.blocks.len()
++    }
+ 
 -        let parsed: Vec<(usize, Entity)> = block_iter
 -            .filter_map(|b| parse_entity_decl(*b)
--                .or_else(|e| {
--                    warn!("Failed to parse {}: {:?}",
--                        std::str::from_utf8(b).unwrap_or("[INVALID UTF-8]"),
++    /// The entity with this id, parsed now if it was not yet.
++    pub fn get(&self, id: usize) -> &Entity<'a> {
++        self.cells[id].get_or_init(|| {
++            let b = self.blocks[id];
++            if b.is_empty() {
++                return Box::new(Entity::_EmptySlot);
++            }
++            Box::new(parse_entity_decl(b)
+                 .or_else(|e| {
+                     warn!("Failed to parse {}: {:?}",
+                         std::str::from_utf8(b).unwrap_or("[INVALID UTF-8]"),
 -                              e);
 -                    parse_entity_fallback(*b)
--                })
++                        e);
++                    parse_entity_fallback(b)
+                 })
 -                .ok())
 -            .map(|b| b.1)
 -            .collect();
--
++                .map(|b| b.1 .1)
++                .unwrap_or(Entity::_EmptySlot))
++        })
++    }
+ 
 -        // Awkward construction because `Entity` is not `Clone`
 -        let max_id = parsed.iter().map(|b| b.0).max().unwrap_or(0);
 -        let mut out: Vec<Entity> = (0..=max_id)
 -            .map(|_| Entity::_EmptySlot)
 -            .collect();
--
++    /// The entities whose text mentions any of `keywords`, parsed. STEP keywords are upper case, and
++    /// an entity's own type is always in its text, so filtering the result by type finds them all.
++    pub fn scan<'s>(&'s self, keywords: &'s [&[u8]]) -> impl Iterator<Item = (usize, &'s Entity<'a>)> + 's {
++        self.blocks.iter().enumerate()
++            .filter(move |(_, b)| keywords.iter().any(|k| memmem::find(b, k).is_some()))
++            .map(move |(i, _)| (i, self.get(i)))
++    }
+ 
 -        for p in parsed.into_iter() {
 -            out[p.0] = p.1;
-+        let block_slice = &blocks[data_start..data_end];
-+        let parse = |b: &&'a [u8]| parse_entity_decl(*b)
-+            .or_else(|e| {
-+                warn!("Failed to parse {}: {:?}",
-+                    std::str::from_utf8(b).unwrap_or("[INVALID UTF-8]"),
-+                          e);
-+                parse_entity_fallback(*b)
-+            })
-+            .ok()
-+            .map(|b| b.1);
-+
-+        // Single-threaded (WASM) builds write each entity straight into its slot: collecting
-+        // them first held a second 272-byte copy of every entity, and WASM memory never shrinks.
-+        #[cfg(not(feature = "rayon"))]
-+        {
-+            let max_id = block_slice.iter().filter_map(|b| entity_id(b)).max().unwrap_or(0);
-+            let mut out: Vec<Entity> = (0..=max_id).map(|_| Entity::_EmptySlot).collect();
-+            for (id, entity) in block_slice.iter().filter_map(parse) {
-+                if id >= out.len() {
-+                    out.resize_with(id + 1, || Entity::_EmptySlot);
++    /// [`strip_flatten`] in place: the output is never longer than the input, so it is written over
++    /// it, and the file is in memory once instead of twice.
++    pub fn strip_flatten_in_place(mut data: Vec<u8>) -> Vec<u8> {
++        let mut out = 0;
++        let mut i = 0;
++        while i < data.len() {
++            match data[i] {
++                // Same output as `strip_flatten`, quirks included: a lone '/' is dropped, and the '*' of
++                // "/*" may also close the comment.
++                b'/' => if i + 1 < data.len() && data[i + 1] == b'*' {
++                    if let Some(k) = memmem::find(&data[i + 1..], b"*/") {
++                        i += k + 3;
++                        continue;
++                    }
 +                }
-+                out[id] = entity;
++                c if c.is_ascii_whitespace() => (),
++                c => {
++                    data[out] = c;
++                    out += 1;
++                }
 +            }
-+            Self(out)
++            i += 1;
          }
- 
+-
 -        Self(out)
-+        #[cfg(feature = "rayon")]
-+        {
-+            let parsed: Vec<(usize, Entity)> = block_slice.par_iter()
-+                .filter_map(parse)
-+                .collect();
-+
-+            // Awkward construction because `Entity` is not `Clone`
-+            let max_id = parsed.iter().map(|b| b.0).max().unwrap_or(0);
-+            let mut out: Vec<Entity> = (0..=max_id)
-+                .map(|_| Entity::_EmptySlot)
-+                .collect();
-+
-+            for p in parsed.into_iter() {
-+                out[p.0] = p.1;
-+            }
-+
-+            Self(out)
-+        }
++        data.truncate(out);
++        data.shrink_to_fit();
++        data
      }
  
      /// Flattens a STEP file, removing comments and whitespace
-@@ -123,3 +133,11 @@ impl<'a, T> std::ops::Index<Id<T>> for StepFile<'a> {
+@@ -107,8 +146,11 @@ impl<'a> StepFile<'a> {
+         blocks
+     }
+ 
+-    pub fn entity<T: FromEntity<'a>>(&'a self, i: Id<T>) -> Option<&'a T> {
+-        T::try_from_entity(&self.0[i.0])
++    /// Any borrow `'s` of the file will do: the lazily filled cells make `StepFile` invariant in
++    /// `'a`, so tying the borrow to `'a` would stop callers from shortening it.
++    pub fn entity<'s, T: FromEntity<'s>>(&'s self, i: Id<T>) -> Option<&'s T> where 'a: 's {
++        let e: &'s Entity<'s> = self.get(i.0);
++        T::try_from_entity(e)
+     }
+ }
+ 
+@@ -116,10 +158,28 @@ impl<'a, T> std::ops::Index<Id<T>> for StepFile<'a> {
+     type Output = Entity<'a>;
+ 
+     fn index(&self, id: Id<T>) -> &Self::Output {
+-        &self.0[id.0]
++        self.get(id.0)
+     }
+ }
+ 
  pub trait FromEntity<'a> {
      fn try_from_entity(e: &'a Entity<'a>) -> Option<&'a Self>;
  }
 +
 +/// The id of a `#123=...` block, without parsing the entity.
-+#[cfg(not(feature = "rayon"))]
 +fn entity_id(block: &[u8]) -> Option<usize> {
 +    let digits = block.strip_prefix(b"#")?;
 +    let end = digits.iter().position(|c| !c.is_ascii_digit())?;
 +    std::str::from_utf8(&digits[..end]).ok()?.parse().ok()
++}
++
++#[cfg(test)]
++mod flatten_tests {
++    use super::StepFile;
++    #[test]
++    fn in_place_matches_copy() {
++        for case in [&b"#1=A(1, 2) ;\n/* c */#2=B('x/y');"[..], b"/*/a", b"a/*b", b"/", b"x/*y*/z/* */", b""] {
++            assert_eq!(StepFile::strip_flatten_in_place(case.to_vec()), StepFile::strip_flatten(case), "{:?}", std::str::from_utf8(case));
++        }
++    }
 +}
 diff --git a/triangulate/src/surface.rs b/triangulate/src/surface.rs
 index 7e00a09..d0bef87 100644
@@ -3756,10 +3844,10 @@ index 7e00a09..d0bef87 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..ac9d46c 100644
+index ad4ba6e..3857c0b 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
-@@ -23,6 +23,11 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
+@@ -23,14 +23,19 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
  const SAVE_DEBUG_SVGS: bool = false;
  const SAVE_PANIC_SVGS: bool = false;
  
@@ -3771,11 +3859,22 @@ index ad4ba6e..ac9d46c 100644
  /// `TransformStack` is a mapping of representations to transformed children.
  type TransformStack<'a> =
      HashMap<Representation<'a>, Vec<(Representation<'a>, DMat4)>>;
+ fn build_transform_stack<'a>(s: &'a StepFile, flip: bool) -> TransformStack<'a> {
+     // Store a map of parent -> (child, transform)
+     let mut transform_stack: HashMap<_, Vec<_>> = HashMap::new();
+-    for r in s.0.iter()
+-        .filter_map(|e|
++    for r in s.scan(&[b"REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION"])
++        .filter_map(|(_, e)|
+             RepresentationRelationshipWithTransformation_::try_from_entity(e))
+     {
+         let (a, b) = if flip {
 @@ -64,18 +69,29 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
  }
  
  pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
 -    let styled_items: Vec<_> = s.0.iter()
+-        .filter_map(|e| MechanicalDesignGeometricPresentationRepresentation_::try_from_entity(e))
 +    triangulate_part(s, 0, 1)
 +}
 +
@@ -3784,8 +3883,8 @@ index ad4ba6e..ac9d46c 100644
 +pub fn triangulate_part(s: &StepFile, part: usize, parts: usize) -> (Mesh, Stats) {
 +    // Face colors usually come as OVER_RIDING_STYLED_ITEMs on top of the
 +    // solid's STYLED_ITEM.
-+    let styled_items: Vec<(&Vec<PresentationStyleAssignment>, RepresentationItem)> = s.0.iter()
-         .filter_map(|e| MechanicalDesignGeometricPresentationRepresentation_::try_from_entity(e))
++    let styled_items: Vec<(&Vec<PresentationStyleAssignment>, RepresentationItem)> = s.scan(&[b"MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"])
++        .filter_map(|(_, e)| MechanicalDesignGeometricPresentationRepresentation_::try_from_entity(e))
          .flat_map(|m| m.items.iter())
 -        .filter_map(|item| s.entity(item.cast::<StyledItem_>()))
 +        .filter_map(|item| s.entity(item.cast::<StyledItem_>())
@@ -3808,6 +3907,17 @@ index ad4ba6e..ac9d46c 100644
              })
          .collect();
  
+@@ -101,8 +117,8 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+     // Store a map of ShapeRepresentationRelationships, which some models
+     // use to map from axes to specific instances
+     let mut shape_rep_relationship: HashMap<Id<_>, Vec<Id<_>>> = HashMap::new();
+-    for (r1, r2) in s.0.iter()
+-        .filter_map(|e| ShapeRepresentationRelationship_::try_from_entity(e))
++    for (r1, r2) in s.scan(&[b"SHAPE_REPRESENTATION_RELATIONSHIP"])
++        .filter_map(|(_, e)| ShapeRepresentationRelationship_::try_from_entity(e))
+         .map(|e| (e.rep_1, e.rep_2))
+     {
+         shape_rep_relationship.entry(r1).or_default().push(r2);
 @@ -124,7 +140,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                  Entity::AdvancedBrepShapeRepresentation(b) => &b.items,
                  Entity::ShapeRepresentation(b) => &b.items,
@@ -3821,7 +3931,17 @@ index ad4ba6e..ac9d46c 100644
              };
  
              for m in items.iter() {
-@@ -169,18 +189,19 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -142,8 +162,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+     // If there are items in breps that aren't attached to a transformation
+     // chain, then draw them individually (with an identity matrix)
+     if to_mesh.is_empty() {
+-        s.0.iter()
+-            .enumerate()
++        s.scan(&[b"MANIFOLD_SOLID_BREP", b"BREP_WITH_VOIDS", b"SHELL_BASED_SURFACE_MODEL"])
+             .filter(|(_i, e)|
+                 match e {
+                     Entity::ManifoldSolidBrep(_)
+@@ -169,18 +188,19 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
  
              // Fold operation
              |(mut mesh, mut stats), (id, mats)| {
@@ -3844,7 +3964,7 @@ index ad4ba6e..ac9d46c 100644
                      _ => {
                          warn!("Skipping {:?} (not a known solid)", s[*id]);
                          return (mesh, stats);
-@@ -189,9 +210,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -189,9 +209,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
  
                  // Pick out a color from the color map and apply it to each
                  // newly-created vertex
@@ -3858,7 +3978,7 @@ index ad4ba6e..ac9d46c 100644
  
                  // Build copies of the mesh by copying and applying transforms
                  let v_end = mesh.verts.len();
-@@ -205,6 +229,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -205,6 +228,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                          let n = mesh.verts[v].norm;
                          let norm = (mat * glm::vec3_to_vec4(&n)).xyz();
  
@@ -3866,7 +3986,7 @@ index ad4ba6e..ac9d46c 100644
                          mesh.verts.push(mesh::Vertex { pos, norm, color });
                      }
                      let offset = mesh.verts.len() - v_end;
-@@ -226,7 +251,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -226,7 +250,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                      let n = mesh.verts[v].norm;
                      mesh.verts[v].norm = (mat * glm::vec3_to_vec4(&n)).xyz();
  
@@ -3875,7 +3995,7 @@ index ad4ba6e..ac9d46c 100644
                  }
                  (mesh, stats)
              });
-@@ -320,44 +345,67 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
+@@ -320,44 +344,67 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
  fn axis2_placement_3d(s: &StepFile, t: Id<Axis2Placement3d_>) -> (DVec3, DVec3, DVec3) {
      let a = s.entity(t).expect("Could not get Axis2Placement3d");
      let location = cartesian_point(s, a.location);
@@ -3959,7 +4079,7 @@ index ad4ba6e..ac9d46c 100644
                   stats: &mut Stats) -> Result<(), Error>
  {
      let face = s.entity(f).expect("Could not get AdvancedFace");
-@@ -497,6 +545,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -497,6 +544,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
@@ -3970,7 +4090,7 @@ index ad4ba6e..ac9d46c 100644
      Ok(())
  }
  
-@@ -609,6 +661,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -609,6 +660,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
@@ -3988,7 +4108,7 @@ index ad4ba6e..ac9d46c 100644
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,6 +679,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,6 +678,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
@@ -4037,10 +4157,10 @@ index ad4ba6e..ac9d46c 100644
      row.iter().map(|p| cartesian_point(s, *p)).collect()
  }
 diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
-index 0e65527..93a7704 100644
+index 0e65527..cb773a3 100644
 --- a/wasm/src/lib.rs
 +++ b/wasm/src/lib.rs
-@@ -52,3 +52,53 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
+@@ -52,3 +52,72 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
          .map(|f| *f as f32)
          .collect()
  }
@@ -4069,6 +4189,26 @@ index 0e65527..93a7704 100644
 +    pub fn failed(&self) -> usize { self.failed }
 +}
 +
++thread_local! {
++    static INPUT: std::cell::RefCell<Vec<u8>> = std::cell::RefCell::new(Vec::new());
++}
++
++/// Room for the file inside WASM memory: the caller writes the bytes there and can then free its own
++/// copy before `step_to_mesh_input` runs, which `step_to_mesh(Vec<u8>)` cannot allow.
++#[wasm_bindgen]
++pub fn reserve_input(len: usize) -> *mut u8 {
++    INPUT.with(|input| {
++        let mut input = input.borrow_mut();
++        *input = vec![0; len];
++        input.as_mut_ptr()
++    })
++}
++
++#[wasm_bindgen]
++pub fn step_to_mesh_input(part: usize, parts: usize) -> StepMesh {
++    step_to_mesh(INPUT.with(|input| std::mem::take(&mut *input.borrow_mut())), part, parts)
++}
++
 +#[wasm_bindgen]
 +pub fn step_to_mesh(data: Vec<u8>, part: usize, parts: usize) -> StepMesh {
 +    use step::step_file::StepFile;
@@ -4076,8 +4216,7 @@ index 0e65527..93a7704 100644
 +
 +    // Owned and freed as soon as possible: WASM memory never shrinks, so every copy alive at
 +    // the same time raises the worker's memory for good.
-+    let flat = StepFile::strip_flatten(&data);
-+    drop(data);
++    let flat = StepFile::strip_flatten_in_place(data);
 +    let step = StepFile::parse(&flat);
 +    let (mesh, stats) = triangulate_part(&step, part, parts.max(1));
 +    drop(step);
