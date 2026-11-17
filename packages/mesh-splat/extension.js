@@ -45,8 +45,12 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache) {
 // carrying the error when it was refused or could not be written, so the page never waits forever.
 function cacheWriter(dir, keys, post) {
     let incoming = null;
+    // An abandoned write takes its .part along, or it would count against the cache until the trim.
     const drop = () => {
-        incoming?.handle.close().catch(() => {});
+        if (incoming) {
+            const { handle, part } = incoming;
+            handle.close().catch(() => {}).then(() => fs.promises.rm(part, { force: true }));
+        }
         incoming = null;
     };
     const receive = async message => {
