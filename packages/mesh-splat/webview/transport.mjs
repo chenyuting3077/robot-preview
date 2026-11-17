@@ -46,7 +46,7 @@ export function createTransport({ vscodeApi, src, fileSize, cacheKey }) {
         }
     }
 
-    // Sized from the stat the page was rendered with; a save mid-read re-renders the page anyway.
+    // A save mid-read re-renders the page; until then a size other than the rendered one is an error.
     async function readAll() {
         const out = new Uint8Array(Number(fileSize));
         let at = 0;
@@ -55,7 +55,8 @@ export function createTransport({ vscodeApi, src, fileSize, cacheKey }) {
             out.set(chunk, at);
             at += chunk.length;
         }
-        return out.subarray(0, at);
+        if (at !== out.length) throw new Error('the file changed while it was read');
+        return out;
     }
 
     async function sendCache(bytes) {
