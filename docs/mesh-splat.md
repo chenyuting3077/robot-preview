@@ -39,14 +39,14 @@ foxtrot (Rust, patched) tessellates; OpenCascade (`occt-import-js`, rebuilt at `
 | AMR, 39 MB | 59.3 s, +2.78 GB | 3.0–3.3 s, +1.15–1.20 GB | 1.2 s, +0.61–0.63 GB |
 | Assembly, 161 MB | no triangles after 116 s | 15.9–17.2 s, +1.91–2.12 GB | 1.3–1.4 s, +0.67–0.72 GB |
 
-- foxtrot used to leave faces as holes (Respeaker 3, 719E 6, EEP500T 20, AMR 117 of 18,255). Patched, it fills all but 2 of the AMR's: a bound that crosses itself once lowered to 2D is triangulated without constraints and kept by the even-odd rule, and closed B-splines, trimmed curves, swept circles and a non-converging UV search no longer fail their face. The Respeaker's surface area went from 70% of OpenCascade's to 99.7%. The extra triangles cost the 161 MB file 15.9–17.2 s against 13.9–14.2 s and the AMR 3.0–3.3 s against 2.9–3.1 s; the others are unchanged (3 runs each, interleaved).
+- Upstream foxtrot leaves faces as holes (Respeaker 3, 719E 6, EEP500T 20, AMR 117 of 18,255); the patched one leaves 2 of the AMR's. A bound that crosses itself once lowered to 2D is triangulated without constraints and kept by the even-odd rule; closed B-splines, trimmed curves, swept circles and a non-converging UV search are handled. The Respeaker's surface area is 99.7% of OpenCascade's, against 70% upstream. The extra triangles cost the 161 MB file 15.9–17.2 s against 13.9–14.2 s and the AMR 3.0–3.3 s against 2.9–3.1 s; the others are unchanged (3 runs each, interleaved).
 - OpenCascade is rebuilt at `-O3` (12.1 MB of WASM against 7.6 MB) from the shipped `-Oz`: the AMR in 55–59 s against 80–82 s, EEP500T in 17.8 s against 20.1–20.2 s, with the same faces.
 - foxtrot runs up to 4 workers, each parsing the whole file, fewer for big files so their memory stays under 1.5 GB. One worker against that: EEP500T 3.9–4.0 s against 2.4 s, the AMR 5.9–6.0 s against 2.9–3.1 s, the 161 MB file 24.1–24.2 s against 14.0–14.1 s for 0.2–0.3 GB less memory.
 - Memory peaks the second before the first frame, while every worker is alive, and WASM memory never shrinks, so each worker packs a solid into f32 and drops the entities it parsed for it as soon as the solid is built, instead of holding the whole model in f64 vertices (72 bytes each) and every entity until the end: the 161 MB first open grows the webview by 1.33–1.39 GB against 1.55–1.58 GB (all processes 1.90–2.10 GB against 2.17–2.29 GB), the AMR's by 0.71–0.76 GB against 0.93–1.02 GB, at the same speed (3 runs each, interleaved).
 - The cache is meshopt buffers, not glTF: 25.6 MB against 139 MB as GLB for the 161 MB assembly, and glTF's meshopt extension would have meant writing its accessors by hand for no reader but ours.
-- truck (`truck-stepio` 0.3.0) is no replacement: EEP500T took 8.7 s native against foxtrot's 2.9 s in one WASM worker (Node), the 161 MB file went past 6 GB, and it drops assembly placements.
+- truck (`truck-stepio` 0.3.0) is no replacement: it drops assembly placements, and was slower than foxtrot and ran out of memory on the 161 MB file outside VS Code.
 - STEP has no up axis; it starts `+Y` because the AMR (Autodesk) is Y-up.
-- foxtrot's WASM is built with unwinding (nightly `-Zbuild-std`, `vendor/build.sh`), so a panic skips its face instead of aborting the file, as the release build's `panic=abort` std did.
+- foxtrot's WASM is built with unwinding (nightly `-Zbuild-std`, `vendor/build.sh`), so a panic skips its face; stable Rust's WASM std only aborts, which loses the whole file to OpenCascade.
 
 ## Not supported
 
