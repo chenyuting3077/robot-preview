@@ -52,11 +52,18 @@ test('reads the opened file in pieces on request', async () => {
     const replies = [];
     const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => replies.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
-    await panel.listener({ type: 'read', at: 0 });
-    await panel.listener({ type: 'read', at: 6 });
-    await panel.listener({ type: 'read', at: -1 });
+    await panel.listener({ type: 'read', id: 1, at: 0 });
+    await panel.listener({ type: 'read', id: 1, at: 6 });
+    await panel.listener({ type: 'read', id: 1, at: -1 });
+    // A second read runs on its own handle; after readDone the first one has none.
+    await panel.listener({ type: 'read', id: 2, at: 2 });
+    await panel.listener({ type: 'readDone', id: 1 });
+    await panel.listener({ type: 'read', id: 1, at: 2 });
     assert.equal(new TextDecoder().decode(replies[0].chunk), 'abcdef');
     assert.equal(replies[1].chunk.length, 0);
     assert.ok(replies[2].error);
+    assert.ok(replies[3].error, 'a read that never started at 0 has no handle');
+    assert.equal(replies[4].error, 'read not open');
+    assert.deepEqual(replies.map(r => r.id), [1, 1, 1, 2, 1]);
     fs.rmSync(root, { recursive: true, force: true });
 });

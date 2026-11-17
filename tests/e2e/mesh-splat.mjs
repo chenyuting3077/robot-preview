@@ -116,7 +116,7 @@ ws.addEventListener('message', ({ data }) => {
     if (m.method === 'Runtime.exceptionThrown') console.error('exception:', m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
 });
 await send('Runtime.enable');
-await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ postMessage: message => { if (message.type === 'stepCache') { (window.__cache ||= []).push(message); window.postMessage({ type: 'stepCacheAck' }, '*'); } else if (message.type === 'read') window.postMessage({ type: 'readReply', at: message.at, error: 'no extension' }, '*'); else window.__posted = message; } }); window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
+await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ postMessage: message => { if (message.type === 'stepCache') { (window.__cache ||= []).push(message); window.postMessage({ type: 'stepCacheAck' }, '*'); } else if (message.type === 'read') window.postMessage({ type: 'readReply', id: message.id, at: message.at, error: 'no extension' }, '*'); else if (message.type !== 'readDone') window.__posted = message; } }); window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
 const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];

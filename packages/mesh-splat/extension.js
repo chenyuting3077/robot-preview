@@ -101,25 +101,31 @@ async function trimCache(dir, keep) {
 }
 
 // VS Code hands a webview a fetched resource only once all of it is in memory (a 1.2 GB PCD grew the
-// webview by 1.6 GB before parsing), so big files are read here and sent in pieces on request.
+// webview by 1.6 GB before parsing), so big files are read here and sent in pieces on request. Each read
+// has its own id and handle, closed when the page says it is done or with the editor: closing at the end
+// of the file could fail a piece before it that is still being read, since pieces are read concurrently.
 function fileReader(file, post) {
-    let reading = null;
-    const close = () => reading?.then(handle => handle.close(), () => {});
-    const read = async at => {
+    const handles = new Map();
+    const close = id => {
+        handles.get(id)?.then(handle => handle.close(), () => {});
+        handles.delete(id);
+    };
+    const read = async (id, at) => {
         try {
             if (!Number.isSafeInteger(at) || at < 0) throw new Error('bad offset');
             if (at === 0) {
-                close();
-                reading = fs.promises.open(file, 'r');
+                close(id);
+                handles.set(id, fs.promises.open(file, 'r'));
             }
+            if (!handles.has(id)) throw new Error('read not open');
             const buffer = new Uint8Array(READ_PIECE);
-            const { bytesRead } = await (await reading).read(buffer, 0, READ_PIECE, at);
-            post({ type: 'readReply', at, chunk: bytesRead < READ_PIECE ? buffer.slice(0, bytesRead) : buffer });
+            const { bytesRead } = await (await handles.get(id)).read(buffer, 0, READ_PIECE, at);
+            post({ type: 'readReply', id, at, chunk: bytesRead < READ_PIECE ? buffer.slice(0, bytesRead) : buffer });
         } catch (error) {
-            post({ type: 'readReply', at, error: String(error?.message ?? error) });
+            post({ type: 'readReply', id, at, error: String(error?.message ?? error) });
         }
     };
-    return { read, dispose: close };
+    return { read, done: close, dispose: () => [...handles.keys()].forEach(close) };
 }
 
 function activate(context) {
@@ -146,7 +152,8 @@ function activate(context) {
             const writer = cacheWriter(cacheDir?.fsPath, keys, post);
             const reader = fileReader(document.uri.fsPath, post);
             panel.webview.onDidReceiveMessage(message => {
-                if (message?.type === 'read') return reader.read(message.at);
+                if (message?.type === 'read') return reader.read(message.id, message.at);
+                if (message?.type === 'readDone') return reader.done(message.id);
                 if (message?.type === 'stepCache') return writer.receive(message);
             });
             panel.onDidDispose(() => {

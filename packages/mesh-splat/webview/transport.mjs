@@ -8,27 +8,34 @@ export const PIECE = 16 << 20; // READ_PIECE in extension.js
 export function createTransport({ vscodeApi, src, fileSize, cacheKey }) {
     const replies = new Map();
     let cacheAck = null;
+    let reads = 0;
     window.addEventListener('message', ({ data }) => {
         if (data?.type === 'stepCacheAck') cacheAck?.(data);
-        if (data?.type === 'readReply') replies.get(data.at)?.(data);
+        if (data?.type === 'readReply') replies.get(`${data.id}:${data.at}`)?.(data);
     });
 
+    // Each read has its own id, so replies of an abandoned read never answer a later one.
     // Three pieces in flight keep the transfer busy while one is parsed.
     async function* fileChunks() {
+        const id = ++reads;
         const request = at => new Promise(resolve => {
-            replies.set(at, resolve);
-            vscodeApi.postMessage({ type: 'read', at });
-        }).finally(() => replies.delete(at));
+            replies.set(`${id}:${at}`, resolve);
+            vscodeApi.postMessage({ type: 'read', id, at });
+        }).finally(() => replies.delete(`${id}:${at}`));
         if (vscodeApi) {
             const ahead = [0, 1, 2].map(i => request(i * PIECE));
-            for (let at = 0; ; at += PIECE) {
-                const { chunk, error } = await ahead.shift();
-                if (error && at === 0) break;
-                if (error) throw new Error(error);
-                if (!chunk.byteLength) return;
-                ahead.push(request(at + 3 * PIECE));
-                yield new Uint8Array(chunk.buffer ?? chunk, chunk.byteOffset ?? 0, chunk.byteLength);
-                if (chunk.byteLength < PIECE) return;
+            try {
+                for (let at = 0; ; at += PIECE) {
+                    const { chunk, error } = await ahead.shift();
+                    if (error && at === 0) break;
+                    if (error) throw new Error(error);
+                    if (!chunk.byteLength) return;
+                    ahead.push(request(at + 3 * PIECE));
+                    yield new Uint8Array(chunk.buffer ?? chunk, chunk.byteOffset ?? 0, chunk.byteLength);
+                    if (chunk.byteLength < PIECE) return;
+                }
+            } finally {
+                vscodeApi.postMessage({ type: 'readDone', id });
             }
         }
         const stream = (await fetch(src)).body.getReader();
