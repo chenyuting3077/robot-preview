@@ -4,6 +4,7 @@ const crypto = require('crypto');
 
 const CACHE_LIMIT = 1 << 30;
 const READ_PIECE = 16 << 20;
+const messageOf = error => String(error?.message ?? error);
 
 // `keys` maps each cache file name this editor's pages were rendered with to that STEP file's prefix.
 // Pieces go straight to disk because one 139 MB message was held by the workbench, the extension host and
@@ -51,7 +52,7 @@ function cacheWriter(dir, keys, post) {
             () => post({ type: 'stepCacheAck', key: message.key, at: message.at }),
             error => {
                 drop();
-                post({ type: 'stepCacheAck', key: message.key, at: message.at, error: String(error?.message ?? error) });
+                post({ type: 'stepCacheAck', key: message.key, at: message.at, error: messageOf(error) });
             }))),
         dispose: drop
     };
@@ -98,7 +99,7 @@ function fileReader(file, post) {
             const { bytesRead } = await (await handles.get(id)).read(buffer, 0, READ_PIECE, at);
             post({ type: 'readReply', id, at, chunk: bytesRead < READ_PIECE ? buffer.slice(0, bytesRead) : buffer });
         } catch (error) {
-            post({ type: 'readReply', id, at, error: String(error?.message ?? error) });
+            post({ type: 'readReply', id, at, error: messageOf(error) });
         }
     };
     return { read, done: close, dispose: () => [...handles.keys()].forEach(close) };
