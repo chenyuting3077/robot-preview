@@ -40,7 +40,8 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache) {
         .replace('<body>', `<body ${Object.entries(data).map(([key, value]) => `data-${key}="${escapeAttr(value)}"`).join(' ')}>`);
 }
 
-// The cache arrives in pieces, each acknowledged before the next is sent, and goes straight to disk: one
+// `keys` maps each cache file name a page of this editor was rendered with to the file's prefix, shared by
+// every cache of the same STEP file. The cache arrives in pieces, each acknowledged before the next is sent, and goes straight to disk: one
 // 139 MB message was held by the workbench, the extension host and the main process at once. Each editor
 // writes its own .part, so two editors of one file don't write over each other. Every piece gets an ack,
 // carrying the error when it was refused or could not be written, so the page never waits forever.
@@ -62,17 +63,16 @@ function cacheWriter(dir, keys, post) {
             await fs.promises.mkdir(dir, { recursive: true });
             const target = path.join(dir, message.key);
             const part = `${target}.${crypto.randomBytes(4).toString('hex')}.part`;
-            incoming = { target, part, written: 0, size: message.size, handle: await fs.promises.open(part, 'w') };
+            incoming = { target, part, prefix: keys.get(message.key), written: 0, size: message.size, handle: await fs.promises.open(part, 'w') };
         }
         if (!incoming || message.at !== incoming.written) throw new Error('cache piece out of order');
         if (message.size !== incoming.size || message.at + chunk.length > message.size) throw new Error('cache piece past its size');
         await incoming.handle.write(chunk, 0, chunk.length, message.at);
         incoming.written += chunk.length;
         if (incoming.written < message.size) return;
-        const { target, part, handle } = incoming;
+        const { target, part, prefix, handle } = incoming;
         incoming = null;
         await handle.close();
-        const prefix = path.basename(target).split('-')[0];
         for (const file of await fs.promises.readdir(dir)) {
             const full = path.join(dir, file);
             if (file.startsWith(`${prefix}-`) && !file.endsWith('.part') && full !== target) await fs.promises.rm(full, { force: true });
@@ -148,11 +148,11 @@ function activate(context) {
             panel.webview.options = { enableScripts: true, localResourceRoots: [distUri, dir, ...(folder ? [folder] : []), ...(cacheDir ? [cacheDir] : [])] };
             // The page names the cache key it was rendered with: a save during tessellation re-renders with a
             // new key, and the old page's model must not be filed under it.
-            const keys = new Set();
+            const keys = new Map();
             const render = async () => {
                 const stat = await vscode.workspace.fs.stat(document.uri);
                 const cache = stepCache(cacheDir, document.uri, stat, manifest.version);
-                if (cache) keys.add(path.basename(cache.uri.fsPath));
+                if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
                 panel.webview.html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
             };
             const post = message => panel.webview.postMessage(message);
