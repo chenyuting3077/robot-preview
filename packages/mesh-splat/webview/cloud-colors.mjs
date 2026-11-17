@@ -1,10 +1,7 @@
 import * as THREE from 'three';
 import { colorize, colorRange } from './color.mjs';
 import { heights } from './geometry.mjs';
-
-export const hasColor = geometry => Boolean(geometry.attributes.color);
-// Points without colors of their own.
-export const POINT_GREY = 0x9aa7b8;
+import { hasColor, POINT_GREY } from './materials.mjs';
 
 // The Original / Height / Intensity buttons of the Display menu, over every point cloud under `root`.
 export function createCloudColors({ root, upAxis }) {

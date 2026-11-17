@@ -13,7 +13,8 @@ import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
 import { flatNormals, percentile, grown } from './geometry.mjs';
-import { createCloudColors, hasColor, POINT_GREY } from './cloud-colors.mjs';
+import { createCloudColors } from './cloud-colors.mjs';
+import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { loadStep as loadStepFile } from './step-load.mjs';
@@ -100,9 +101,7 @@ function float32Attributes(geometry) {
 function meshOf(geometry) {
     float32Attributes(geometry);
     if (!geometry.attributes.normal) geometry.computeVertexNormals();
-    return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
-        color: hasColor(geometry) ? 0xffffff : 0xb0b0b0, vertexColors: hasColor(geometry), roughness: 0.8, side: THREE.DoubleSide
-    }));
+    return new THREE.Mesh(geometry, surfaceMaterial(hasColor(geometry) ? [1, 1, 1] : MESH_GREY, { vertexColors: hasColor(geometry) }));
 }
 
 let pointSize = 2;

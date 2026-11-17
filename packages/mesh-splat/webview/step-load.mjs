@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { MeshoptDecoder } from 'meshoptimizer/decoder';
 import { decodeStepCache } from './step-cache.mjs';
 import { groupByFace, stepLengthUnit } from './step.mjs';
+import { MESH_GREY, surfaceMaterial } from './materials.mjs';
 import StepWorker from './step-worker.js?worker&inline';
 import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
 import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
@@ -69,7 +70,7 @@ const occtJob = async bytes => {
 const stepMaterials = new Map();
 const stepMaterial = color => {
     const key = color.join();
-    if (!stepMaterials.has(key)) stepMaterials.set(key, new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...color, THREE.SRGBColorSpace), roughness: 0.8, side: THREE.DoubleSide, userData: { srgb: color } }));
+    if (!stepMaterials.has(key)) stepMaterials.set(key, surfaceMaterial(color, { userData: { srgb: color } }));
     return stepMaterials.get(key);
 };
 
@@ -97,7 +98,7 @@ function foxtrotObject(parts, unit) {
 function occtObject({ meshes }) {
     const group = new THREE.Group();
     for (const mesh of meshes) {
-        const { indices, groups } = groupByFace(mesh.indices, mesh.faces, mesh.color ?? [0.69, 0.69, 0.69]);
+        const { indices, groups } = groupByFace(mesh.indices, mesh.faces, mesh.color ?? MESH_GREY);
         group.add(stepMesh({ name: mesh.name, positions: mesh.positions, normalAttribute: mesh.normals && new THREE.BufferAttribute(mesh.normals, 3), indices, groups }));
     }
     return group;
