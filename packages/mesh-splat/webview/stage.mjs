@@ -1,4 +1,3 @@
-import { SplatMesh } from '@sparkjsdev/spark';
 
 const $ = id => document.getElementById(id);
 const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -6,7 +5,7 @@ const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 
 export function buildStage(group) {
     document.querySelector('.stage-head span:last-child').innerHTML = EYE;
-    const prims = object => object.children.filter(child => !(child instanceof SplatMesh));
+    const prims = object => object.children.filter(child => !child.userData.splat);
     const expanded = new Set();
     const render = () => {
         const rows = [];

@@ -10,7 +10,6 @@ import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js';
 import { VRMLLoader } from 'three/examples/jsm/loaders/VRMLLoader.js';
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
-import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
 import { flatNormals, percentile, grown } from './geometry.mjs';
 import { createCloudColors } from './cloud-colors.mjs';
@@ -131,10 +130,14 @@ async function loadObj() {
     return loader.parse(text);
 }
 
+// Spark is 2.4 MB of inlined WASM, loaded only when a splat opens; splats are marked so code that only
+// needs to recognise them never imports it.
 let sparkRenderer = null;
 async function loadSplat(bytes, info, fileName = name) {
+    const { SparkRenderer, SplatMesh } = await import('@sparkjsdev/spark');
     if (!sparkRenderer) root.add(sparkRenderer = new SparkRenderer({ renderer }));
     const splat = new SplatMesh({ fileBytes: bytes, fileName });
+    splat.userData.splat = true;
     await splat.initialized;
     info.format ??= t('gaussian');
     info.splats = (info.splats ?? 0) + (splat.packedSplats?.numSplats ?? splat.numSplats);
@@ -270,7 +273,7 @@ function boxOf(object) {
     const box = new THREE.Box3();
     object.updateWorldMatrix(true, true);
     object.traverseVisible(child => {
-        if (child instanceof SplatMesh) box.union(splatBox(child));
+        if (child.userData.splat) box.union(splatBox(child));
         else if (child.isMesh || child.isPoints) box.expandByObject(child);
     });
     return box;
