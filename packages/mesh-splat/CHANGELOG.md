@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- STEP (`.stp` `.step`) opens as meshes with part and face colors; a 39 MB assembly in 3.0 s, a 161 MB one in 14–15 s with about 2 GB of memory, and an unchanged file again in about 1 s.
-- Large point clouds: PCD (binary, ASCII and `binary_compressed`) streams from the extension, past 10M points an even 10M are shown, and NaN points are dropped. A 1.2 GB map opens in about 5 s; 0.2.0 could not open it.
+- STEP (`.stp` `.step`) opens as meshes with part and face colors; a 39 MB assembly in about 3 s, a 161 MB one in 16–17 s with about 2 GB of memory, and an unchanged file again in about 1 s.
+- Large point clouds: PCD (binary, ASCII and `binary_compressed`) streams from the extension, past 10M points an even 10M are shown and "Load detail in view" (Display menu) reads the points in view, and NaN points are dropped. A 1.2 GB map opens in about 5 s; 0.2.0 could not open it.
 - Point clouds color by original color, height or intensity (Display menu).
 - Binary PLY meshes load directly into typed arrays (181 MB: 1.8 s; 0.2.0 ran out of memory), and double-precision PLY renders.
 
