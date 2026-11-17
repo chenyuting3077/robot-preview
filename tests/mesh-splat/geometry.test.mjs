@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
-import { flatNormals, percentile, colorize, colorRange, heights } from '../../packages/mesh-splat/webview/geometry.mjs';
+import { flatNormals, percentile, heights } from '../../packages/mesh-splat/webview/geometry.mjs';
+import { colorize, colorRange } from '../../packages/mesh-splat/webview/color.mjs';
 
 test('flatNormals equals computeVertexNormals on non-indexed triangles', () => {
     const positions = new Float32Array(Array.from({ length: 9 * 500 }, () => Math.random() * 10 - 5));

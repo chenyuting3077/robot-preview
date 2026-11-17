@@ -1,4 +1,5 @@
-import { TYPES, linearByteTable } from './geometry.mjs';
+import { linearByteTable } from './color.mjs';
+import { TYPES } from './ply.mjs';
 
 // PCDLoader pushes every field of every point into plain arrays; a 1.2 GB
 // binary cloud (38.9M points, x y z intensity normal curvature) runs the

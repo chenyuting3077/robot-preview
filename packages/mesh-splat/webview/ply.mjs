@@ -1,4 +1,14 @@
-import { TYPES, linearByte, linearByteTable, writeFace } from './geometry.mjs';
+import { linearByte, linearByteTable } from './color.mjs';
+import { writeFace } from './geometry.mjs';
+
+// Binary property types by PLY name (`float`, `uchar`, ...) and by size (`float32`, `uint8`, ...).
+export const TYPES = {};
+for (const [names, ArrayType, getter] of [
+    [['char', 'int8'], Int8Array, 'getInt8'], [['uchar', 'uint8'], Uint8Array, 'getUint8'],
+    [['short', 'int16'], Int16Array, 'getInt16'], [['ushort', 'uint16'], Uint16Array, 'getUint16'],
+    [['int', 'int32'], Int32Array, 'getInt32'], [['uint', 'uint32'], Uint32Array, 'getUint32'],
+    [['float', 'float32'], Float32Array, 'getFloat32'], [['double', 'float64'], Float64Array, 'getFloat64']
+]) for (const name of names) TYPES[name] = { ArrayType, getter, size: ArrayType.BYTES_PER_ELEMENT, float: getter.startsWith('getFloat') };
 
 const FLAT_SCALE = Math.log(1e-6);
 const END_HEADER = [...'end_header'].map(c => c.charCodeAt(0));

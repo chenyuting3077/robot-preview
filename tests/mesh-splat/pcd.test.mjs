@@ -8,7 +8,7 @@ function readPcdPoints(bytes, limit) {
     const reader = pcdReader(limit);
     return reader.push(bytes) ? reader.finish() : null;
 }
-import { linearByteTable } from '../../packages/mesh-splat/webview/geometry.mjs';
+import { linearByteTable } from '../../packages/mesh-splat/webview/color.mjs';
 
 function binaryPcd(fields, rows, points = rows.length) {
     const head = `# .PCD v0.7\nVERSION 0.7\nFIELDS ${fields.join(' ')}\nSIZE ${fields.map(() => 4).join(' ')}\nTYPE ${fields.map(f => (f === 'rgb' ? 'U' : 'F')).join(' ')}\nCOUNT ${fields.map(() => 1).join(' ')}\nWIDTH ${points}\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS ${points}\nDATA binary\n`;

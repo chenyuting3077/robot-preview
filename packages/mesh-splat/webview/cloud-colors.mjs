@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { colorize, colorRange, heights } from './geometry.mjs';
+import { colorize, colorRange } from './color.mjs';
+import { heights } from './geometry.mjs';
 
 export const hasColor = geometry => Boolean(geometry.attributes.color);
 // Points without colors of their own.
