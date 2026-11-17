@@ -502,3 +502,41 @@ pub extern "C" fn run() -> *const u32 {
         result.as_ptr()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dae(input: &str, primitive: &str) -> String {
+        format!(r##"<?xml version="1.0"?><COLLADA><library_geometries><geometry id="g"><mesh>
+<source id="p"><float_array id="pa" count="12">0 0 0 1 0 0 1 1 0 0 1 0</float_array><technique_common><accessor source="#pa" count="4" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source>
+<vertices id="v"><input semantic="POSITION" source="#p"/></vertices>
+{input}{primitive}</mesh></geometry></library_geometries></COLLADA>"##)
+    }
+
+    #[test]
+    fn triangles_become_floats_and_leave_the_xml() {
+        let out = convert(dae("", r##"<triangles count="2"><input semantic="VERTEX" source="#v" offset="0"/><p>0 1 2 0 2 3</p></triangles>"##).as_bytes()).ok().unwrap();
+        // Non-indexed, as ColladaLoader builds it: one position per corner.
+        assert_eq!(out.floats, [0., 0., 0., 1., 0., 0., 1., 1., 0., 0., 0., 0., 1., 1., 0., 0., 1., 0.]);
+        assert_eq!(out.json, r#"[{"id":"g","types":[{"type":"triangles","groups":[[0,6]],"attributes":[["position",0,18,3]]}]}]"#);
+        let xml = String::from_utf8(out.xml).unwrap();
+        assert!(!xml.contains("1 1 0") && !xml.contains("0 2 3"), "numbers stay in the XML: {xml}");
+        assert!(xml.contains(r#"<geometry id="g">"#));
+    }
+
+    #[test]
+    fn a_quad_polylist_splits_like_colladaloader() {
+        let out = convert(dae("", r##"<polylist count="1"><input semantic="VERTEX" source="#v" offset="0"/><vcount>4</vcount><p>0 1 2 3</p></polylist>"##).as_bytes()).ok().unwrap();
+        // (a, b, d) and (b, c, d), ColladaLoader's split of a quad.
+        assert_eq!(out.floats, [0., 0., 0., 1., 0., 0., 0., 1., 0., 1., 0., 0., 1., 1., 0., 0., 1., 0.]);
+    }
+
+    #[test]
+    fn vertex_colors_and_broken_xml_are_left_to_colladaloader() {
+        let colors = dae(r##"<source id="c"><float_array id="ca" count="3">1 0 0</float_array><technique_common><accessor source="#ca" count="1" stride="3"/></technique_common></source>"##,
+            r##"<triangles count="1"><input semantic="VERTEX" source="#v" offset="0"/><input semantic="COLOR" source="#c" offset="0"/><p>0 1 2</p></triangles>"##);
+        assert_eq!(convert(colors.as_bytes()).err(), Some(UNSUPPORTED));
+        assert!(convert(b"<COLLADA><library_geometries><geometry").is_err());
+    }
+}
