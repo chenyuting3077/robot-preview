@@ -137,3 +137,28 @@ test('a save that renames a new file over the old one re-renders with a new cach
     assert.notEqual(panel.webview.html.match(/data-key="([^"]+)"/)[1], before);
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('a rebuilt tessellator changes the cache key, and an extension without one still renders', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-build-'));
+    const pkg = new URL('../../packages/mesh-splat/', import.meta.url).pathname;
+    fs.mkdirSync(path.join(root, 'dist'));
+    for (const file of ['extension.js', 'io.js', 'package.json']) fs.copyFileSync(path.join(pkg, file), path.join(root, file));
+    fs.copyFileSync(path.join(pkg, 'dist/index.html'), path.join(root, 'dist/index.html'));
+    const step = path.join(root, 'part.stp');
+    fs.writeFileSync(step, 'ISO-10303-21;');
+    const keyOf = async () => {
+        const env = loadExtension({ workspace: root, extension: path.join(root, 'extension.js'), globalStorage: path.join(root, 'storage') });
+        env.activate();
+        const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage() {}, onDidReceiveMessage() {} }, onDidDispose() {} };
+        await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+        return panel.webview.html.match(/data-key="([^"]+)"/)[1];
+    };
+    const without = await keyOf();
+    fs.writeFileSync(path.join(root, 'dist/foxtrot_bg.wasm'), 'a');
+    fs.writeFileSync(path.join(root, 'dist/occt-import-js.wasm'), 'b');
+    const built = await keyOf();
+    fs.writeFileSync(path.join(root, 'dist/foxtrot_bg.wasm'), 'c');
+    const rebuilt = await keyOf();
+    assert.equal(new Set([without, built, rebuilt]).size, 3);
+    fs.rmSync(root, { recursive: true, force: true });
+});
