@@ -248,11 +248,13 @@ async function loadUsd(info) {
 // The worker gets the WASM bytes, not its URL, so it does not depend on a fetch from a blob: worker
 // reaching the webview's service worker, which serves extension files in VS Code.
 // `give` hands the worker `bytes` itself, leaving it empty here, instead of a copy.
-async function stepJob(engine, bytes, part = 0, parts = 1, give = false) {
+// `workers` collects each worker, so a caller can stop the rest when one fails.
+async function stepJob(engine, bytes, part = 0, parts = 1, give = false, workers = []) {
     const copy = give ? bytes : bytes.slice();
     const wasm = await fetch(new URL(engine === 'foxtrot' ? foxtrotWasm : occtWasm, document.baseURI)).then(response => response.arrayBuffer());
     return new Promise((resolve, reject) => {
         const worker = new StepWorker();
+        workers.push(worker);
         worker.onmessage = ({ data }) => {
             worker.terminate();
             if (data.error) reject(new Error(data.error));
@@ -270,8 +272,14 @@ async function stepJob(engine, bytes, part = 0, parts = 1, give = false) {
 // the file in memory (161 MB file: +1.25 GB), so big files get fewer; AMR 5.0 s -> 2.2 s with 4 in Node.
 async function foxtrotJob(bytes) {
     const parts = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1, 1 + Math.floor(1.5e9 / (8 * bytes.length))));
+    const workers = [];
     // One mesh per worker: merging them would hold every array twice at the memory peak.
-    return Promise.all(Array.from({ length: parts }, (_, part) => stepJob('foxtrot', bytes, part, parts, part === parts - 1)));
+    // When one fails OpenCascade runs next, so the others must not keep their memory meanwhile.
+    return Promise.all(Array.from({ length: parts }, (_, part) => stepJob('foxtrot', bytes, part, parts, part === parts - 1, workers)))
+        .catch(error => {
+            workers.forEach(worker => worker.terminate());
+            throw error;
+        });
 }
 
 const stepMaterials = new Map();
