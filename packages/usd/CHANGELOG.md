@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - Triangle and quad meshes triangulate into typed arrays: in VS Code a 177 MB, 3.4M-triangle usdc opens in 2.18-2.32 s against 2.40-3.84 s with 0.2.0.
 
