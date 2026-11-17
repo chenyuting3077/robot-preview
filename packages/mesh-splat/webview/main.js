@@ -453,6 +453,8 @@ async function main() {
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
     } catch (error) {
+        // The extension re-renders the page after a save; the new one loads the file.
+        if (error?.name === 'FileChanged') return;
         $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
         $('load-error').hidden = false;
     }

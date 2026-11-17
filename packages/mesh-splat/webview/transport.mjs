@@ -46,16 +46,18 @@ export function createTransport({ vscodeApi, src, fileSize, cacheKey }) {
         }
     }
 
-    // A save mid-read re-renders the page; until then a size other than the rendered one is an error.
+    // A size other than the rendered one means a save mid-read, which re-renders the page; the page
+    // keeps showing that it is loading instead of an error (see main.js).
+    const changed = () => Object.assign(new Error('the file changed while it was read'), { name: 'FileChanged' });
     async function readAll() {
         const out = new Uint8Array(Number(fileSize));
         let at = 0;
         for await (const chunk of fileChunks()) {
-            if (at + chunk.length > out.length) throw new Error('the file changed while it was read');
+            if (at + chunk.length > out.length) throw changed();
             out.set(chunk, at);
             at += chunk.length;
         }
-        if (at !== out.length) throw new Error('the file changed while it was read');
+        if (at !== out.length) throw changed();
         return out;
     }
 
