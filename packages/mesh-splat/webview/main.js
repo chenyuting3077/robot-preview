@@ -245,8 +245,9 @@ async function loadUsd(info) {
     return withUp(group, upAxis === 'Y' ? '+Y' : '+Z');
 }
 
-// STEP is B-rep and needs a CAD kernel to tessellate. foxtrot (Rust) shows a 39 MB assembly in 7.5 s but
-// skips under 1% of faces, left as small holes; OpenCascade (C++) gets every face but takes minutes on
+// STEP is B-rep and needs a CAD kernel to tessellate.
+// ponytail: foxtrot skips under 1% of faces, left as small holes; fix foxtrot's surface cases, or run
+// OpenCascade on the skipped faces only, if a model needs them. foxtrot shows a 39 MB assembly in 7.5 s; OpenCascade (C++) gets every face but takes minutes on
 // large assemblies, so it runs only when the length unit is unclear or foxtrot aborts (a Rust panic kills
 // the whole WASM instance) or yields no triangles (it skips shapes it does not know). Both run in a worker so the view keeps turning meanwhile.
 // The worker gets the WASM bytes, not its URL, so it does not depend on a fetch from a blob: worker
@@ -272,8 +273,8 @@ async function stepJob(engine, bytes, part = 0, parts = 1, give = false, workers
     });
 }
 
-// Each worker parses the whole file and triangulates every parts-th face. A worker costs about 8x
-// the file in memory (161 MB file: +1.25 GB), so big files get fewer; AMR 5.0 s -> 2.2 s with 4 in Node.
+// Each worker parses the whole file and triangulates every parts-th face. A worker peaks at about 3.3x
+// the file (161 MB file: 512 MB); budgeting 8x keeps that file at two workers. AMR 5.0 s -> 2.2 s with 4 in Node.
 async function foxtrotJob(bytes) {
     const parts = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1, 1 + Math.floor(1.5e9 / (8 * bytes.length))));
     const workers = [];
@@ -389,8 +390,8 @@ function cachedObject(bytes) {
     return group;
 }
 
-// One 16 MB piece at a time, each acknowledged by the extension, so the workbench and the extension host
-// never hold the whole GLB.
+// One piece at a time, each acknowledged by the extension, so the workbench and the extension host
+// never hold the whole cache file.
 let cacheAck = null;
 window.addEventListener('message', ({ data }) => {
     if (data?.type === 'stepCacheAck') cacheAck?.(data);

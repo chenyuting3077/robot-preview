@@ -25,7 +25,7 @@ export function stepLengthUnit(text) {
 }
 
 // foxtrot colors every vertex of a face alike, so triangles regroup by their first vertex's 8-bit sRGB color
-// and draw one material per color; a per-vertex color attribute would be a quarter of the cached GLB.
+// and draw one material per color instead of carrying a per-vertex color attribute.
 export function groupByColor(colors, indices) {
     const triangles = indices.length / 3;
     const keys = new Uint32Array(triangles);

@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const escapeAttr = text => String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
 // Tessellating a STEP assembly takes seconds (foxtrot) to minutes (OpenCascade), so the webview sends back
-// its tessellation as GLB and later opens of the same file (path, mtime, size, extension version) load that instead.
+// its tessellation (meshopt-encoded, see webview/step-cache.mjs) and later opens of the same file (path, mtime, size, extension version) load that instead.
 const CACHE_LIMIT = 1 << 30;
 const READ_PIECE = 16 << 20;
 
