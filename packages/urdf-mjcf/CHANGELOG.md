@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Large DAE meshes load about 3x faster: their geometry is parsed in WebAssembly (16 MB RealSense `d435.dae`: 202 -> 63 ms; the whole camera preview 1.2 -> 0.8 s).
+- Large DAE meshes load faster: their geometry is parsed in WebAssembly. In VS Code the RealSense camera preview (16 MB `d435.dae`) opens in 1.98-2.07 s against 2.14-2.38 s with 0.4.4.
 
 ## 0.4.4
 
