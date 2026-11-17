@@ -1,7 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PCDLoader } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/PCDLoader.js';
-import { readPcdPoints, pcdReader, dropNaNPoints } from '../../packages/mesh-splat/webview/pcd.mjs';
+import { pcdReader, dropNaNPoints } from '../../packages/mesh-splat/webview/pcd.mjs';
+
+// The whole file as one chunk.
+function readPcdPoints(bytes, limit) {
+    const reader = pcdReader(limit);
+    return reader.push(bytes) ? reader.finish() : null;
+}
 import { linearByteTable } from '../../packages/mesh-splat/webview/geometry.mjs';
 
 function binaryPcd(fields, rows, points = rows.length) {

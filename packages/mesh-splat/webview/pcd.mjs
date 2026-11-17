@@ -127,8 +127,3 @@ export function pcdReader(limit = Infinity) {
         }
     };
 }
-
-export function readPcdPoints(bytes, limit) {
-    const reader = pcdReader(limit);
-    return reader.push(bytes) ? reader.finish() : null;
-}
