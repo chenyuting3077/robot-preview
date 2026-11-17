@@ -218,8 +218,8 @@ export function readPlyPoints(bytes, header) {
     return points;
 }
 
-// Binary meshes whose faces hold only the index list, read like readPlyPoints: PLYLoader pushed a
-// 181 MB, 4.5M-face mesh through plain arrays in 1.79 s. Faces other than triangles and quads are
+// Binary meshes whose faces hold only the index list, read like readPlyPoints: PLYLoader takes 1.79 s
+// to push a 181 MB, 4.5M-face mesh through plain arrays (Node 22). Faces other than triangles and quads are
 // dropped and quads split 0-1-2 / 0-2-3, as PLYLoader does; anything else returns null for PLYLoader.
 export function readPlyMesh(bytes, header) {
     const [vertex, face, ...others] = header.elements;
