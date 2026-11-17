@@ -33,3 +33,10 @@ test('colorize spans turbo over the 2-98th percentile and clamps outliers', () =
 test('heights reads the signed up axis', () => {
     assert.deepEqual([...heights(new Float32Array([1, 2, 3, 4, 5, 6]), '-Y')], [-2, -5]);
 });
+
+test('colorize leaves NaN out of the range', () => {
+    const values = Float32Array.from({ length: 50 }, (_, i) => (i % 2 ? NaN : i));
+    const colors = colorize(values);
+    assert.deepEqual([...colors.subarray(3, 6)], [...colors.subarray(0, 3)]);
+    assert.notDeepEqual([...colors.subarray(0, 3)], [...colors.subarray(48 * 3, 49 * 3)]);
+});

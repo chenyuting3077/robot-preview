@@ -81,8 +81,9 @@ function turbo() {
 
 // Per-point turbo colors over the 2nd-98th percentile, so a few outliers don't
 // squash the rest into one color.
+// Non-finite values (NaN points of an organized cloud) get the lowest color and stay out of the range.
 export function colorize(values, colors = new Uint8Array(values.length * 3)) {
-    const sorted = values.slice();
+    const sorted = values.filter(Number.isFinite);
     const low = percentile(sorted, 0.02), high = percentile(sorted, 0.98);
     const scale = 255 / (high - low || 1);
     const table = turbo();
