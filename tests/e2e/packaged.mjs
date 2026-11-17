@@ -11,6 +11,7 @@ import { loadExtension, fakePanel } from '../extension/vscode-mock.mjs';
 const packages = new URL('../../packages/', import.meta.url).pathname;
 const required = { 'mesh-splat': ['dist/foxtrot_bg.wasm', 'dist/occt-import-js.wasm', 'dist/step-load.js', 'dist/spark.module.js'], usd: ['dist/usd.js', 'dist/stage.js', 'dist/spark.module.js'], 'urdf-mjcf': [] };
 // Strings found only in code that main.js must import lazily: Spark (2.4 MB) and the STEP loader.
+// ponytail: a renamed class or reworded error message makes its check pass silently; pick a new marker then.
 const lazy = { PackedSplats: 'Spark', 'neither foxtrot nor OpenCascade': 'the STEP loader' };
 let failed = 0;
 const check = (ok, what) => {
