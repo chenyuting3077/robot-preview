@@ -11,7 +11,7 @@ export function createTransport({ vscodeApi, src, fileSize, cacheKey, piece }) {
     let cacheAck = null;
     let reads = 0;
     window.addEventListener('message', ({ data }) => {
-        if (data?.type === 'stepCacheAck') cacheAck?.(data);
+        if (data?.type === 'stepCacheAck' && data.key === cacheKey) cacheAck?.(data);
         if (data?.type === 'readReply') replies.get(`${data.id}:${data.at}`)?.(data);
     });
 
@@ -75,7 +75,8 @@ export function createTransport({ vscodeApi, src, fileSize, cacheKey, piece }) {
 
     async function sendCache(bytes) {
         for (let at = 0; at < bytes.byteLength; at += PIECE) {
-            const acked = new Promise(resolve => { cacheAck = resolve; });
+            // An ack is for this page's key and this piece; one left over from a replaced page is not.
+            const acked = new Promise(resolve => { cacheAck = ack => ack.at === at && resolve(ack); });
             vscodeApi.postMessage({ type: 'stepCache', key: cacheKey, at, size: bytes.byteLength, chunk: bytes.slice(at, at + PIECE) });
             const { error } = await acked;
             if (error) return console.warn('STEP cache not written:', error);

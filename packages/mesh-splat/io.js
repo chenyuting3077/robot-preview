@@ -12,6 +12,7 @@ const READ_PIECE = 16 << 20;
 // carrying the error when it was refused or could not be written, so the page never waits forever.
 function cacheWriter(dir, keys, post) {
     let incoming = null;
+    let queue = Promise.resolve();
     // An abandoned write takes its .part along, or it would count against the cache until the trim.
     const drop = () => {
         if (incoming) {
@@ -46,10 +47,14 @@ function cacheWriter(dir, keys, post) {
         await trimCache(dir, target);
     };
     return {
-        receive: message => receive(message).then(() => post({ type: 'stepCacheAck' }), error => {
-            drop();
-            post({ type: 'stepCacheAck', error: String(error?.message ?? error) });
-        }),
+        // One piece at a time: a new page's first piece would otherwise drop the old page's write while a
+        // piece of it is still being written, and that write's failure would then drop the new one.
+        receive: message => (queue = queue.then(() => receive(message).then(
+            () => post({ type: 'stepCacheAck', key: message.key, at: message.at }),
+            error => {
+                drop();
+                post({ type: 'stepCacheAck', key: message.key, at: message.at, error: String(error?.message ?? error) });
+            }))),
         dispose: drop
     };
 }

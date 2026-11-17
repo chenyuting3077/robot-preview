@@ -13,7 +13,7 @@ function fakeExtension(file, piece, { failAt } = {}) {
             if (message.type === 'readDone') return seen.done.push(message.id);
             if (message.type === 'stepCache') {
                 seen.cache.push(message);
-                return setTimeout(() => deliver({ type: 'stepCacheAck', ...(message.at > 0 ? { error: 'disk full' } : {}) }));
+                return setTimeout(() => deliver({ type: 'stepCacheAck', key: message.key, at: message.at, ...(message.at > 0 ? { error: 'disk full' } : {}) }));
             }
             if (message.type !== 'read') return;
             seen.most = Math.max(seen.most, ++seen.inFlight);
@@ -81,4 +81,21 @@ test('streaming a file whose size changed since the page was rendered ends in Fi
         const { fileChunks } = createTransport({ vscodeApi, src: 'unused', fileSize: 100, cacheKey: 'k', piece: 16 });
         await assert.rejects((async () => { for await (const chunk of fileChunks()) void chunk; })(), { name: 'FileChanged' });
     }
+});
+
+test('an ack for another piece does not move the cache on', async () => {
+    const sent = [];
+    const vscodeApi = { postMessage: message => message.type === 'stepCache' && sent.push(message) };
+    const { sendCache } = createTransport({ vscodeApi, src: 'unused', fileSize: 0, cacheKey: 'k', piece: 16 });
+    const sending = sendCache(bytes(40));
+    // A late ack from the page this one replaced.
+    deliver({ type: 'stepCacheAck', key: 'old-key', at: 0 });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(sent.length, 1, 'still waiting for its own first ack');
+    for (const at of [0, 16, 32]) {
+        deliver({ type: 'stepCacheAck', key: 'k', at });
+        await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    await sending;
+    assert.equal(sent.length, 3);
 });
