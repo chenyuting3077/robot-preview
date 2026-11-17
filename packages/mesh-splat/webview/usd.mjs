@@ -3,6 +3,7 @@ import { USDCParser } from 'three/examples/jsm/loaders/usd/USDCParser.js';
 import { USDComposer } from 'three/examples/jsm/loaders/usd/USDComposer.js';
 import { unzipSync } from 'three/examples/jsm/libs/fflate.module.js';
 import { Euler, LoaderUtils, Matrix4, Quaternion } from 'three';
+import { writeFace } from './geometry.mjs';
 
 const SH_C0 = 0.28209479177387814;
 const MAX_DEPTH = 16;
@@ -361,8 +362,7 @@ export function triangulateTrisQuads(indices, counts) {
     if (corners > indices.length) return null;
     const pattern = new Uint32Array(size);
     for (let i = 0, offset = 0, out = 0; i < counts.length; offset += counts[i++]) {
-        pattern[out++] = offset; pattern[out++] = offset + 1; pattern[out++] = offset + 2;
-        if (counts[i] === 4) { pattern[out++] = offset; pattern[out++] = offset + 2; pattern[out++] = offset + 3; }
+        out = writeFace(pattern, out, offset, offset + 1, offset + 2, counts[i] === 4 ? offset + 3 : undefined);
     }
     const triangulated = new Uint32Array(size);
     for (let i = 0; i < size; i++) {

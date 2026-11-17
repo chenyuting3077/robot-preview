@@ -1,4 +1,4 @@
-import { linearByteTable } from './ply.mjs';
+import { TYPES, linearByteTable } from './geometry.mjs';
 
 // PCDLoader pushes every field of every point into plain arrays; a 1.2 GB
 // binary cloud (38.9M points, x y z intensity normal curvature) runs the
@@ -23,8 +23,7 @@ export function pcdReader(limit = Infinity) {
         if ([x, y, z].some(i => i < 0 || types[i] !== 'F' || sizes[i] !== 4) || !stride) return false;
         const rgb = fields.indexOf('rgb');
         const keep = Math.min(count, limit);
-        const getters = { F4: 'getFloat32', F8: 'getFloat64', U1: 'getUint8', U2: 'getUint16', U4: 'getUint32', I1: 'getInt8', I2: 'getInt16', I4: 'getInt32' };
-        const readIntensity = intensity >= 0 && getters[`${types[intensity]}${sizes[intensity]}`];
+        const readIntensity = intensity >= 0 && TYPES[`${{ F: 'float', U: 'uint', I: 'int' }[types[intensity]]}${sizes[intensity] * 8}`]?.getter;
         layout = { count, keep, stride, x: offsets[x], y: offsets[y], z: offsets[z],
             rgb: rgb >= 0 && sizes[rgb] === 4 ? offsets[rgb] : -1,
             intensity: readIntensity ? offsets[intensity] : -1, readIntensity };

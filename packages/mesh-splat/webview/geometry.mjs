@@ -1,4 +1,31 @@
-import { linearByteTable } from './ply.mjs';
+import { Color, SRGBColorSpace } from 'three';
+
+// Binary property types by PLY name (`float`, `uchar`, ...) and by size (`float32`, `uint8`, ...).
+export const TYPES = {};
+for (const [names, ArrayType, getter] of [
+    [['char', 'int8'], Int8Array, 'getInt8'], [['uchar', 'uint8'], Uint8Array, 'getUint8'],
+    [['short', 'int16'], Int16Array, 'getInt16'], [['ushort', 'uint16'], Uint16Array, 'getUint16'],
+    [['int', 'int32'], Int32Array, 'getInt32'], [['uint', 'uint32'], Uint32Array, 'getUint32'],
+    [['float', 'float32'], Float32Array, 'getFloat32'], [['double', 'float64'], Float64Array, 'getFloat64']
+]) for (const name of names) TYPES[name] = { ArrayType, getter, size: ArrayType.BYTES_PER_ELEMENT, float: getter.startsWith('getFloat') };
+
+// 8-bit sRGB to the linear bytes three.js keeps for vertex colors.
+let srgbToLinearByte = null;
+const color = new Color();
+export const linearByte = value => Math.round(color.setRGB(value * (1 / 255), 0, 0, SRGBColorSpace).r * 255);
+
+export function linearByteTable() {
+    srgbToLinearByte ??= Uint8Array.from({ length: 256 }, (_, i) => linearByte(i));
+    return srgbToLinearByte;
+}
+
+// Triangles, and quads split along the a-c diagonal as three.js does.
+export function writeFace(out, at, a, b, c, d) {
+    out[at] = a; out[at + 1] = b; out[at + 2] = c;
+    if (d === undefined) return at + 3;
+    out[at + 3] = a; out[at + 4] = c; out[at + 5] = d;
+    return at + 6;
+}
 // Typed-array replacements with exactly the results of the three.js / sort code
 // they replace (the tests compare them). 3M splats, percentile per axis: sort
 // 1554 -> 26 ms; 5M STL triangles, normals 226 -> 204 ms (Node 22, Apple M2,

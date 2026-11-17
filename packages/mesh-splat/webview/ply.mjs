@@ -1,12 +1,5 @@
-import { Color, SRGBColorSpace } from 'three';
+import { TYPES, linearByte, linearByteTable, writeFace } from './geometry.mjs';
 
-const TYPES = {};
-for (const [names, ArrayType, getter] of [
-    [['char', 'int8'], Int8Array, 'getInt8'], [['uchar', 'uint8'], Uint8Array, 'getUint8'],
-    [['short', 'int16'], Int16Array, 'getInt16'], [['ushort', 'uint16'], Uint16Array, 'getUint16'],
-    [['int', 'int32'], Int32Array, 'getInt32'], [['uint', 'uint32'], Uint32Array, 'getUint32'],
-    [['float', 'float32'], Float32Array, 'getFloat32'], [['double', 'float64'], Float64Array, 'getFloat64']
-]) for (const name of names) TYPES[name] = { ArrayType, getter, size: ArrayType.BYTES_PER_ELEMENT, float: getter.startsWith('getFloat') };
 const FLAT_SCALE = Math.log(1e-6);
 const END_HEADER = [...'end_header'].map(c => c.charCodeAt(0));
 const isNewline = byte => byte === 10 || byte === 13;
@@ -89,14 +82,6 @@ export function addMissingScale(bytes, header) {
 // attributes and types, same sRGB→linear rounding); anything it does not
 // handle returns null and goes to PLYLoader, which also reads what it can of a
 // truncated file.
-let srgbToLinearByte = null;
-const color = new Color();
-const linearByte = value => Math.round(color.setRGB(value * (1 / 255), 0, 0, SRGBColorSpace).r * 255);
-
-export function linearByteTable() {
-    srgbToLinearByte ??= Uint8Array.from({ length: 256 }, (_, i) => linearByte(i));
-    return srgbToLinearByte;
-}
 
 // JavaScript's \s, which PLYLoader splits ASCII on; control characters below
 // space are not in it. Matching it exactly costs ~4% over `<= 32` (2M points,
@@ -268,8 +253,7 @@ export function readPlyMesh(bytes, header) {
                 corner[k] = view[indexType.getter](at + k * indexType.size, little);
                 if (corner[k] < 0) return null;
             }
-            indices[out++] = corner[0]; indices[out++] = corner[1]; indices[out++] = corner[2];
-            if (n === 4) { indices[out++] = corner[0]; indices[out++] = corner[2]; indices[out++] = corner[3]; }
+            out = writeFace(indices, out, corner[0], corner[1], corner[2], n === 4 ? corner[3] : undefined);
         }
         at += n * indexType.size;
     }

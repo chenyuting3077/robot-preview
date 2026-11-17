@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PCDLoader } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/PCDLoader.js';
 import { readPcdPoints, pcdReader } from '../../packages/mesh-splat/webview/pcd.mjs';
-import { linearByteTable } from '../../packages/mesh-splat/webview/ply.mjs';
+import { linearByteTable } from '../../packages/mesh-splat/webview/geometry.mjs';
 
 function binaryPcd(fields, rows, points = rows.length) {
     const head = `# .PCD v0.7\nVERSION 0.7\nFIELDS ${fields.join(' ')}\nSIZE ${fields.map(() => 4).join(' ')}\nTYPE ${fields.map(f => (f === 'rgb' ? 'U' : 'F')).join(' ')}\nCOUNT ${fields.map(() => 1).join(' ')}\nWIDTH ${points}\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS ${points}\nDATA binary\n`;
