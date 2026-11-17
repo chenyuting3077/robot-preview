@@ -11,7 +11,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const procs = () => new Map(execSync('ps -eo pid=,rss=,args=').toString().split('\n')
     .filter(l => l.includes(udir) && !l.includes('e2e/vscode.mjs')).map(l => l.trim().split(/\s+/))
     .map(([pid, rss, ...args]) => [+pid, { rss: +rss, type: (args.join(' ').match(/--type=(\S+)/) || [, 'main'])[1] }]));
-const code = args => spawn('code', ['--user-data-dir', udir, '--extensions-dir', `${os.homedir()}/.vscode/extensions`, ...args], { stdio: 'ignore', detached: true }).unref();
+// EXT_DIR (default ~/.vscode/extensions) lets a run use builds other than the installed ones.
+const code = args => spawn('code', ['--user-data-dir', udir, '--extensions-dir', process.env.EXT_DIR || `${os.homedir()}/.vscode/extensions`, ...args], { stdio: 'ignore', detached: true }).unref();
 // A new `code` that finds a still-exiting instance of the same user-data-dir hands the file to it and nothing opens.
 const killAll = async () => {
     for (let i = 0; procs().size; i++) {
