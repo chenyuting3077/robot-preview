@@ -83,13 +83,15 @@ function cacheWriter(dir, keys, post) {
     };
 }
 
-// Oldest first until the folder fits.
+// Oldest first until the folder fits. A .part younger than an hour may be another editor's write in
+// progress; older ones are left over from a closed window and go like any entry.
 async function trimCache(dir, keep) {
+    const now = Date.now();
     const files = (await Promise.all((await fs.promises.readdir(dir)).map(async file => {
         const full = path.join(dir, file);
         const stat = await fs.promises.stat(full).catch(() => null);
-        return stat && { full, size: stat.size, mtimeMs: stat.mtimeMs };
-    }))).filter(Boolean);
+        return stat && { full, size: stat.size, mtimeMs: stat.mtimeMs, busy: file.endsWith('.part') && now - stat.mtimeMs < 3600e3 };
+    }))).filter(file => file && !file.busy);
     let total = files.reduce((sum, file) => sum + file.size, 0);
     for (const file of files.sort((a, b) => a.mtimeMs - b.mtimeMs)) {
         if (total <= CACHE_LIMIT) break;

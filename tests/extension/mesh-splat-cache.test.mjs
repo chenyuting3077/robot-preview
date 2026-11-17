@@ -20,6 +20,10 @@ test('STEP cache drops oldest GLBs past 1 GB and keeps the new one', async () =>
         fs.utimesSync(file, 1000 + i, 1000 + i);
         return file;
     });
+    // Another editor's write in progress survives the trim.
+    const busy = path.join(cacheDir, 'c-1-1-0.meshopt.0000.part');
+    fs.closeSync(fs.openSync(busy, 'w'));
+    fs.truncateSync(busy, 100 << 20);
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
     const env = loadExtension({ workspace: root, extension, globalStorage: storage });
@@ -39,7 +43,8 @@ test('STEP cache drops oldest GLBs past 1 GB and keeps the new one', async () =>
     const left = fs.readdirSync(cacheDir);
     assert.equal(fs.existsSync(old[0]), false);
     assert.equal(fs.existsSync(old[1]), true);
-    assert.equal(left.length, 2);
+    assert.ok(fs.existsSync(busy));
+    assert.equal(left.length, 3);
     fs.rmSync(root, { recursive: true, force: true });
 });
 
