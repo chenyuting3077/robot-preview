@@ -110,11 +110,15 @@ const pointsOf = geometry => new THREE.Points(float32Attributes(geometry), new T
     size: pointSize, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : POINT_GREY, vertexColors: hasColor(geometry)
 }));
 
-function geometryFrom({ positions, indices, colors }) {
+// Typed arrays are used as they are; Uint8 colors are read as 0-255.
+function geometryFrom({ positions, normals, uvs, colors, indices }) {
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    if (colors) geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    if (indices) geometry.setIndex(indices);
+    const attribute = (array, size) => new THREE.BufferAttribute(ArrayBuffer.isView(array) ? array : new Float32Array(array), size, array instanceof Uint8Array);
+    geometry.setAttribute('position', attribute(positions, 3));
+    if (normals) geometry.setAttribute('normal', attribute(normals, 3));
+    if (uvs) geometry.setAttribute('uv', attribute(uvs, 2));
+    if (colors) geometry.setAttribute('color', attribute(colors, 3));
+    if (indices) geometry.setIndex(ArrayBuffer.isView(indices) ? new THREE.BufferAttribute(indices, 1) : indices);
     return geometry;
 }
 
@@ -150,16 +154,7 @@ async function loadPly(info) {
         return loadSplat(patched, info);
     }
     const points = kind === 'points' ? readPlyPoints(bytes, header) : kind === 'mesh' && readPlyMesh(bytes, header);
-    if (points) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(points.positions, 3));
-        if (points.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(points.normals, 3));
-        if (points.uvs) geometry.setAttribute('uv', new THREE.BufferAttribute(points.uvs, 2));
-        if (points.colors) geometry.setAttribute('color', new THREE.BufferAttribute(points.colors, 3, true));
-        if (!points.indices) return pointsOf(geometry);
-        geometry.setIndex(new THREE.BufferAttribute(points.indices, 1));
-        return meshOf(geometry);
-    }
+    if (points) return (points.indices ? meshOf : pointsOf)(geometryFrom(points));
     const geometry = new PLYLoader().parse(bytes.buffer);
     return kind === 'mesh' ? meshOf(geometry) : pointsOf(geometry);
 }
@@ -189,9 +184,7 @@ async function loadPcd(info) {
         geometry.userData.intensity = geometry.attributes.intensity?.array;
         return pointsOf(geometry);
     }
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(points.positions, 3));
-    if (points.colors) geometry.setAttribute('color', new THREE.BufferAttribute(points.colors, 3, true));
+    const geometry = geometryFrom(points);
     geometry.userData.intensity = points.intensity;
     info.pointsTotal = points.total;
     return pointsOf(geometry);
