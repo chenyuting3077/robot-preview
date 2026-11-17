@@ -135,6 +135,7 @@
   ],
   "dependencies": {
     "@sparkjsdev/spark": "2.4.0",
+    "meshoptimizer": "1.3.0",
     "three": "0.187.0"
   },
   "devDependencies": {

@@ -6,7 +6,8 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+import { MeshoptDecoder } from 'meshoptimizer/decoder';
+import { decodeStepCache } from './step-cache.mjs';
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js';
 import { VRMLLoader } from 'three/examples/jsm/loaders/VRMLLoader.js';
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
@@ -262,7 +263,7 @@ async function foxtrotJob(bytes) {
 const stepMaterials = new Map();
 const stepMaterial = color => {
     const key = color.join();
-    if (!stepMaterials.has(key)) stepMaterials.set(key, new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...color, THREE.SRGBColorSpace), roughness: 0.8, side: THREE.DoubleSide }));
+    if (!stepMaterials.has(key)) stepMaterials.set(key, new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...color, THREE.SRGBColorSpace), roughness: 0.8, side: THREE.DoubleSide, userData: { srgb: color } }));
     return stepMaterials.get(key);
 };
 
@@ -317,12 +318,47 @@ function occtObject({ meshes }) {
     return group;
 }
 
-// Exported after the first frame so the model shows without waiting for it.
+// Encoded in a worker after the first frame, so the model shows without waiting for it.
 function cacheStep(object) {
-    let triangles = 0;
-    object.traverse(child => { triangles += child.geometry?.index?.count ?? 0; });
-    if (vscodeApi && triangles) setTimeout(() => new GLTFExporter().parseAsync(object, { binary: true })
-        .then(sendCache), 500);
+    const meshes = [];
+    object.traverse(({ isMesh, name, geometry, material }) => {
+        if (!isMesh || !geometry.index?.count) return;
+        const color = slot => (Array.isArray(material) ? material[slot] : material).userData.srgb;
+        meshes.push({
+            name,
+            positions: geometry.attributes.position.array.slice(),
+            normals: geometry.attributes.normal.array.slice(),
+            indices: Uint32Array.from(geometry.index.array),
+            groups: geometry.groups.length ? geometry.groups.map(({ start, count, materialIndex }) => [start, count, color(materialIndex)]) : [[0, geometry.index.count, color(0)]]
+        });
+    });
+    if (!vscodeApi || !meshes.length) return;
+    setTimeout(() => {
+        const worker = new StepWorker();
+        worker.onmessage = ({ data }) => {
+            worker.terminate();
+            if (data instanceof Uint8Array) sendCache(data);
+            else console.warn('STEP cache not written:', data?.error);
+        };
+        worker.onerror = event => {
+            worker.terminate();
+            console.warn('STEP cache not written:', event.message);
+        };
+        worker.postMessage({ engine: 'encode', meshes }, meshes.flatMap(mesh => [mesh.positions.buffer, mesh.normals.buffer, mesh.indices.buffer]));
+    }, 500);
+}
+
+function cachedObject(bytes) {
+    const group = new THREE.Group();
+    for (const { name, positions, normals, indices, groups } of decodeStepCache(MeshoptDecoder, bytes)) {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('normal', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(normals, 4), 3, 0, true));
+        geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+        groups.forEach(([start, count], slot) => geometry.addGroup(start, count, slot));
+        group.add(Object.assign(new THREE.Mesh(geometry, groups.map(([, , color]) => stepMaterial(color))), { name }));
+    }
+    return group;
 }
 
 // One 16 MB piece at a time, each acknowledged by the extension, so the workbench and the extension host
@@ -344,7 +380,13 @@ async function sendCache(glb) {
 async function loadStep(info) {
     info.format = 'STEP';
     // STEP declares no up axis; the AMR (Autodesk) export is Y-up, Z-up exports need the up menu.
-    if (cached) return withUp((await new GLTFLoader().loadAsync(cached)).scene, '+Y');
+    if (cached) {
+        const bytes = await fetch(cached).then(response => response.arrayBuffer()).then(buffer => new Uint8Array(buffer));
+        await MeshoptDecoder.ready;
+        // An unreadable cache is replaced by tessellating again.
+        const object = await Promise.resolve().then(() => cachedObject(bytes)).catch(error => (console.warn('STEP cache unreadable:', error), null));
+        if (object) return withUp(object, '+Y');
+    }
     const bytes = await fetchBytes();
     const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
     const fast = unit && await foxtrotJob(bytes).catch(() => null);

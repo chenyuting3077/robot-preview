@@ -13,7 +13,7 @@ const READ_PIECE = 16 << 20;
 function stepCache(cacheDir, fileUri, stat, version) {
     if (!cacheDir || !/\.ste?p$/i.test(fileUri.path)) return null;
     const prefix = crypto.createHash('sha1').update(fileUri.path).digest('hex').slice(0, 16);
-    return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}-${version}.glb`) };
+    return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}-${version}.meshopt`) };
 }
 
 async function renderHtml(template, webview, distUri, fileUri, stat, cache) {

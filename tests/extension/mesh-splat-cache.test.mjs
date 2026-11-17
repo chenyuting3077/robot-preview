@@ -30,7 +30,7 @@ test('STEP cache drops oldest GLBs past 1 GB and keeps the new one', async () =>
     await panel.listener({ type: 'stepCache', at: 0, size: 10, chunk: new Uint8Array([1, 2, 3, 4, 5, 6]).buffer });
     await panel.listener({ type: 'stepCache', at: 6, size: 10, chunk: new Uint8Array([7, 8, 9, 10]).buffer });
     assert.equal(acks.length, 2);
-    const written = fs.readdirSync(cacheDir).find(name => name.endsWith('.glb') && !old.some(file => file.endsWith(name)));
+    const written = fs.readdirSync(cacheDir).find(name => name.endsWith('.meshopt') && !old.some(file => file.endsWith(name)));
     assert.deepEqual([...fs.readFileSync(path.join(cacheDir, written))], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     const left = fs.readdirSync(cacheDir);
     assert.equal(fs.existsSync(old[0]), false);

@@ -1,9 +1,17 @@
 import initFoxtrot, { step_to_mesh } from '../vendor/foxtrot/foxtrot.js';
 import occtimportjs from '../vendor/occt/occt-import-js.js';
+import { MeshoptEncoder } from 'meshoptimizer/encoder';
+import { encodeStepCache } from './step-cache.mjs';
 
 // One job per worker: a Rust panic aborts the foxtrot instance, so the caller starts a fresh worker each time.
-self.onmessage = async ({ data: { engine, bytes, wasm, part, parts } }) => {
+self.onmessage = async ({ data: { engine, bytes, wasm, part, parts, meshes: cacheMeshes } }) => {
     try {
+        if (engine === 'encode') {
+            await MeshoptEncoder.ready;
+            const out = encodeStepCache(MeshoptEncoder, cacheMeshes);
+            self.postMessage(out, [out.buffer]);
+            return;
+        }
         if (engine === 'foxtrot') {
             await initFoxtrot({ module_or_path: wasm });
             const mesh = step_to_mesh(bytes, part, parts);
