@@ -19,6 +19,9 @@ const killAll = async () => {
         await sleep(200);
     }
 };
+// A systemd scope around this script also kills VS Code when the scope ends, so memory is capped here:
+// past LIMIT_MB of growth over the pre-open RSS the instance is killed instead of the machine running out.
+const LIMIT_MB = +(process.env.LIMIT_MB || 6000);
 await killAll();
 stage('launch');
 
@@ -41,6 +44,8 @@ let sampling = true;
             const grew = p.rss - (base.get(pid)?.rss ?? 0);
             if (grew > (growth.get(pid)?.grew ?? -Infinity)) growth.set(pid, { grew, type: p.type });
         }
+        const total = [...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024;
+        if (total > LIMIT_MB) { console.log(`over ${LIMIT_MB} MB, killed`); await killAll(); process.exit(3); }
         await sleep(250);
     }
 })();
