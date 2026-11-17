@@ -5,7 +5,7 @@ let compiled = null;
 
 // rust/dae builds the vertex data and strips it from the XML, so ColladaLoader's DOM parse and
 // float splitting only see materials and the scene graph. Returns null when rust/dae declines the file.
-export async function convert(bytes) {
+export async function splitDaeGeometry(bytes) {
     compiled ||= fetch(daeWasmUrl).then(response => response.arrayBuffer()).then(buffer => WebAssembly.compile(buffer));
     // A fresh instance per file: wasm memory never shrinks, and a 33 MB DAE grows it past 100 MB.
     const { exports } = await WebAssembly.instantiate(await compiled);
@@ -26,7 +26,7 @@ export async function convert(bytes) {
 
 export async function parseCollada(loader, bytes, url) {
     const path = THREE.LoaderUtils.extractUrlBase(url);
-    const fast = await convert(bytes).catch(error => (console.warn('rust/dae failed, using ColladaLoader:', error), null));
+    const fast = await splitDaeGeometry(bytes).catch(error => (console.warn('rust/dae failed, using ColladaLoader:', error), null));
     if (!fast) return loader.parse(new TextDecoder().decode(bytes), path);
     const result = loader.parse(fast.xml, path);
     for (const { id, types } of fast.geometries) {

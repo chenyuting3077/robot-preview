@@ -9,7 +9,7 @@ const wasmPath = new URL('../../src/wasm/dae.wasm', import.meta.url);
 const realFetch = globalThis.fetch;
 globalThis.fetch = async url => (String(url) === wasmPath.href ? new Response(fs.readFileSync(wasmPath)) : realFetch(url));
 const { ColladaLoader } = await import('three/examples/jsm/loaders/ColladaLoader.js');
-const { parseCollada, convert } = await import('../../src/utils/colladaFast.js');
+const { parseCollada, splitDaeGeometry } = await import('../../src/utils/colladaFast.js');
 
 function describe(scene) {
     const out = [];
@@ -28,7 +28,7 @@ function describe(scene) {
 
 test('rust/dae gives the same scene as ColladaLoader alone', async () => {
     const bytes = fs.readFileSync(new URL('../fixtures/collada/mixed.dae', import.meta.url));
-    assert.ok(await convert(new Uint8Array(bytes)));
+    assert.ok(await splitDaeGeometry(new Uint8Array(bytes)));
     const loader = new ColladaLoader();
     const expected = describe(loader.parse(new TextDecoder().decode(bytes), '').scene);
     const fast = await parseCollada(loader, new Uint8Array(bytes), 'blob:x');
@@ -39,7 +39,7 @@ test('rust/dae gives the same scene as ColladaLoader alone', async () => {
 test('files outside rust/dae fall back to ColladaLoader', async () => {
     const xml = fs.readFileSync(new URL('../fixtures/collada/mixed.dae', import.meta.url), 'utf8')
         .replace('<input semantic="POSITION" source="#shape-pos"/>', '<input semantic="POSITION" source="#shape-pos"/><input semantic="COLOR" source="#shape-pos"/>');
-    assert.equal(await convert(new TextEncoder().encode(xml)), null);
+    assert.equal(await splitDaeGeometry(new TextEncoder().encode(xml)), null);
     const loader = new ColladaLoader();
     const fast = await parseCollada(loader, new TextEncoder().encode(xml), 'blob:x');
     assert.deepEqual(describe(fast.scene), describe(loader.parse(xml, '').scene));
