@@ -92,3 +92,24 @@ test('a cache write cut short leaves no .part behind', async () => {
     assert.deepEqual(fs.readdirSync(path.join(storage, 'step-cache')), []);
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('a cache piece past the announced size is refused', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-size-'));
+    const storage = path.join(root, 'storage');
+    const step = path.join(root, 'part.stp');
+    fs.writeFileSync(step, 'ISO-10303-21;');
+    const env = loadExtension({ workspace: root, extension, globalStorage: storage });
+    env.activate();
+    const acks = [];
+    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => acks.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
+    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+    const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
+    await panel.listener({ type: 'stepCache', key, at: 0, size: 4, chunk: new Uint8Array(6).buffer });
+    assert.ok(acks.pop().error);
+    await panel.listener({ type: 'stepCache', key, at: 0, size: 10, chunk: new Uint8Array(6).buffer });
+    await panel.listener({ type: 'stepCache', key, at: 6, size: 12, chunk: new Uint8Array(4).buffer });
+    assert.ok(acks.pop().error, 'a size that changes mid-write');
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.deepEqual(fs.readdirSync(path.join(storage, 'step-cache')), []);
+    fs.rmSync(root, { recursive: true, force: true });
+});

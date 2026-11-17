@@ -61,9 +61,10 @@ function cacheWriter(dir, keys, post) {
             await fs.promises.mkdir(dir, { recursive: true });
             const target = path.join(dir, message.key);
             const part = `${target}.${crypto.randomBytes(4).toString('hex')}.part`;
-            incoming = { target, part, written: 0, handle: await fs.promises.open(part, 'w') };
+            incoming = { target, part, written: 0, size: message.size, handle: await fs.promises.open(part, 'w') };
         }
         if (!incoming || message.at !== incoming.written) throw new Error('cache piece out of order');
+        if (message.size !== incoming.size || message.at + chunk.length > message.size) throw new Error('cache piece past its size');
         await incoming.handle.write(chunk, 0, chunk.length, message.at);
         incoming.written += chunk.length;
         if (incoming.written < message.size) return;
