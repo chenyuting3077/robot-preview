@@ -129,8 +129,8 @@ function cacheStep(object, sendCache) {
         .then(sendCache, error => console.warn('STEP cache not written:', error.message)), 500);
 }
 
-// `cached` is the cache file's URL, or ''. `sendCache` is null outside VS Code.
-export async function loadStep({ cached, readAll, sendCache }) {
+// `cached` is the cache file's URL, or ''. The transport's `sendCache` is null outside VS Code.
+export async function loadStep(cached, { readAll, sendCache }) {
     // A cache that is gone (another editor's trim) or unreadable is replaced by tessellating again.
     if (cached) {
         const object = await fetch(cached)

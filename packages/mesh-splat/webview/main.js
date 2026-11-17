@@ -30,9 +30,10 @@ const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.starts
 const t = key => strings[key] ?? STRINGS.en[key];
 const $ = id => document.getElementById(id);
 
-const { src, name, bytes: fileSize, cached, key: cacheKey, piece } = document.body.dataset;
+const page = document.body.dataset;
+const { src, name, bytes: fileSize, cached } = page;
 const vscodeApi = globalThis.acquireVsCodeApi?.();
-const { fileChunks, readAll, sendCache } = createTransport({ vscodeApi, src, fileSize, cacheKey, piece });
+const transport = createTransport(vscodeApi, page);
 const ext = name.split('.').pop().toLowerCase();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -174,7 +175,7 @@ const loadGltf = async () => withUp((await new GLTFLoader().loadAsync(src)).scen
 const POINT_LIMIT = 10_000_000;
 async function loadPcd(info) {
     const reader = pcdReader(POINT_LIMIT);
-    for await (const chunk of fileChunks()) if (!reader.push(chunk)) break;
+    for await (const chunk of transport.fileChunks()) if (!reader.push(chunk)) break;
     const points = reader.finish();
     // ponytail: ASCII and binary_compressed PCD still go whole through PCDLoader, which runs out of memory
     // on files of a few hundred MB; stream them like binary if such files turn up.
@@ -216,7 +217,7 @@ async function loadUsd(info) {
 const loadStep = async info => {
     info.format = 'STEP';
     // STEP declares no up axis; the AMR (Autodesk) export is Y-up, Z-up exports need the up menu.
-    return withUp(await loadStepFile({ cached, readAll, sendCache }), '+Y');
+    return withUp(await loadStepFile(cached, transport), '+Y');
 };
 
 const LOADERS = {

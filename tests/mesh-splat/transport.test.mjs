@@ -32,7 +32,7 @@ const bytes = n => Uint8Array.from({ length: n }, (_, i) => i % 251);
 test('reads the file in pieces, three at a time, and says when it is done', async () => {
     const file = bytes(100);
     const { vscodeApi, seen } = fakeExtension(file, 16);
-    const { readAll } = createTransport({ vscodeApi, src: 'unused', fileSize: 100, cacheKey: 'k', piece: 16 });
+    const { readAll } = createTransport(vscodeApi, { src: 'unused', bytes: '100', key: 'k', piece: '16' });
     assert.deepEqual([...await readAll()], [...file]);
     assert.equal(seen.most, 3);
     assert.equal(seen.done.length, 1);
@@ -40,7 +40,7 @@ test('reads the file in pieces, three at a time, and says when it is done', asyn
 
 test('a file shorter than the page was rendered for is a FileChanged error', async () => {
     const { vscodeApi } = fakeExtension(bytes(40), 16);
-    const { readAll } = createTransport({ vscodeApi, src: 'unused', fileSize: 100, cacheKey: 'k', piece: 16 });
+    const { readAll } = createTransport(vscodeApi, { src: 'unused', bytes: '100', key: 'k', piece: '16' });
     await assert.rejects(readAll(), { name: 'FileChanged' });
 });
 
@@ -54,7 +54,7 @@ test('falls back to fetch when the extension cannot read the file', async () => 
         return new Response(file);
     };
     try {
-        const { readAll } = createTransport({ vscodeApi, src: 'file.pcd', fileSize: 30, cacheKey: 'k', piece: 16 });
+        const { readAll } = createTransport(vscodeApi, { src: 'file.pcd', bytes: '30', key: 'k', piece: '16' });
         assert.deepEqual([...await readAll()], [...file]);
         assert.deepEqual(fetched, ['file.pcd']);
     } finally {
@@ -64,7 +64,7 @@ test('falls back to fetch when the extension cannot read the file', async () => 
 
 test('sends the cache in pieces under its key and stops at an error ack', async () => {
     const { vscodeApi, seen } = fakeExtension(bytes(0), 16);
-    const { sendCache } = createTransport({ vscodeApi, src: 'unused', fileSize: 0, cacheKey: 'part-1-2-0.meshopt', piece: 16 });
+    const { sendCache } = createTransport(vscodeApi, { src: 'unused', bytes: '0', key: 'part-1-2-0.meshopt', piece: '16' });
     const warn = console.warn;
     console.warn = () => {};
     try {
@@ -78,7 +78,7 @@ test('sends the cache in pieces under its key and stops at an error ack', async 
 test('streaming a file whose size changed since the page was rendered ends in FileChanged', async () => {
     for (const actual of [40, 140]) {
         const { vscodeApi } = fakeExtension(bytes(actual), 16);
-        const { fileChunks } = createTransport({ vscodeApi, src: 'unused', fileSize: 100, cacheKey: 'k', piece: 16 });
+        const { fileChunks } = createTransport(vscodeApi, { src: 'unused', bytes: '100', key: 'k', piece: '16' });
         await assert.rejects((async () => { for await (const chunk of fileChunks()) void chunk; })(), { name: 'FileChanged' });
     }
 });
@@ -86,7 +86,7 @@ test('streaming a file whose size changed since the page was rendered ends in Fi
 test('an ack for another piece does not move the cache on', async () => {
     const sent = [];
     const vscodeApi = { postMessage: message => message.type === 'stepCache' && sent.push(message) };
-    const { sendCache } = createTransport({ vscodeApi, src: 'unused', fileSize: 0, cacheKey: 'k', piece: 16 });
+    const { sendCache } = createTransport(vscodeApi, { src: 'unused', bytes: '0', key: 'k', piece: '16' });
     const sending = sendCache(bytes(40));
     // A late ack from the page this one replaced.
     deliver({ type: 'stepCacheAck', key: 'old-key', at: 0 });

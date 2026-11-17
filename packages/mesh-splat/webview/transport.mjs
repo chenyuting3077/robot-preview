@@ -3,9 +3,10 @@
 // elsewhere, and when the extension cannot read it, fetch streams it. The STEP cache goes the other way in
 // pieces, each acknowledged before the next, so the workbench and the extension host never hold all of it.
 
-// `fileSize` is the size the page was rendered with; `cacheKey` names the cache file it may write; `piece`
-// is the extension's read size, which also sizes the cache pieces sent back.
-export function createTransport({ vscodeApi, src, fileSize, cacheKey, piece }) {
+// `page` is the page's dataset as the extension rendered it: the file's `src` and `bytes`, the cache file
+// name `key` it may write, and the extension's read size `piece`, which also sizes the cache pieces.
+export function createTransport(vscodeApi, page) {
+    const { src, bytes: fileSize, key: cacheKey, piece } = page;
     const PIECE = Number(piece);
     const replies = new Map();
     let cacheAck = null;
