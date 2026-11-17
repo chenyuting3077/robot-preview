@@ -14,7 +14,7 @@ index 80b5479..0921689 100644
  
  ////////////////////////////////////////////////////////////////////////////////
 diff --git a/cdt/src/triangulate.rs b/cdt/src/triangulate.rs
-index 55a7601..c684f16 100644
+index 55a7601..58db41b 100644
 --- a/cdt/src/triangulate.rs
 +++ b/cdt/src/triangulate.rs
 @@ -587,8 +587,10 @@ impl Triangulation {
@@ -23,7 +23,7 @@ index 55a7601..c684f16 100644
              let f = self.half.insert(b, a, p, EMPTY_EDGE, EMPTY_EDGE, e_ab);
 -            assert!(o != 0.0);
 -            assert!(o > 0.0);
-+            // A panic aborts the whole WASM instance; the caller skips the face instead.
++            // An error, not a panic, so the caller can still fill the face by parity.
 +            if !(o > 0.0) {
 +                return Err(Error::Degenerate);
 +            }
@@ -3572,7 +3572,7 @@ index d55f36f..5b73063 100644
              "VERTEX_LOOP" => VertexLoop_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexLoop(v))),
              "VERTEX_POINT" => VertexPoint_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexPoint(v))),
 diff --git a/step/src/step_file.rs b/step/src/step_file.rs
-index 404dfcc..b909827 100644
+index 404dfcc..02d3b9d 100644
 --- a/step/src/step_file.rs
 +++ b/step/src/step_file.rs
 @@ -1,64 +1,122 @@
@@ -3661,7 +3661,7 @@ index 404dfcc..b909827 100644
 +    /// The entity with this id, parsed now if it was not yet.
 +    pub fn get(&self, id: usize) -> &Entity<'a> {
 +        // A reference past the last entity reads as an empty slot, which every caller already treats as
-+        // missing, rather than an index panic that would abort a WASM instance.
++        // missing, rather than an index panic, which outside a face would lose the whole file.
 +        let Some(cell) = self.cells.get(id) else { return &EMPTY };
 +        cell.get_or_init(|| {
 +            if let Ok(mut parsed) = self.parsed.lock() {
@@ -3870,16 +3870,15 @@ index c98f807..2c7d407 100644
                  eplane_from_world, world_from_eplane, closed, dir
              } => {
 diff --git a/triangulate/src/lib.rs b/triangulate/src/lib.rs
-index 03c5c88..67b6c41 100644
+index 03c5c88..cc1187f 100644
 --- a/triangulate/src/lib.rs
 +++ b/triangulate/src/lib.rs
-@@ -26,4 +26,9 @@ pub enum Error {
+@@ -26,4 +26,8 @@ pub enum Error {
  
      #[error("Self-intersecting NURBS and b-spline curves are not implemented")]
      SelfIntersectingCurve,
 +
-+    /// A reference to a missing entity or an out-of-range value; the face is skipped, since a panic
-+    /// would abort the whole WASM instance.
++    /// A reference to a missing entity or an out-of-range value; the face is skipped.
 +    #[error("Malformed STEP data: {0}")]
 +    Malformed(&'static str),
  }
@@ -4125,13 +4124,15 @@ index 7e00a09..20c6e06 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..47ab8e7 100644
+index ad4ba6e..c55b284 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
-@@ -23,14 +23,28 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
- const SAVE_DEBUG_SVGS: bool = false;
- const SAVE_PANIC_SVGS: bool = false;
+@@ -21,7 +21,20 @@ use crate::{
+ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVector};
  
+ const SAVE_DEBUG_SVGS: bool = false;
+-const SAVE_PANIC_SVGS: bool = false;
++
 +// Vertex color of a face without its own style; replaced by the solid's color.
 +const UNSET_COLOR: f64 = -1.0;
 +
@@ -4145,10 +4146,10 @@ index ad4ba6e..47ab8e7 100644
 +pub fn on_progress(report: fn(usize)) {
 +    let _ = PROGRESS.set(report);
 +}
-+
+ 
  /// `TransformStack` is a mapping of representations to transformed children.
  type TransformStack<'a> =
-     HashMap<Representation<'a>, Vec<(Representation<'a>, DMat4)>>;
+@@ -29,8 +42,8 @@ type TransformStack<'a> =
  fn build_transform_stack<'a>(s: &'a StepFile, flip: bool) -> TransformStack<'a> {
      // Store a map of parent -> (child, transform)
      let mut transform_stack: HashMap<_, Vec<_>> = HashMap::new();
@@ -4159,7 +4160,7 @@ index ad4ba6e..47ab8e7 100644
              RepresentationRelationshipWithTransformation_::try_from_entity(e))
      {
          let (a, b) = if flip {
-@@ -38,10 +52,12 @@ fn build_transform_stack<'a>(s: &'a StepFile, flip: bool) -> TransformStack<'a>
+@@ -38,10 +51,12 @@ fn build_transform_stack<'a>(s: &'a StepFile, flip: bool) -> TransformStack<'a>
          } else {
              (r.rep_1, r.rep_2)
          };
@@ -4176,7 +4177,7 @@ index ad4ba6e..47ab8e7 100644
  
          transform_stack.entry(b)
              .or_default()
-@@ -64,18 +80,28 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
+@@ -64,18 +79,28 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
  }
  
  pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
@@ -4213,7 +4214,7 @@ index ad4ba6e..47ab8e7 100644
              })
          .collect();
  
-@@ -101,8 +127,8 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -101,8 +126,8 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
      // Store a map of ShapeRepresentationRelationships, which some models
      // use to map from axes to specific instances
      let mut shape_rep_relationship: HashMap<Id<_>, Vec<Id<_>>> = HashMap::new();
@@ -4224,12 +4225,12 @@ index ad4ba6e..47ab8e7 100644
          .map(|e| (e.rep_1, e.rep_2))
      {
          shape_rep_relationship.entry(r1).or_default().push(r2);
-@@ -124,7 +150,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -124,7 +149,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                  Entity::AdvancedBrepShapeRepresentation(b) => &b.items,
                  Entity::ShapeRepresentation(b) => &b.items,
                  Entity::ManifoldSurfaceShapeRepresentation(b) => &b.items,
 -                e => panic!("Could not get shape from {:?}", e),
-+                // A panic aborts the whole WASM instance, so unknown shapes are skipped.
++                // Unknown shapes are skipped: a panic here, outside any face, would lose the whole file.
 +                e => {
 +                    warn!("Could not get shape from {:?}", e);
 +                    continue;
@@ -4237,7 +4238,7 @@ index ad4ba6e..47ab8e7 100644
              };
  
              for m in items.iter() {
-@@ -142,8 +172,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -142,8 +171,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
      // If there are items in breps that aren't attached to a transformation
      // chain, then draw them individually (with an identity matrix)
      if to_mesh.is_empty() {
@@ -4247,7 +4248,7 @@ index ad4ba6e..47ab8e7 100644
              .filter(|(_i, e)|
                  match e {
                      Entity::ManifoldSolidBrep(_)
-@@ -156,81 +185,93 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -156,81 +184,93 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
              .for_each(|i| to_mesh.entry(i).or_default().push(DMat4::identity()));
      }
  
@@ -4263,14 +4264,14 @@ index ad4ba6e..47ab8e7 100644
 +    let t_start = mesh.triangles.len();
 +    match &s[id] {
 +        Entity::ManifoldSolidBrep(b) =>
-+            closed_shell(s, b.outer, brep_colors, mesh, stats, split),
++            shell(s, b.outer.cast(), brep_colors, mesh, stats, split),
 +        Entity::ShellBasedSurfaceModel(b) =>
 +            for v in &b.sbsm_boundary {
 +                shell(s, *v, brep_colors, mesh, stats, split);
 +            },
 +        Entity::BrepWithVoids(b) =>
 +            // TODO: handle voids
-+            closed_shell(s, b.outer, brep_colors, mesh, stats, split),
++            shell(s, b.outer.cast(), brep_colors, mesh, stats, split),
 +        _ => {
 +            warn!("Skipping {:?} (not a known solid)", s[id]);
 +            return;
@@ -4410,7 +4411,7 @@ index ad4ba6e..47ab8e7 100644
      let (mesh, stats) = {
          #[cfg(feature = "rayon")]
          { mesh_fold.reduce(empty,
-@@ -240,7 +281,6 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -240,7 +280,6 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
              mesh_fold
          }
      };
@@ -4418,7 +4419,7 @@ index ad4ba6e..47ab8e7 100644
      info!("num_shells: {}", stats.num_shells);
      info!("num_faces: {}", stats.num_faces);
      info!("num_errors: {}", stats.num_errors);
-@@ -248,24 +288,90 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -248,24 +287,90 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
      (mesh, stats)
  }
  
@@ -4514,7 +4515,7 @@ index ad4ba6e..47ab8e7 100644
  }
  
  fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
-@@ -293,8 +399,7 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+@@ -293,8 +398,7 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
              } else {
                  s.entity(surf.styles[0].cast::<SurfaceStyleFillArea_>())
              })
@@ -4524,7 +4525,7 @@ index ad4ba6e..47ab8e7 100644
          .and_then(|fill: &FillAreaStyle_| if fill.fill_styles.len() != 1 {
                  None
              } else {
-@@ -305,63 +410,112 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+@@ -305,63 +409,98 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
          .map(|c| DVec3::new(c.red, c.green, c.blue))
  }
  
@@ -4582,21 +4583,16 @@ index ad4ba6e..47ab8e7 100644
  }
  
 -fn shell(s: &StepFile, c: Shell, mesh: &mut Mesh, stats: &mut Stats) {
+-    match &s[c] {
+-        Entity::ClosedShell(_) => closed_shell(s, c.cast(), mesh, stats),
+-        Entity::OpenShell(_) => open_shell(s, c.cast(), mesh, stats),
+-        h => warn!("Skipping {:?} (unknown Shell type)", h),
+-    }
 +#[derive(Clone, Copy)]
 +struct Split { part: usize, parts: usize, offset: usize }
 +
 +impl Split {
 +    fn mine(&self, i: usize) -> bool { (i + self.offset) % self.parts == self.part }
-+}
-+
-+fn shell(s: &StepFile, c: Shell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
-     match &s[c] {
--        Entity::ClosedShell(_) => closed_shell(s, c.cast(), mesh, stats),
--        Entity::OpenShell(_) => open_shell(s, c.cast(), mesh, stats),
-+        Entity::ClosedShell(_) => closed_shell(s, c.cast(), colors, mesh, stats, split),
-+        Entity::OpenShell(_) => open_shell(s, c.cast(), colors, mesh, stats, split),
-         h => warn!("Skipping {:?} (unknown Shell type)", h),
-     }
  }
  
 -fn open_shell(s: &StepFile, c: OpenShell, mesh: &mut Mesh, stats: &mut Stats) {
@@ -4606,23 +4602,17 @@ index ad4ba6e..47ab8e7 100644
 -            error!("Failed to triangulate {:?}: {}", s[*face], err);
 -        }
 -    }
-+fn open_shell(s: &StepFile, c: OpenShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
-+    let Some(cs) = s.entity(c) else {
-+        warn!("Skipping a missing OpenShell");
-+        stats.num_errors += 1;
-+        return;
++fn shell(s: &StepFile, c: Shell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
++    let shell_faces = match &s[c] {
++        Entity::ClosedShell(cs) => &cs.cfs_faces,
++        Entity::OpenShell(os) => &os.cfs_faces,
++        h => {
++            warn!("Skipping {:?} (unknown or missing Shell)", h);
++            stats.num_errors += 1;
++            return;
++        },
 +    };
-+    faces(s, &cs.cfs_faces, colors, mesh, stats, split);
-+    stats.num_shells += 1;
-+}
-+
-+fn closed_shell(s: &StepFile, c: ClosedShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
-+    let Some(cs) = s.entity(c) else {
-+        warn!("Skipping a missing ClosedShell");
-+        stats.num_errors += 1;
-+        return;
-+    };
-+    faces(s, &cs.cfs_faces, colors, mesh, stats, split);
++    faces(s, shell_faces, colors, mesh, stats, split);
      stats.num_shells += 1;
  }
  
@@ -4672,7 +4662,7 @@ index ad4ba6e..47ab8e7 100644
  
      // Grab the surface, returning early if it's unimplemented
      let mut surf = get_surface(s, face.face_geometry)?;
-@@ -379,7 +533,7 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -379,7 +518,7 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
  
          match bound_contours.len() {
              // We should always have non-zero items in the contour
@@ -4681,7 +4671,7 @@ index ad4ba6e..47ab8e7 100644
  
              // Special case for a single-vertex point, which shows up in
              // cones: we push it as a Steiner point, but without any
-@@ -417,7 +571,9 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -417,7 +556,9 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
  
                  // Close the loop by returning to the starting point
                  edges.pop();
@@ -4692,10 +4682,25 @@ index ad4ba6e..47ab8e7 100644
              }
          }
      }
-@@ -460,25 +616,32 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -430,10 +571,8 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+     let mut pts = surf.lower_verts(&mut mesh.verts[v_start..])?;
+     let bonus_points = pts.len();
+     surf.add_steiner_points(&mut pts, &mut mesh.verts);
+-    let result = std::panic::catch_unwind(|| {
+-        // TODO: this is only needed because we use pts below to save a debug
+-        // SVG if this panics.  Once we're confident in never panicking, we
+-        // can remove this.
++    // A copy: the loop nukes Steiner points that fail, and the parity fill below starts from all of them.
++    let result = {
+         let mut pts = pts.clone();
+         loop {
+             let mut t = match cdt::Triangulation::new_with_edges(&pts, &edges) {
+@@ -459,37 +598,34 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+                 },
              }
          }
-     });
+-    });
++    };
 +    let mut push = |triangles: &mut dyn Iterator<Item = (usize, usize, usize)>| {
 +        for (a, b, c) in triangles {
 +            let a = (a + offset) as u32;
@@ -4729,8 +4734,8 @@ index ad4ba6e..47ab8e7 100644
 -            error!("Got error while triangulating {}: {:?}",
 -                   face.face_geometry.0, e);
 -            stats.num_errors += 1;
-+        Ok(Ok(t)) => push(&mut t.triangles()),
-+        Ok(Err(e)) => match fill_by_parity(&pts, &edges) {
++        Ok(t) => push(&mut t.triangles()),
++        Err(e) => match fill_by_parity(&pts, &edges) {
 +            Some(triangles) => {
 +                info!("Filled {} by parity after {:?}", face.face_geometry.0, e);
 +                push(&mut triangles.into_iter());
@@ -4741,9 +4746,20 @@ index ad4ba6e..47ab8e7 100644
 +                stats.num_errors += 1;
 +            },
          },
-         Err(e) => {
-             error!("Got panic while triangulating {}: {:?}",
-@@ -497,34 +660,60 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+-        Err(e) => {
+-            error!("Got panic while triangulating {}: {:?}",
+-                   face.face_geometry.0, e);
+-            if SAVE_PANIC_SVGS {
+-                let filename = format!("panic{}.svg", face.face_geometry.0);
+-                cdt::save_debug_panic(&pts, &edges, &filename)
+-                    .expect("Could not save debug SVG");
+-            }
+-            stats.num_panics += 1;
+-        }
+     }
+     // Flip normals of new vertices, depending on the same_sense flag
+     if !face.same_sense {
+@@ -497,34 +633,58 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
@@ -4759,11 +4775,9 @@ index ad4ba6e..47ab8e7 100644
 +/// centroid lies inside the bound by the even-odd rule: a face with a slightly wrong edge where the
 +/// bound crosses itself, instead of a hole.
 +fn fill_by_parity(pts: &[(f64, f64)], edges: &[(usize, usize)]) -> Option<Vec<(usize, usize, usize)>> {
-+    let triangles = std::panic::catch_unwind(|| {
-+        let mut t = cdt::Triangulation::new(pts).ok()?;
-+        t.run().ok()?;
-+        Some(t.triangles().collect::<Vec<_>>())
-+    }).ok()??;
++    let mut t = cdt::Triangulation::new(pts).ok()?;
++    t.run().ok()?;
++    let triangles = t.triangles().collect::<Vec<_>>();
 +    let inside = |x: f64, y: f64| edges.iter()
 +        .filter(|&&(a, b)| {
 +            let ((ax, ay), (bx, by)) = (pts[a], pts[b]);
@@ -4812,7 +4826,7 @@ index ad4ba6e..47ab8e7 100644
              Ok(Surface::new_sphere(location, c.radius.0.0.0))
          },
          Entity::BSplineSurfaceWithKnots(b) =>
-@@ -532,25 +721,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -532,25 +692,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = b.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = b.u_multiplicities.iter()
@@ -4847,7 +4861,7 @@ index ad4ba6e..47ab8e7 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -574,22 +763,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -574,22 +734,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = bspline.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = bspline.u_multiplicities.iter()
@@ -4877,7 +4891,7 @@ index ad4ba6e..47ab8e7 100644
                  .into_iter()
                  .zip(rational.weights_data.iter())
                  .map(|(ctrl, weight)|
-@@ -600,8 +789,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -600,8 +760,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
                  .collect();
  
              let surf = NURBSSurface::new(
@@ -4888,7 +4902,7 @@ index ad4ba6e..47ab8e7 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -609,6 +798,29 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -609,6 +769,29 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
@@ -4918,7 +4932,7 @@ index ad4ba6e..47ab8e7 100644
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,11 +828,69 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,11 +799,69 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
@@ -4990,7 +5004,7 @@ index ad4ba6e..47ab8e7 100644
      rows.iter()
          .map(|row| control_points_1d(s, row))
          .collect()
-@@ -630,7 +900,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -630,7 +871,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
      let (bound, orientation) = match &s[b] {
          Entity::FaceBound(b) => (b.bound, b.orientation),
          Entity::FaceOuterBound(b) => (b.bound, b.orientation),
@@ -4999,7 +5013,7 @@ index ad4ba6e..47ab8e7 100644
      };
      match &s[bound] {
          Entity::EdgeLoop(e) => {
-@@ -643,9 +913,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -643,9 +884,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
          Entity::VertexLoop(v) => {
              // This is an "edge loop" with a single vertex, which is
              // used for cones and not really anything else.
@@ -5011,7 +5025,7 @@ index ad4ba6e..47ab8e7 100644
      }
  }
  
-@@ -659,7 +929,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -659,7 +900,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
          if i > 0 {
              out.pop();
          }
@@ -5020,7 +5034,7 @@ index ad4ba6e..47ab8e7 100644
          let o = edge_curve(s, edge.edge_element.cast(), edge.orientation)?;
          out.extend(o.into_iter());
      }
-@@ -667,7 +937,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -667,7 +908,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
  }
  
  fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3>, Error> {
@@ -5029,7 +5043,7 @@ index ad4ba6e..47ab8e7 100644
      let curve = curve(s, edge_curve, edge_curve.edge_geometry, orientation)?;
  
      let (start, end) = if orientation {
-@@ -675,8 +945,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
+@@ -675,8 +916,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
      } else {
          (edge_curve.edge_end, edge_curve.edge_start)
      };
@@ -5040,7 +5054,7 @@ index ad4ba6e..47ab8e7 100644
      Ok(curve.build(u, v))
  }
  
-@@ -685,42 +955,40 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -685,42 +926,40 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
  {
      Ok(match &s[curve_id] {
          Entity::Circle(c) => {
@@ -5094,7 +5108,7 @@ index ad4ba6e..47ab8e7 100644
          },
          Entity::ComplexEntity(v) if v.len() == 2 => {
              let bspline = if let Entity::BSplineCurveWithKnots(b) = &v[0] {
-@@ -737,25 +1005,25 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -737,25 +976,25 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
              };
              let knots: Vec<f64> = bspline.knots.iter().map(|k| k.0).collect();
              let multiplicities: Vec<usize> = bspline.knot_multiplicities.iter()
@@ -5126,7 +5140,7 @@ index ad4ba6e..47ab8e7 100644
          },
          Entity::SurfaceCurve(v) => {
              curve(s, edge_curve, v.curve_3d, orientation)?
-@@ -772,10 +1040,39 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -772,10 +1011,39 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
      })
  }
  
