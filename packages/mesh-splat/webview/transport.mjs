@@ -4,15 +4,16 @@
 // pieces, each acknowledged before the next, so the workbench and the extension host never hold all of it.
 
 // `page` is the page's dataset as the extension rendered it: the file's `src` and `bytes`, the cache file
-// name `key` it may write, and the extension's read size `piece`, which also sizes the cache pieces.
+// name `key` it may write, the extension's read size `piece`, which also sizes the cache pieces, and the
+// `render` that made this page, since two renders of an unchanged file share a key.
 export function createTransport(vscodeApi, page) {
-    const { src, bytes: fileSize, key: cacheKey, piece } = page;
+    const { src, bytes: fileSize, key: cacheKey, piece, render } = page;
     const PIECE = Number(piece);
     const replies = new Map();
     let cacheAck = null;
     let reads = 0;
     window.addEventListener('message', ({ data }) => {
-        if (data?.type === 'stepCacheAck' && data.key === cacheKey) cacheAck?.(data);
+        if (data?.type === 'stepCacheAck' && data.key === cacheKey && String(data.render) === String(render)) cacheAck?.(data);
         if (data?.type === 'readReply') replies.get(`${data.id}:${data.at}`)?.(data);
     });
 
@@ -77,7 +78,7 @@ export function createTransport(vscodeApi, page) {
         for (let at = 0; at < bytes.byteLength; at += PIECE) {
             // An ack is for this page's key and this piece; one left over from a replaced page is not.
             const acked = new Promise(resolve => { cacheAck = ack => ack.at === at && resolve(ack); });
-            vscodeApi.postMessage({ type: 'stepCache', key: cacheKey, at, size: bytes.byteLength, chunk: bytes.slice(at, at + PIECE) });
+            vscodeApi.postMessage({ type: 'stepCache', key: cacheKey, render, at, size: bytes.byteLength, chunk: bytes.slice(at, at + PIECE) });
             const { error } = await acked;
             if (error) return console.warn('STEP cache not written:', error);
         }

@@ -14,7 +14,7 @@ function stepCache(cacheDir, fileUri, stat, version) {
     return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}-${version}.meshopt`) };
 }
 
-async function renderHtml(template, webview, distUri, fileUri, stat, cache) {
+async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn) {
     const source = webview.cspSource;
     const csp = [
         "default-src 'none'",
@@ -30,6 +30,7 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache) {
         bytes: stat.size,
         key: cache ? path.basename(cache.uri.fsPath) : '',
         piece: READ_PIECE,
+        render: turn,
         cached: cache ? await vscode.workspace.fs.stat(cache.uri).then(() => webview.asWebviewUri(cache.uri), () => '') : ''
     };
     return template
@@ -60,7 +61,7 @@ function activate(context) {
                 const stat = await vscode.workspace.fs.stat(document.uri).catch(() => null);
                 if (!stat) return;
                 const cache = stepCache(cacheDir, document.uri, stat, manifest.version);
-                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
+                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache, turn);
                 if (turn !== renders) return;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
                 panel.webview.html = html;

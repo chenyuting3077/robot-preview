@@ -13,7 +13,7 @@ function fakeExtension(file, piece, { failAt } = {}) {
             if (message.type === 'readDone') return seen.done.push(message.id);
             if (message.type === 'stepCache') {
                 seen.cache.push(message);
-                return setTimeout(() => deliver({ type: 'stepCacheAck', key: message.key, at: message.at, ...(message.at > 0 ? { error: 'disk full' } : {}) }));
+                return setTimeout(() => deliver({ type: 'stepCacheAck', key: message.key, render: message.render, at: message.at, ...(message.at > 0 ? { error: 'disk full' } : {}) }));
             }
             if (message.type !== 'read') return;
             seen.most = Math.max(seen.most, ++seen.inFlight);
@@ -98,4 +98,19 @@ test('an ack for another piece does not move the cache on', async () => {
     }
     await sending;
     assert.equal(sent.length, 3);
+});
+
+test('an ack for the same key from a page rendered before this one is ignored', async () => {
+    const sent = [];
+    const vscodeApi = { postMessage: message => message.type === 'stepCache' && sent.push(message) };
+    const { sendCache } = createTransport(vscodeApi, { src: 'unused', bytes: '0', key: 'k', piece: '16', render: '2' });
+    const sending = sendCache(bytes(20));
+    deliver({ type: 'stepCacheAck', key: 'k', at: 0, render: 1 });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(sent.length, 1, 'the earlier page\'s ack did not move it on');
+    deliver({ type: 'stepCacheAck', key: 'k', at: 0, render: 2 });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    deliver({ type: 'stepCacheAck', key: 'k', at: 16, render: 2 });
+    await sending;
+    assert.equal(sent.length, 2);
 });
