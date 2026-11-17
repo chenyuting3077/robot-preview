@@ -19,27 +19,51 @@ export class StepMesh {
     }
     free() {
         const ptr = this.__destroy_into_raw();
-        wasm.__wbg_stepmesh_free(ptr, 0);
+        __wbg_call_guard();
+        try {
+            wasm.__wbg_stepmesh_free(ptr, 0);
+        } catch(e) {
+            __wbg_handle_catch(e);
+        }
+
     }
     /**
      * @returns {number}
      */
     get faces() {
-        const ret = wasm.stepmesh_faces(this.__wbg_ptr);
+        let ret;
+        __wbg_call_guard();
+        try {
+            ret = wasm.stepmesh_faces(this.__wbg_ptr);
+        } catch(e) {
+            __wbg_handle_catch(e);
+        }
         return ret >>> 0;
     }
     /**
      * @returns {number}
      */
     get failed() {
-        const ret = wasm.stepmesh_failed(this.__wbg_ptr);
+        let ret;
+        __wbg_call_guard();
+        try {
+            ret = wasm.stepmesh_failed(this.__wbg_ptr);
+        } catch(e) {
+            __wbg_handle_catch(e);
+        }
         return ret >>> 0;
     }
     /**
      * @returns {Float32Array}
      */
     take_colors() {
-        const ret = wasm.stepmesh_take_colors(this.__wbg_ptr);
+        let ret;
+        __wbg_call_guard();
+        try {
+            ret = wasm.stepmesh_take_colors(this.__wbg_ptr);
+        } catch(e) {
+            __wbg_handle_catch(e);
+        }
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -48,7 +72,13 @@ export class StepMesh {
      * @returns {Uint32Array}
      */
     take_indices() {
-        const ret = wasm.stepmesh_take_indices(this.__wbg_ptr);
+        let ret;
+        __wbg_call_guard();
+        try {
+            ret = wasm.stepmesh_take_indices(this.__wbg_ptr);
+        } catch(e) {
+            __wbg_handle_catch(e);
+        }
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -57,7 +87,13 @@ export class StepMesh {
      * @returns {Float32Array}
      */
     take_normals() {
-        const ret = wasm.stepmesh_take_normals(this.__wbg_ptr);
+        let ret;
+        __wbg_call_guard();
+        try {
+            ret = wasm.stepmesh_take_normals(this.__wbg_ptr);
+        } catch(e) {
+            __wbg_handle_catch(e);
+        }
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -66,7 +102,13 @@ export class StepMesh {
      * @returns {Float32Array}
      */
     take_positions() {
-        const ret = wasm.stepmesh_take_positions(this.__wbg_ptr);
+        let ret;
+        __wbg_call_guard();
+        try {
+            ret = wasm.stepmesh_take_positions(this.__wbg_ptr);
+        } catch(e) {
+            __wbg_handle_catch(e);
+        }
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
         return v1;
@@ -75,7 +117,12 @@ export class StepMesh {
 if (Symbol.dispose) StepMesh.prototype[Symbol.dispose] = StepMesh.prototype.free;
 
 export function init_log() {
-    wasm.init_log();
+    __wbg_call_guard();
+    try {
+        wasm.init_log();
+    } catch(e) {
+        __wbg_handle_catch(e);
+    }
 }
 
 /**
@@ -85,7 +132,13 @@ export function init_log() {
  * @returns {number}
  */
 export function reserve_input(len) {
-    const ret = wasm.reserve_input(len);
+    let ret;
+    __wbg_call_guard();
+    try {
+        ret = wasm.reserve_input(len);
+    } catch(e) {
+        __wbg_handle_catch(e);
+    }
     return ret >>> 0;
 }
 
@@ -100,7 +153,13 @@ export function step_to_mesh(data, part, parts) {
     const val3 = +parts;
     const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.step_to_mesh(ptr0, len0, val2, val3);
+    let ret;
+    __wbg_call_guard();
+    try {
+        ret = wasm.step_to_mesh(ptr0, len0, val2, val3);
+    } catch(e) {
+        __wbg_handle_catch(e);
+    }
     return StepMesh.__wrap(ret);
 }
 
@@ -110,7 +169,13 @@ export function step_to_mesh(data, part, parts) {
  * @returns {StepMesh}
  */
 export function step_to_mesh_input(part, parts) {
-    const ret = wasm.step_to_mesh_input(part, parts);
+    let ret;
+    __wbg_call_guard();
+    try {
+        ret = wasm.step_to_mesh_input(part, parts);
+    } catch(e) {
+        __wbg_handle_catch(e);
+    }
     return StepMesh.__wrap(ret);
 }
 
@@ -121,7 +186,13 @@ export function step_to_mesh_input(part, parts) {
 export function step_to_triangle_buf(data) {
     const ptr0 = passStringToWasm0(data, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.step_to_triangle_buf(ptr0, len0);
+    let ret;
+    __wbg_call_guard();
+    try {
+        ret = wasm.step_to_triangle_buf(ptr0, len0);
+    } catch(e) {
+        __wbg_handle_catch(e);
+    }
     var v2 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
     return v2;
@@ -129,8 +200,15 @@ export function step_to_triangle_buf(data) {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg___wbindgen_panic_error_0057a448c5707437: function(arg0) {
+            const ret = new PanicError(arg0);
+            return ret;
+        },
+        __wbg___wbindgen_rethrow_d953c34c2e20677f: function(arg0) {
+            throw new WebAssembly.Exception(__wbindgen_wrapped_jstag, [arg0]);
+        },
         __wbg___wbindgen_throw_4c88d8bf264fd984: function(arg0, arg1) {
-            throw new Error(getStringFromWasm0(arg0, arg1));
+            throw new WebAssembly.Exception(__wbindgen_wrapped_jstag, [new Error(getStringFromWasm0(arg0, arg1))]);
         },
         __wbg_debug_29e5044b8c3730bb: function(arg0) {
             console.debug(arg0);
@@ -163,6 +241,8 @@ function __wbg_get_imports() {
             table.set(1026, true);
             table.set(1027, false);
         },
+        __wbindgen_jstag: WebAssembly.JSTag,
+        __wbindgen_wrapped_jstag: __wbindgen_wrapped_jstag,
     };
     return {
         __proto__: null,
@@ -170,6 +250,38 @@ function __wbg_get_imports() {
     };
 }
 
+const __wbindgen_wrapped_jstag = new WebAssembly.Tag({ parameters: ['externref'] });
+
+
+let __wbg_terminated_addr;
+let __wbg_called_abort = false;
+function __wbg_call_abort_hook() {
+    __wbg_called_abort = true;
+    try {
+        const idx = getInt32ArrayMemory0()[wasm.__abort_handler.value / 4];
+        if (idx) wasm.__wbindgen_export.get(idx)();
+    } catch(_) {}
+}
+
+function __wbg_handle_catch(e) {
+    if (e instanceof WebAssembly.Exception && e.is(__wbindgen_wrapped_jstag)) {
+        throw e.getArg(__wbindgen_wrapped_jstag, 0);
+    }
+    getInt32ArrayMemory0()[__wbg_terminated_addr] = 1;
+    __wbg_call_abort_hook();
+    throw e;
+}
+
+
+function __wbg_call_guard() {
+    __wbg_terminated_addr ??= wasm.__instance_terminated.value / 4;
+    const flag = getInt32ArrayMemory0()[__wbg_terminated_addr];
+    if (flag) {
+        if (!__wbg_called_abort) {
+            __wbg_call_abort_hook();
+        }throw new Error('Module terminated');
+    }
+}
 const StepMeshFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_stepmesh_free(ptr, 1));
@@ -192,6 +304,14 @@ function getFloat32ArrayMemory0() {
     return cachedFloat32ArrayMemory0;
 }
 
+let cachedInt32ArrayMemory0 = null;
+function getInt32ArrayMemory0() {
+    if (cachedInt32ArrayMemory0 === null || cachedInt32ArrayMemory0.byteLength === 0) {
+        cachedInt32ArrayMemory0 = new Int32Array(wasm.memory.buffer);
+    }
+    return cachedInt32ArrayMemory0;
+}
+
 function getStringFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return decodeText(getUint8ArrayMemory0().subarray(ptr, ptr + len));
@@ -212,6 +332,11 @@ function getUint8ArrayMemory0() {
     }
     return cachedUint8ArrayMemory0;
 }
+
+class PanicError extends Error {}
+Object.defineProperty(PanicError.prototype, 'name', {
+    value: 'PanicError',
+});
 
 function passArray8ToWasm0(arg, malloc) {
     const ptr = malloc(arg.length * 1, 1) >>> 0;
@@ -292,6 +417,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedFloat32ArrayMemory0 = null;
+    cachedInt32ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();

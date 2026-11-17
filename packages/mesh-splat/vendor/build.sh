@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rebuilds vendor/foxtrot and vendor/occt from source with the patches in ../../../patches.
-# Needs git, cmake, make, rustup (wasm32-unknown-unknown) and wasm-bindgen-cli matching
-# foxtrot's wasm-bindgen version; emsdk 3.1.69 is fetched into the work directory.
+# Needs git, cmake, make, rustup with nightly-2026-11-16 (rust-src, wasm32-unknown-unknown) and
+# wasm-bindgen-cli matching foxtrot's wasm-bindgen version; emsdk 3.1.69 is fetched into the work directory.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 patches=$(cd "$here/../../../patches" && pwd)
@@ -11,7 +11,10 @@ cd "$work"
 git clone https://github.com/Formlabs/foxtrot
 git -C foxtrot checkout 69fb37688892246e670fc08eb60b7d3a92d70d3f
 git -C foxtrot apply "$patches/foxtrot.patch"
-(cd foxtrot/wasm && cargo build --release --target wasm32-unknown-unknown)
+# std rebuilt with panic=unwind and WASM exceptions, so foxtrot's catch_unwind around each face works in
+# the webview: a panic skips the face instead of aborting the whole file.
+(cd foxtrot/wasm && RUSTFLAGS="-C panic=unwind -C target-feature=+exception-handling" \
+    cargo +nightly-2026-11-16 build --release --target wasm32-unknown-unknown -Zbuild-std=std,panic_unwind)
 wasm-bindgen --target web --out-dir "$here/foxtrot" --out-name foxtrot foxtrot/wasm/target/wasm32-unknown-unknown/release/wasm.wasm
 rm -f "$here"/foxtrot/*.d.ts
 # The caller always passes the wasm bytes; the default `new URL(..., import.meta.url)` makes vite emit a second copy.
