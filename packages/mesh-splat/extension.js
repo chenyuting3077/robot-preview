@@ -8,10 +8,12 @@ const escapeAttr = text => String(text).replace(/&/g, '&amp;').replace(/"/g, '&q
 
 // Tessellating a STEP assembly takes seconds (foxtrot) to minutes (OpenCascade), so the webview sends back
 // its tessellation (meshopt-encoded, see webview/step-cache.mjs) and later opens of the same file (path, mtime, size, extension version) load that instead.
-function stepCache(cacheDir, fileUri, stat, version) {
+// `build` names the extension version and the tessellators' WASM, so a rebuilt foxtrot or OpenCascade
+// drops old entries even without a version bump.
+function stepCache(cacheDir, fileUri, stat, build) {
     if (!cacheDir || !/\.ste?p$/i.test(fileUri.path)) return null;
     const prefix = crypto.createHash('sha1').update(fileUri.path).digest('hex').slice(0, 16);
-    return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}-${version}.meshopt`) };
+    return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}-${build}.meshopt`) };
 }
 
 async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn) {
@@ -44,6 +46,9 @@ function activate(context) {
     const cacheDir = context.globalStorageUri && vscode.Uri.joinPath(context.globalStorageUri, 'step-cache');
     const template = fs.readFileSync(path.join(distUri.fsPath, 'index.html'), 'utf8');
     const manifest = JSON.parse(fs.readFileSync(path.join(context.extensionUri.fsPath, 'package.json'), 'utf8'));
+    const tessellators = crypto.createHash('sha1');
+    for (const wasm of ['foxtrot_bg.wasm', 'occt-import-js.wasm']) tessellators.update(fs.readFileSync(path.join(distUri.fsPath, wasm)));
+    const build = `${manifest.version}-${tessellators.digest('hex').slice(0, 8)}`;
     const provider = {
         openCustomDocument: uri => ({ uri, dispose() {} }),
         async resolveCustomEditor(document, panel) {
@@ -60,7 +65,7 @@ function activate(context) {
                 // A rename-style save removes the file for a moment; the create that follows renders again.
                 const stat = await vscode.workspace.fs.stat(document.uri).catch(() => null);
                 if (!stat) return;
-                const cache = stepCache(cacheDir, document.uri, stat, manifest.version);
+                const cache = stepCache(cacheDir, document.uri, stat, build);
                 const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache, turn);
                 if (turn !== renders) return;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);

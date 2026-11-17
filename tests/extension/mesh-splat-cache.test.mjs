@@ -32,6 +32,8 @@ test('STEP cache drops oldest GLBs past 1 GB and keeps the new one', async () =>
     const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => acks.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
     const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
+    // The key names the extension version and a fingerprint of the tessellators' WASM.
+    assert.match(key, /-\d+\.\d+\.\d+-[0-9a-f]{8}\.meshopt$/);
     // A piece under a key this panel never rendered is refused, with an ack so the page stops waiting.
     await panel.listener({ type: 'stepCache', key: 'x-1-1-0.meshopt', at: 0, size: 10, chunk: new Uint8Array([1]).buffer });
     assert.ok(acks.pop().error);
