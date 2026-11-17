@@ -44,11 +44,12 @@ function runWorker(message, transfer, workers = []) {
 const wasmOf = url => fetch(new URL(url, document.baseURI)).then(response => response.arrayBuffer());
 
 // Each worker parses the whole file and triangulates every parts-th face. A worker's WASM peaks at about
-// 3.3x the file (161 MB file: 512 MB, Node 22); budgeting 8x keeps that file at two workers.
-// ponytail: the 8x budget and the 1.5 GB total are fixed, not read from the machine's free memory; scale
-// them with navigator.deviceMemory if small machines run out.
+// 3.3x the file (161 MB file: 512 MB, Node 22); budgeting 8x keeps that file at two workers on a machine
+// with 8 GB or more. The budget is a quarter of the machine's memory (Chrome reports at most 8 GB), so a
+// small machine runs fewer, slower workers instead of running out.
 async function foxtrotJob(bytes) {
-    const parts = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1, 1 + Math.floor(1.5e9 / (8 * bytes.length))));
+    const budget = Math.min(1.5e9, (navigator.deviceMemory ?? 8) * 0.25e9);
+    const parts = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1, 1 + Math.floor(budget / (8 * bytes.length))));
     // The last worker takes `bytes` itself, leaving it empty here, instead of a copy.
     const copies = Array.from({ length: parts }, (_, part) => (part === parts - 1 ? bytes : bytes.slice()));
     const wasm = await wasmOf(foxtrotWasm);
