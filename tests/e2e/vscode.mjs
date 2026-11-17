@@ -107,17 +107,37 @@ const dragStart = Date.now();
 while (Date.now() - dragStart < 3000) { await mouse('mouseMoved', width / 3 + (Date.now() - dragStart) / 3000 * width / 3); await sleep(16); }
 await mouse('mouseReleased', width * 2 / 3);
 const fps = Math.round(await evaluate(send, `(() => { const w = document.getElementById('active-frame').contentWindow; w.__stop = true; return w.__frames; })()`) / ((Date.now() - dragStart) / 1000));
-sampling = false;
-await sleep(300);
 // SHOT=<png> saves the workbench window, to look at what the viewer drew.
-if (process.env.SHOT) {
+async function screenshot(path) {
     const page = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === 'page' && t.url.includes('workbench'));
     const shot = await (await connect(page.webSocketDebuggerUrl))('Page.captureScreenshot', { format: 'png' });
-    if (shot?.data) (await import('node:fs')).writeFileSync(process.env.SHOT, Buffer.from(shot.data, 'base64'));
+    if (shot?.data) (await import('node:fs')).writeFileSync(path, Buffer.from(shot.data, 'base64'));
     else console.error('screenshot failed');
 }
+// DETAIL=<prefix> zooms in on the middle of the view, then presses "Load detail in view" of a sampled
+// point cloud and times it, with screenshots <prefix>-before.png and <prefix>-after.png.
+let detailSeconds;
+if (process.env.DETAIL) {
+    for (let i = 0; i < +(process.env.ZOOM || 20); i++) {
+        await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: width / 2, y: height / 2, deltaX: 0, deltaY: -200 });
+        await sleep(30);
+    }
+    await sleep(1000);
+    await screenshot(`${process.env.DETAIL}-before.png`);
+    const frame = `document.getElementById('active-frame').contentDocument`;
+    const detailStart = Date.now();
+    await evaluate(send, `${frame}.getElementById('detail-btn').click()`);
+    await sleep(200);
+    while (await evaluate(send, `!${frame}.getElementById('loading-indicator').hidden`)) await sleep(100);
+    detailSeconds = (Date.now() - detailStart) / 1000;
+    await sleep(1000);
+    await screenshot(`${process.env.DETAIL}-after.png`);
+}
+sampling = false;
+await sleep(300);
+if (process.env.SHOT) await screenshot(process.env.SHOT);
 const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, 3).map(g => `${g.type} +${Math.round(g.grew / 1024)} MB at ${g.at.toFixed(1)} s`);
-console.log(JSON.stringify({ file: file.split('/').pop(), shown, fps, error: s?.error || undefined, info: s?.info, grewMostMB: top,
+console.log(JSON.stringify({ file: file.split('/').pop(), shown, fps, detailSeconds, error: s?.error || undefined, info: s?.info, grewMostMB: top,
     totalGrowthMB: Math.round([...growth.values()].reduce((sum, g) => sum + Math.max(0, g.grew), 0) / 1024) }));
 await killAll();
 process.exit(0);
