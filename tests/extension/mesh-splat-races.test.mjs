@@ -68,3 +68,16 @@ test('a save that removes the file for a moment does not leave a failed render',
     await env.state.watched.change();
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('an empty cache is refused', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-empty-'));
+    const step = path.join(root, 'part.stp');
+    fs.writeFileSync(step, 'ISO-10303-21;');
+    const acks = [];
+    const { panel } = await open(root, step, m => acks.push(m));
+    const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
+    await panel.listener({ type: 'stepCache', key, at: 0, size: 0, chunk: new Uint8Array(0).buffer });
+    assert.ok(acks.pop().error);
+    assert.equal(fs.existsSync(path.join(root, 'storage', 'step-cache', key)), false);
+    fs.rmSync(root, { recursive: true, force: true });
+});

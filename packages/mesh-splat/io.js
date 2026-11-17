@@ -22,7 +22,7 @@ function cacheWriter(dir, keys, post) {
     };
     const receive = async message => {
         const chunk = message.chunk instanceof ArrayBuffer ? new Uint8Array(message.chunk) : message.chunk;
-        if (!dir || !keys.has(message.key) || !(chunk instanceof Uint8Array) || !Number.isInteger(message.size)) throw new Error('bad cache piece');
+        if (!dir || !keys.has(message.key) || !(chunk instanceof Uint8Array) || !(Number.isInteger(message.size) && message.size > 0)) throw new Error('bad cache piece');
         if (message.at === 0) {
             drop();
             await fs.promises.mkdir(dir, { recursive: true });
