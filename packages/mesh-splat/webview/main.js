@@ -217,7 +217,8 @@ async function stepJob(engine, bytes, part = 0, parts = 1) {
             worker.terminate();
             reject(new Error(event.message));
         };
-        worker.postMessage({ engine, bytes: bytes.slice(), wasm, part, parts }, [wasm]);
+        const copy = bytes.slice();
+        worker.postMessage({ engine, bytes: copy, wasm, part, parts }, [wasm, copy.buffer]);
     });
 }
 
