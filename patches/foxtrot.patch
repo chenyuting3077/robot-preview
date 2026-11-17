@@ -3520,10 +3520,10 @@ index d55f36f..5b73063 100644
              "VERTEX_LOOP" => VertexLoop_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexLoop(v))),
              "VERTEX_POINT" => VertexPoint_::parse_chunks(strs).map(|(s, v)| (s, Entity::VertexPoint(v))),
 diff --git a/step/src/step_file.rs b/step/src/step_file.rs
-index 404dfcc..a5c3a6e 100644
+index 404dfcc..b909827 100644
 --- a/step/src/step_file.rs
 +++ b/step/src/step_file.rs
-@@ -1,64 +1,108 @@
+@@ -1,64 +1,122 @@
 -use memchr::{memchr, memchr2, memchr_iter};
 +use memchr::{memchr, memchr2, memchr_iter, memmem};
 +use std::sync::OnceLock;
@@ -3547,6 +3547,8 @@ index 404dfcc..a5c3a6e 100644
 +pub struct StepFile<'a> {
 +    blocks: Vec<&'a [u8]>,
 +    cells: Vec<OnceLock<Box<Entity<'a>>>>,
++    // Ids parsed since the last `forget_parsed`.
++    parsed: std::sync::Mutex<Vec<usize>>,
 +}
  impl<'a> StepFile<'a> {
 -    /// Parses a STEP file from a raw array of bytes
@@ -3575,7 +3577,16 @@ index 404dfcc..a5c3a6e 100644
 +        }
 +        drop(all);
 +        let cells = (0..blocks.len()).map(|_| OnceLock::new()).collect();
-+        Self { blocks, cells }
++        Self { blocks, cells, parsed: Default::default() }
++    }
++
++    /// Drops every entity parsed since the last call; a later `get` parses it again. Lets a caller that
++    /// is done with part of the file hand that memory back.
++    pub fn forget_parsed(&mut self) {
++        let parsed = std::mem::take(self.parsed.get_mut().unwrap_or_else(|e| e.into_inner()));
++        for id in parsed {
++            self.cells[id].take();
++        }
 +    }
 +
 +    pub fn len(&self) -> usize {
@@ -3601,6 +3612,9 @@ index 404dfcc..a5c3a6e 100644
 +        // missing, rather than an index panic that would abort a WASM instance.
 +        let Some(cell) = self.cells.get(id) else { return &EMPTY };
 +        cell.get_or_init(|| {
++            if let Ok(mut parsed) = self.parsed.lock() {
++                parsed.push(id);
++            }
 +            let b = self.blocks[id];
 +            if b.is_empty() {
 +                return Box::new(Entity::_EmptySlot);
@@ -3670,7 +3684,7 @@ index 404dfcc..a5c3a6e 100644
      }
  
      /// Flattens a STEP file, removing comments and whitespace
-@@ -107,8 +151,11 @@ impl<'a> StepFile<'a> {
+@@ -107,8 +165,11 @@ impl<'a> StepFile<'a> {
          blocks
      }
  
@@ -3684,7 +3698,7 @@ index 404dfcc..a5c3a6e 100644
      }
  }
  
-@@ -116,10 +163,28 @@ impl<'a, T> std::ops::Index<Id<T>> for StepFile<'a> {
+@@ -116,10 +177,28 @@ impl<'a, T> std::ops::Index<Id<T>> for StepFile<'a> {
      type Output = Entity<'a>;
  
      fn index(&self, id: Id<T>) -> &Self::Output {
@@ -4025,17 +4039,18 @@ index 7e00a09..20c6e06 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..66524a6 100644
+index ad4ba6e..0b2207c 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
-@@ -23,14 +23,27 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
+@@ -23,14 +23,28 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
  const SAVE_DEBUG_SVGS: bool = false;
  const SAVE_PANIC_SVGS: bool = false;
  
 +// Vertex color of a face without its own style; replaced by the solid's color.
 +const UNSET_COLOR: f64 = -1.0;
 +
-+type Colors<'a> = HashMap<RepresentationItem<'a>, DVec3>;
++// Keyed by entity id, so the plan holds no borrow of the file and parsed entities can be dropped.
++type Colors = HashMap<usize, DVec3>;
 +
 +static PROGRESS: std::sync::OnceLock<fn(usize)> = std::sync::OnceLock::new();
 +
@@ -4058,7 +4073,7 @@ index ad4ba6e..66524a6 100644
              RepresentationRelationshipWithTransformation_::try_from_entity(e))
      {
          let (a, b) = if flip {
-@@ -38,10 +51,12 @@ fn build_transform_stack<'a>(s: &'a StepFile, flip: bool) -> TransformStack<'a>
+@@ -38,10 +52,12 @@ fn build_transform_stack<'a>(s: &'a StepFile, flip: bool) -> TransformStack<'a>
          } else {
              (r.rep_1, r.rep_2)
          };
@@ -4075,7 +4090,7 @@ index ad4ba6e..66524a6 100644
  
          transform_stack.entry(b)
              .or_default()
-@@ -64,18 +79,29 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
+@@ -64,18 +80,28 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
  }
  
  pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
@@ -4084,9 +4099,8 @@ index ad4ba6e..66524a6 100644
 +    triangulate_part(s, 0, 1)
 +}
 +
-+/// Triangulates every `parts`-th face, starting at `part`, so separate workers that each parse
-+/// the file split the work. Splitting by solid left one worker with most of the AMR's time.
-+pub fn triangulate_part(s: &StepFile, part: usize, parts: usize) -> (Mesh, Stats) {
++/// The solids to mesh, each with the transforms of its instances, and the colors styled on solids and faces.
++fn plan(s: &StepFile) -> (HashMap<usize, Vec<DMat4>>, Colors) {
 +    // Face colors usually come as OVER_RIDING_STYLED_ITEMs on top of the
 +    // solid's STYLED_ITEM.
 +    let styled_items: Vec<(&Vec<PresentationStyleAssignment>, RepresentationItem)> = s.scan(&[b"MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"])
@@ -4109,7 +4123,7 @@ index ad4ba6e..66524a6 100644
 -                presentation_style_color(s, styled.styles[0])
 -                    .map(|c| (styled.item, c))
 +                presentation_style_color(s, styles[0])
-+                    .map(|c| (*item, c))
++                    .map(|c| (item.0, c))
              })
          .collect();
  
@@ -4147,66 +4161,218 @@ index ad4ba6e..66524a6 100644
              .filter(|(_i, e)|
                  match e {
                      Entity::ManifoldSolidBrep(_)
-@@ -169,18 +198,19 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -156,81 +185,93 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+             .for_each(|i| to_mesh.entry(i).or_default().push(DMat4::identity()));
+     }
  
-             // Fold operation
-             |(mut mesh, mut stats), (id, mats)| {
-+                let split = Split { part, parts, offset: id.0 };
-                 let v_start = mesh.verts.len();
-                 let t_start = mesh.triangles.len();
-                 match &s[*id] {
-                     Entity::ManifoldSolidBrep(b) =>
++    (to_mesh.into_iter().map(|(id, mats)| (id.0, mats)).collect(), brep_colors)
++}
++
++/// Appends one solid, with a copy per instance, to `mesh`.
++fn mesh_solid(s: &StepFile, id: usize, mats: &[DMat4], brep_colors: &Colors,
++              mesh: &mut Mesh, stats: &mut Stats, part: usize, parts: usize) {
++    let split = Split { part, parts, offset: id };
++    let id: RepresentationItem = Id::new(id);
++    let v_start = mesh.verts.len();
++    let t_start = mesh.triangles.len();
++    match &s[id] {
++        Entity::ManifoldSolidBrep(b) =>
++            closed_shell(s, b.outer, brep_colors, mesh, stats, split),
++        Entity::ShellBasedSurfaceModel(b) =>
++            for v in &b.sbsm_boundary {
++                shell(s, *v, brep_colors, mesh, stats, split);
++            },
++        Entity::BrepWithVoids(b) =>
++            // TODO: handle voids
++            closed_shell(s, b.outer, brep_colors, mesh, stats, split),
++        _ => {
++            warn!("Skipping {:?} (not a known solid)", s[id]);
++            return;
++        },
++    };
++
++    // Pick out a color from the color map and apply it to each
++    // newly-created vertex
++    let brep_color = brep_colors.get(&id.0)
++        .map(|c| *c)
++        .unwrap_or(DVec3::new(0.5, 0.5, 0.5));
++    // Faces with their own style keep it over the solid's color.
++    let color_of = |v: &mesh::Vertex|
++        if v.color.x == UNSET_COLOR { brep_color } else { v.color };
++
++    // Build copies of the mesh by copying and applying transforms
++    let v_end = mesh.verts.len();
++    let t_end = mesh.triangles.len();
++    for mat in &mats[1..] {
++        for v in v_start..v_end {
++            let p = mesh.verts[v].pos;
++            let p_h = DVec4::new(p.x, p.y, p.z, 1.0);
++            let pos = (mat * p_h).xyz();
++
++            let n = mesh.verts[v].norm;
++            let norm = (mat * glm::vec3_to_vec4(&n)).xyz();
++
++            let color = color_of(&mesh.verts[v]);
++            mesh.verts.push(mesh::Vertex { pos, norm, color });
++        }
++        let offset = mesh.verts.len() - v_end;
++        for t in t_start..t_end {
++            let mut tri = mesh.triangles[t];
++            tri.verts.add_scalar_mut(offset as u32);
++            mesh.triangles.push(tri);
++        }
++    }
++
++    // Now that we've built all of the other copies of the mesh,
++    // re-use the original mesh and apply the first transform
++    let mat = mats[0];
++    for v in v_start..v_end {
++        let p = mesh.verts[v].pos;
++        let p_h = DVec4::new(p.x, p.y, p.z, 1.0);
++        mesh.verts[v].pos = (mat * p_h).xyz();
++
++        let n = mesh.verts[v].norm;
++        mesh.verts[v].norm = (mat * glm::vec3_to_vec4(&n)).xyz();
++
++        mesh.verts[v].color = color_of(&mesh.verts[v]);
++    }
++}
++
++/// Triangulates every `parts`-th face, starting at `part`, so separate workers that each parse
++/// the file split the work. Splitting by solid left one worker with most of the AMR's time.
++pub fn triangulate_part(s: &StepFile, part: usize, parts: usize) -> (Mesh, Stats) {
++    let (to_mesh, brep_colors) = plan(s);
+     let (to_mesh_iter, empty) = {
+         #[cfg(feature = "rayon")]
+         { (to_mesh.par_iter(), || (Mesh::default(), Stats::default())) }
+         #[cfg(not(feature = "rayon"))]
+         { (to_mesh.iter(), (Mesh::default(), Stats::default())) }
+     };
+-    let mesh_fold = to_mesh_iter
+-        .fold(
+-            // Empty constructor
+-            empty,
+-
+-            // Fold operation
+-            |(mut mesh, mut stats), (id, mats)| {
+-                let v_start = mesh.verts.len();
+-                let t_start = mesh.triangles.len();
+-                match &s[*id] {
+-                    Entity::ManifoldSolidBrep(b) =>
 -                        closed_shell(s, b.outer, &mut mesh, &mut stats),
-+                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats, split),
-                     Entity::ShellBasedSurfaceModel(b) =>
-                         for v in &b.sbsm_boundary {
+-                    Entity::ShellBasedSurfaceModel(b) =>
+-                        for v in &b.sbsm_boundary {
 -                            shell(s, *v, &mut mesh, &mut stats);
-+                            shell(s, *v, &brep_colors, &mut mesh, &mut stats, split);
-                         },
-                     Entity::BrepWithVoids(b) =>
-                         // TODO: handle voids
+-                        },
+-                    Entity::BrepWithVoids(b) =>
+-                        // TODO: handle voids
 -                        closed_shell(s, b.outer, &mut mesh, &mut stats),
-+                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats, split),
-                     _ => {
-                         warn!("Skipping {:?} (not a known solid)", s[*id]);
-                         return (mesh, stats);
-@@ -189,9 +219,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
- 
-                 // Pick out a color from the color map and apply it to each
-                 // newly-created vertex
+-                    _ => {
+-                        warn!("Skipping {:?} (not a known solid)", s[*id]);
+-                        return (mesh, stats);
+-                    },
+-                };
+-
+-                // Pick out a color from the color map and apply it to each
+-                // newly-created vertex
 -                let color = brep_colors.get(id)
-+                let brep_color = brep_colors.get(&id.cast())
-                     .map(|c| *c)
-                     .unwrap_or(DVec3::new(0.5, 0.5, 0.5));
-+                // Faces with their own style keep it over the solid's color.
-+                let color_of = |v: &mesh::Vertex|
-+                    if v.color.x == UNSET_COLOR { brep_color } else { v.color };
- 
-                 // Build copies of the mesh by copying and applying transforms
-                 let v_end = mesh.verts.len();
-@@ -205,6 +238,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
-                         let n = mesh.verts[v].norm;
-                         let norm = (mat * glm::vec3_to_vec4(&n)).xyz();
- 
-+                        let color = color_of(&mesh.verts[v]);
-                         mesh.verts.push(mesh::Vertex { pos, norm, color });
-                     }
-                     let offset = mesh.verts.len() - v_end;
-@@ -226,7 +260,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
-                     let n = mesh.verts[v].norm;
-                     mesh.verts[v].norm = (mat * glm::vec3_to_vec4(&n)).xyz();
- 
+-                    .map(|c| *c)
+-                    .unwrap_or(DVec3::new(0.5, 0.5, 0.5));
+-
+-                // Build copies of the mesh by copying and applying transforms
+-                let v_end = mesh.verts.len();
+-                let t_end = mesh.triangles.len();
+-                for mat in &mats[1..] {
+-                    for v in v_start..v_end {
+-                        let p = mesh.verts[v].pos;
+-                        let p_h = DVec4::new(p.x, p.y, p.z, 1.0);
+-                        let pos = (mat * p_h).xyz();
+-
+-                        let n = mesh.verts[v].norm;
+-                        let norm = (mat * glm::vec3_to_vec4(&n)).xyz();
+-
+-                        mesh.verts.push(mesh::Vertex { pos, norm, color });
+-                    }
+-                    let offset = mesh.verts.len() - v_end;
+-                    for t in t_start..t_end {
+-                        let mut tri = mesh.triangles[t];
+-                        tri.verts.add_scalar_mut(offset as u32);
+-                        mesh.triangles.push(tri);
+-                    }
+-                }
+-
+-                // Now that we've built all of the other copies of the mesh,
+-                // re-use the original mesh and apply the first transform
+-                let mat = mats[0];
+-                for v in v_start..v_end {
+-                    let p = mesh.verts[v].pos;
+-                    let p_h = DVec4::new(p.x, p.y, p.z, 1.0);
+-                    mesh.verts[v].pos = (mat * p_h).xyz();
+-
+-                    let n = mesh.verts[v].norm;
+-                    mesh.verts[v].norm = (mat * glm::vec3_to_vec4(&n)).xyz();
+-
 -                    mesh.verts[v].color = color;
-+                    mesh.verts[v].color = color_of(&mesh.verts[v]);
-                 }
-                 (mesh, stats)
-             });
-@@ -248,24 +282,24 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+-                }
+-                (mesh, stats)
+-            });
+-
++    let mesh_fold = to_mesh_iter.fold(empty, |(mut mesh, mut stats), (id, mats)| {
++        mesh_solid(s, *id, mats, &brep_colors, &mut mesh, &mut stats, part, parts);
++        (mesh, stats)
++    });
+     let (mesh, stats) = {
+         #[cfg(feature = "rayon")]
+         { mesh_fold.reduce(empty,
+@@ -240,7 +281,6 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+             mesh_fold
+         }
+     };
+-
+     info!("num_shells: {}", stats.num_shells);
+     info!("num_faces: {}", stats.num_faces);
+     info!("num_errors: {}", stats.num_errors);
+@@ -248,24 +288,59 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
      (mesh, stats)
  }
  
 -fn item_defined_transformation(s: &StepFile, t: Id<ItemDefinedTransformation_>) -> DMat4 {
 -    let i = s.entity(t).expect("Could not get ItemDefinedTransform");
++/// A mesh as f32 arrays: xyz positions, normals and 0-1 colors per vertex, three indices per triangle.
++#[derive(Default)]
++pub struct FlatMesh {
++    pub positions: Vec<f32>,
++    pub normals: Vec<f32>,
++    pub colors: Vec<f32>,
++    pub indices: Vec<u32>,
++}
++
++/// `triangulate_part` into f32 arrays, one solid at a time: each solid's f64 vertices (72 bytes each)
++/// are packed and dropped once it is built, and so are the entities parsed for it, instead of the
++/// whole model's being held until the end.
++#[cfg(not(feature = "rayon"))]
++pub fn triangulate_part_flat(s: &mut StepFile, part: usize, parts: usize) -> (FlatMesh, Stats) {
++    let (to_mesh, brep_colors) = plan(s);
++    let mut flat = FlatMesh::default();
++    let mut mesh = Mesh::default();
++    let mut stats = Stats::default();
++    s.forget_parsed();
++    for (id, mats) in to_mesh.iter() {
++        mesh_solid(s, *id, mats, &brep_colors, &mut mesh, &mut stats, part, parts);
++        let base = (flat.positions.len() / 3) as u32;
++        for v in &mesh.verts {
++            flat.positions.extend([v.pos.x as f32, v.pos.y as f32, v.pos.z as f32]);
++            flat.normals.extend([v.norm.x as f32, v.norm.y as f32, v.norm.z as f32]);
++            flat.colors.extend([v.color.x as f32, v.color.y as f32, v.color.z as f32]);
++        }
++        flat.indices.extend(mesh.triangles.iter().flat_map(|t| t.verts.iter().map(move |i| i + base)));
++        mesh.verts.clear();
++        mesh.triangles.clear();
++        // Solids rarely share entities, so dropping this one's costs a rare re-parse.
++        s.forget_parsed();
++    }
++    (flat, stats)
++}
 +fn item_defined_transformation(s: &StepFile, t: Id<ItemDefinedTransformation_>) -> Result<DMat4, Error> {
 +    let i = s.entity(t).ok_or(Error::Malformed("missing ItemDefinedTransform"))?;
  
@@ -4231,7 +4397,7 @@ index ad4ba6e..66524a6 100644
  }
  
  fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
-@@ -293,8 +327,7 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+@@ -293,8 +368,7 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
              } else {
                  s.entity(surf.styles[0].cast::<SurfaceStyleFillArea_>())
              })
@@ -4241,7 +4407,7 @@ index ad4ba6e..66524a6 100644
          .and_then(|fill: &FillAreaStyle_| if fill.fill_styles.len() != 1 {
                  None
              } else {
-@@ -305,63 +338,101 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+@@ -305,63 +379,101 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
          .map(|c| DVec3::new(c.red, c.green, c.blue))
  }
  
@@ -4373,7 +4539,7 @@ index ad4ba6e..66524a6 100644
  
      // Grab the surface, returning early if it's unimplemented
      let mut surf = get_surface(s, face.face_geometry)?;
-@@ -379,7 +450,7 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -379,7 +491,7 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
  
          match bound_contours.len() {
              // We should always have non-zero items in the contour
@@ -4382,7 +4548,7 @@ index ad4ba6e..66524a6 100644
  
              // Special case for a single-vertex point, which shows up in
              // cones: we push it as a Steiner point, but without any
-@@ -417,7 +488,9 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -417,7 +529,9 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
  
                  // Close the loop by returning to the starting point
                  edges.pop();
@@ -4393,11 +4559,11 @@ index ad4ba6e..66524a6 100644
              }
          }
      }
-@@ -497,34 +570,38 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -497,34 +611,38 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
-+    let color = colors.get(&f.cast()).copied().unwrap_or(DVec3::repeat(UNSET_COLOR));
++    let color = colors.get(&f.0).copied().unwrap_or(DVec3::repeat(UNSET_COLOR));
 +    for v in &mut mesh.verts[v_start..] {
 +        v.color = color;
 +    }
@@ -4440,7 +4606,7 @@ index ad4ba6e..66524a6 100644
              Ok(Surface::new_sphere(location, c.radius.0.0.0))
          },
          Entity::BSplineSurfaceWithKnots(b) =>
-@@ -532,25 +609,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -532,25 +650,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = b.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = b.u_multiplicities.iter()
@@ -4475,7 +4641,7 @@ index ad4ba6e..66524a6 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -574,22 +651,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -574,22 +692,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = bspline.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = bspline.u_multiplicities.iter()
@@ -4505,7 +4671,7 @@ index ad4ba6e..66524a6 100644
                  .into_iter()
                  .zip(rational.weights_data.iter())
                  .map(|(ctrl, weight)|
-@@ -600,8 +677,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -600,8 +718,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
                  .collect();
  
              let surf = NURBSSurface::new(
@@ -4516,7 +4682,7 @@ index ad4ba6e..66524a6 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -609,6 +686,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -609,6 +727,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
@@ -4534,7 +4700,7 @@ index ad4ba6e..66524a6 100644
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,11 +704,52 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,11 +745,52 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
@@ -4589,7 +4755,7 @@ index ad4ba6e..66524a6 100644
      rows.iter()
          .map(|row| control_points_1d(s, row))
          .collect()
-@@ -630,7 +759,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -630,7 +800,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
      let (bound, orientation) = match &s[b] {
          Entity::FaceBound(b) => (b.bound, b.orientation),
          Entity::FaceOuterBound(b) => (b.bound, b.orientation),
@@ -4598,7 +4764,7 @@ index ad4ba6e..66524a6 100644
      };
      match &s[bound] {
          Entity::EdgeLoop(e) => {
-@@ -643,9 +772,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -643,9 +813,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
          Entity::VertexLoop(v) => {
              // This is an "edge loop" with a single vertex, which is
              // used for cones and not really anything else.
@@ -4610,7 +4776,7 @@ index ad4ba6e..66524a6 100644
      }
  }
  
-@@ -659,7 +788,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -659,7 +829,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
          if i > 0 {
              out.pop();
          }
@@ -4619,7 +4785,7 @@ index ad4ba6e..66524a6 100644
          let o = edge_curve(s, edge.edge_element.cast(), edge.orientation)?;
          out.extend(o.into_iter());
      }
-@@ -667,7 +796,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -667,7 +837,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
  }
  
  fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3>, Error> {
@@ -4628,7 +4794,7 @@ index ad4ba6e..66524a6 100644
      let curve = curve(s, edge_curve, edge_curve.edge_geometry, orientation)?;
  
      let (start, end) = if orientation {
-@@ -675,8 +804,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
+@@ -675,8 +845,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
      } else {
          (edge_curve.edge_end, edge_curve.edge_start)
      };
@@ -4639,7 +4805,7 @@ index ad4ba6e..66524a6 100644
      Ok(curve.build(u, v))
  }
  
-@@ -685,17 +814,17 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -685,17 +855,17 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
  {
      Ok(match &s[curve_id] {
          Entity::Circle(c) => {
@@ -4661,7 +4827,7 @@ index ad4ba6e..66524a6 100644
          },
          Entity::BSplineCurveWithKnots(c) => {
              if c.closed_curve.0 != Some(false) {
-@@ -705,18 +834,18 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -705,18 +875,18 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
              }
  
              let control_points_list = control_points_1d(
@@ -4685,7 +4851,7 @@ index ad4ba6e..66524a6 100644
                  knot_vec,
                  control_points_list,
              );
-@@ -737,21 +866,21 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -737,21 +907,21 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
              };
              let knots: Vec<f64> = bspline.knots.iter().map(|k| k.0).collect();
              let multiplicities: Vec<usize> = bspline.knot_multiplicities.iter()
@@ -4712,7 +4878,7 @@ index ad4ba6e..66524a6 100644
                  knot_vec,
                  control_points_list,
              );
-@@ -772,10 +901,10 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -772,10 +942,10 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
      })
  }
  
@@ -4752,10 +4918,10 @@ index 0000000..0dc8e90
 +    assert_eq!(stats.num_panics, 0);
 +}
 diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
-index 0e65527..b336b88 100644
+index 0e65527..bbb0594 100644
 --- a/wasm/src/lib.rs
 +++ b/wasm/src/lib.rs
-@@ -52,3 +52,84 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
+@@ -52,3 +52,81 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
          .map(|f| *f as f32)
          .collect()
  }
@@ -4819,23 +4985,20 @@ index 0e65527..b336b88 100644
 +pub fn step_to_mesh(data: Vec<u8>, part: usize, parts: usize) -> StepMesh {
 +    use step::step_file::StepFile;
 +    triangulate::triangulate::on_progress(report);
-+    use triangulate::triangulate::triangulate_part;
++    use triangulate::triangulate::triangulate_part_flat;
 +
 +    // Owned and freed as soon as possible: WASM memory never shrinks, so every copy alive at
 +    // the same time raises the worker's memory for good.
 +    let flat = StepFile::strip_flatten_in_place(data);
-+    let step = StepFile::parse(&flat);
-+    let (mesh, stats) = triangulate_part(&step, part, parts.max(1));
++    let mut step = StepFile::parse(&flat);
++    let (mesh, stats) = triangulate_part_flat(&mut step, part, parts.max(1));
 +    drop(step);
 +    drop(flat);
-+    let pack = |f: &dyn Fn(&triangulate::mesh::Vertex) -> [f64; 3]| -> Vec<f32> {
-+        mesh.verts.iter().flat_map(|v| f(v)).map(|x| x as f32).collect()
-+    };
 +    StepMesh {
-+        positions: pack(&|v| [v.pos.x, v.pos.y, v.pos.z]),
-+        normals: pack(&|v| [v.norm.x, v.norm.y, v.norm.z]),
-+        colors: pack(&|v| [v.color.x, v.color.y, v.color.z]),
-+        indices: mesh.triangles.iter().flat_map(|t| t.verts.iter().copied()).collect(),
++        positions: mesh.positions,
++        normals: mesh.normals,
++        colors: mesh.colors,
++        indices: mesh.indices,
 +        faces: stats.num_faces,
 +        failed: stats.num_errors + stats.num_panics,
 +    }
