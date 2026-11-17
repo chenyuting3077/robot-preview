@@ -15,19 +15,23 @@ import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
 
 // One job per worker, which is terminated once it answers. `workers` collects it, so a caller can stop the
 // rest when one fails.
+// ponytail: a worker that dies without an error event (none seen yet) is only caught by the timeout, which
+// must also outlast a slow OpenCascade run; report its progress from the worker if 30 minutes ever bites.
+const WORKER_TIMEOUT = 30 * 60e3;
 function runWorker(message, transfer, workers = []) {
     return new Promise((resolve, reject) => {
         const worker = new StepWorker();
         workers.push(worker);
-        worker.onmessage = ({ data }) => {
+        const finish = (error, data) => {
+            clearTimeout(timer);
             worker.terminate();
-            if (data?.error) reject(new Error(data.error));
+            if (error) reject(error);
             else resolve(data);
         };
-        worker.onerror = event => {
-            worker.terminate();
-            reject(new Error(event.message));
-        };
+        const timer = setTimeout(() => finish(new Error('STEP worker did not answer in 30 minutes')), WORKER_TIMEOUT);
+        worker.onmessage = ({ data }) => finish(data?.error && new Error(data.error), data);
+        worker.onmessageerror = () => finish(new Error('STEP worker sent a message that could not be read'));
+        worker.onerror = event => finish(new Error(event.message));
         worker.postMessage(message, transfer);
     });
 }
