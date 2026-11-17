@@ -12,6 +12,8 @@ const JOBS = {
         return [out, [out.buffer]];
     },
     async foxtrot({ bytes, wasm, part, parts }) {
+        // foxtrot reports each face it starts; every 256th tells the page the run is still moving.
+        globalThis.foxtrotProgress = faces => faces % 256 === 0 && self.postMessage({ progress: faces });
         const { memory } = await initFoxtrot({ module_or_path: wasm });
         const at = reserve_input(bytes.length);
         new Uint8Array(memory.buffer, at, bytes.length).set(bytes);

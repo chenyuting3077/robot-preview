@@ -138,6 +138,9 @@ function __wbg_get_imports() {
         __wbg_error_d1fc0193610e0e39: function(arg0) {
             console.error(arg0);
         },
+        __wbg_foxtrotProgress_2df1116416039553: function(arg0) {
+            globalThis.foxtrotProgress(arg0 >>> 0);
+        },
         __wbg_info_ef9e889444913d2f: function(arg0) {
             console.info(arg0);
         },
