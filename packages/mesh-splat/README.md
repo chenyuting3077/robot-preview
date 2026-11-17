@@ -3,7 +3,7 @@
 Open meshes, point clouds and Gaussian splats in VS Code as a 3D view.
 
 - Meshes: `.stl` `.ply` `.obj` (+ `.mtl`) `.off` `.dae` `.gltf` `.glb` `.3mf` `.wrl` `.3ds`
-- CAD: `.stp` `.step`, tessellated by [foxtrot](https://github.com/Formlabs/foxtrot), or [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)) when foxtrot fails ([why](../../docs/mesh-splat.md#step))
+- CAD: `.stp` `.step` ([how](../../docs/mesh-splat.md#step))
 - Point clouds: `.ply` `.pcd` `.xyz` `.pts`, and `.asc` through *Reopen Editor With…*
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
 - Solid, wireframe and point display, point size, up-axis selection, and vertex / face / splat counts.
@@ -13,4 +13,4 @@ Open meshes, point clouds and Gaussian splats in VS Code as a 3D view.
 
 Part of the Robot Preview series with [Robot Preview: URDF, Xacro & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) and [Robot Preview: USD](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-usd).
 
-Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs; format coverage follows [MeshLab](https://www.meshlab.net/). Screenshot: a splat derived from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0).
+Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs, STEP with [foxtrot](https://github.com/Formlabs/foxtrot) and [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)); format coverage follows [MeshLab](https://www.meshlab.net/). Screenshot: a splat derived from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0).
