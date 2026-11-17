@@ -6,6 +6,7 @@ import { spawn, execSync } from 'node:child_process';
 import os from 'node:os';
 
 const [udir, file, port = '9339'] = process.argv.slice(2);
+const stage = name => process.stderr.write(`[${new Date().toISOString().slice(11, 19)}] ${name}\n`);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const procs = () => new Map(execSync('ps -eo pid=,rss=,args=').toString().split('\n')
     .filter(l => l.includes(udir) && !l.includes('e2e/vscode.mjs')).map(l => l.trim().split(/\s+/))
@@ -17,12 +18,14 @@ const killAll = async () => {
     while (procs().size) await sleep(200);
 };
 await killAll();
+stage('launch');
 
 code(['--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', `--remote-debugging-port=${port}`, '--new-window']);
 const iframes = async () => { try { return (await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) })).json()).filter(t => t.type === 'iframe'); } catch { return null; } };
 // The window's renderer sometimes dies at launch and the debug port then stops answering.
 for (let i = 0; !(await iframes()); i++) { if (i > 100) { console.log('VS Code did not start'); await killAll(); process.exit(2); } await sleep(300); }
 await sleep(10000); // extensions load and their welcome webviews settle
+stage('window up');
 const before = new Set((await iframes()).map(t => t.id));
 const base = procs();
 const start = Date.now();
@@ -60,6 +63,7 @@ while (!state && Date.now() - start < 60000) {
     else await sleep(100);
 }
 if (!state) { console.log('viewer webview did not appear'); await killAll(); process.exit(1); }
+stage('viewer webview found');
 let s;
 while (Date.now() - start < 600000) {
     s = await Promise.race([state(), sleep(5000)]).catch(() => null);
@@ -67,6 +71,7 @@ while (Date.now() - start < 600000) {
     await sleep(200);
 }
 const shown = (Date.now() - start) / 1000;
+stage('shown');
 await sleep(6000); // the STEP cache export runs 500 ms after the first frame
 sampling = false;
 await sleep(300);
