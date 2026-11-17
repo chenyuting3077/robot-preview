@@ -16,9 +16,10 @@ import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
 
 // A fresh worker per job: a Rust panic aborts foxtrot's instance, and WASM memory only goes back when the
 // worker does. `workers` lets a caller stop the rest when one fails.
-// ponytail: a worker that dies without an error event (none seen yet) is only caught by the timeout, which
-// must also outlast a slow OpenCascade run; report its progress from the worker if 30 minutes ever bites.
-const WORKER_TIMEOUT = 30 * 60e3;
+// ponytail: a worker that dies without an error event (none seen yet) is only caught by these timeouts, so
+// a hung foxtrot plus OpenCascade fails within 30 minutes. They sit far above the slowest runs measured
+// (foxtrot 15 s, OpenCascade 116 s, 161 MB file in VS Code); report progress from the worker if one bites.
+const TIMEOUT_MINUTES = { foxtrot: 5, encode: 5, occt: 25 };
 function runWorker(message, transfer, workers = []) {
     return new Promise((resolve, reject) => {
         const worker = new StepWorker();
@@ -29,7 +30,8 @@ function runWorker(message, transfer, workers = []) {
             if (error) reject(error);
             else resolve(data);
         };
-        const timer = setTimeout(() => finish(new Error('STEP worker did not answer in 30 minutes')), WORKER_TIMEOUT);
+        const minutes = TIMEOUT_MINUTES[message.job];
+        const timer = setTimeout(() => finish(new Error(`STEP ${message.job} worker did not answer in ${minutes} minutes`)), minutes * 60e3);
         worker.onmessage = ({ data }) => finish(data?.error && new Error(data.error), data);
         worker.onmessageerror = () => finish(new Error('STEP worker sent a message that could not be read'));
         worker.onerror = event => finish(new Error(event.message));
