@@ -5,14 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { openMeshSplat } from './vscode-mock.mjs';
 
-
-const open = (root, file, postMessage) => openMeshSplat(root, file, { postMessage });
-
 test('two saves whose renders finish out of order leave the page for the newer file', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-render-'));
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
-    const { env, panel } = await open(root, step);
+    const { env, panel } = await openMeshSplat(root, step);
     const stat = env.vscode.workspace.fs.stat;
     // The first render's stat answers late, with the size the file had then.
     let first = true;
@@ -38,7 +35,7 @@ test('a new page starting its cache while the old write is mid-piece keeps its o
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
     const acks = [];
-    const { panel } = await open(root, step, m => acks.push(m));
+    const { panel } = await openMeshSplat(root, step, { postMessage: m => acks.push(m) });
     const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
     const big = new Uint8Array(32 << 20);
     // Old page: first piece of 3; new page: a whole 4-byte cache, sent before the old piece is written.
@@ -56,7 +53,7 @@ test('a save that removes the file for a moment does not leave a failed render',
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-gone-'));
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
-    const { env } = await open(root, step);
+    const { env } = await openMeshSplat(root, step);
     fs.rmSync(step);
     await env.state.watched.change();
     fs.rmSync(root, { recursive: true, force: true });
@@ -67,7 +64,7 @@ test('an empty cache is refused', async () => {
     const step = path.join(root, 'part.stp');
     fs.writeFileSync(step, 'ISO-10303-21;');
     const acks = [];
-    const { panel } = await open(root, step, m => acks.push(m));
+    const { panel } = await openMeshSplat(root, step, { postMessage: m => acks.push(m) });
     const key = panel.webview.html.match(/data-key="([^"]+)"/)[1];
     await panel.listener({ type: 'stepCache', key, at: 0, size: 0, chunk: new Uint8Array(0).buffer });
     assert.ok(acks.pop().error);
@@ -80,7 +77,7 @@ test('a file written in place mid-read is reported changed, not read as a mix', 
     const file = path.join(root, 'cloud.pcd');
     fs.writeFileSync(file, 'abcdef');
     const replies = [];
-    const { panel } = await open(root, file, m => replies.push(m));
+    const { panel } = await openMeshSplat(root, file, { postMessage: m => replies.push(m) });
     const mtime = Number(panel.webview.html.match(/data-mtime="([^"]+)"/)[1]);
     await panel.listener({ type: 'read', id: 1, at: 0, mtime });
     fs.writeFileSync(file, 'ABCDEF');
@@ -96,7 +93,7 @@ test('a write while a piece is being read is reported changed, the last piece in
     const file = path.join(root, 'cloud.pcd');
     fs.writeFileSync(file, 'abcdef');
     const replies = [];
-    const { panel } = await open(root, file, m => replies.push(m));
+    const { panel } = await openMeshSplat(root, file, { postMessage: m => replies.push(m) });
     const mtime = Number(panel.webview.html.match(/data-mtime="([^"]+)"/)[1]);
     const openFile = fs.promises.open;
     fs.promises.open = async (...args) => {
