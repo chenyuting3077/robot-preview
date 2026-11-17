@@ -58,3 +58,13 @@ test('a new page starting its cache while the old write is mid-piece keeps its o
     assert.deepEqual(fs.readdirSync(cacheDir).filter(f => f.endsWith('.part')), []);
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('a save that removes the file for a moment does not leave a failed render', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-gone-'));
+    const step = path.join(root, 'part.stp');
+    fs.writeFileSync(step, 'ISO-10303-21;');
+    const { env } = await open(root, step);
+    fs.rmSync(step);
+    await env.state.watched.change();
+    fs.rmSync(root, { recursive: true, force: true });
+});

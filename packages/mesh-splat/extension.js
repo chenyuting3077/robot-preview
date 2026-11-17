@@ -56,7 +56,9 @@ function activate(context) {
             let renders = 0;
             const render = async () => {
                 const turn = ++renders;
-                const stat = await vscode.workspace.fs.stat(document.uri);
+                // A rename-style save removes the file for a moment; the create that follows renders again.
+                const stat = await vscode.workspace.fs.stat(document.uri).catch(() => null);
+                if (!stat) return;
                 const cache = stepCache(cacheDir, document.uri, stat, manifest.version);
                 const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
                 if (turn !== renders) return;
