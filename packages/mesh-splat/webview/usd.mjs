@@ -351,8 +351,8 @@ export function expandFloat32(data, indices, itemSize) {
 
 // three pushes every triangle into plain arrays. Triangle and quad meshes without holes are written
 // straight into typed arrays (a 177 MB, 3.4M-triangle usdc opens in 2.2-2.3 s against 2.4-3.8 s with three's
-// arrays, VS Code 1.144); null hands anything else (n-gons,
-// holes, indices three would read as undefined) back to three.
+// arrays, VS Code 1.144); null hands anything else (n-gons, holes, indices three would read as undefined)
+// back to three.
 export function triangulateTrisQuads(indices, counts) {
     let size = 0, corners = 0;
     for (let i = 0; i < counts.length; i++) {
