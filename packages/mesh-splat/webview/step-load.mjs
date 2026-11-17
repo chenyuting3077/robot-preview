@@ -72,13 +72,13 @@ const stepMaterial = color => {
 };
 
 // groups: [{ start, count, color }], color in 0-1 sRGB.
-function stepMesh({ name = '', positions, normal, indices, groups }) {
+function stepMesh({ name = '', positions, normalAttribute, indices, groups }) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    if (normal) geometry.setAttribute('normal', normal);
+    if (normalAttribute) geometry.setAttribute('normal', normalAttribute);
     geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     groups.forEach(({ start, count }, slot) => geometry.addGroup(start, count, slot));
-    if (!normal) geometry.computeVertexNormals();
+    if (!normalAttribute) geometry.computeVertexNormals();
     return Object.assign(new THREE.Mesh(geometry, groups.map(({ color }) => stepMaterial(color))), { name });
 }
 
@@ -87,7 +87,7 @@ function foxtrotObject(parts, unit) {
     for (const { positions, normals, indices, groups } of parts) {
         if (!indices.length) continue;
         for (let i = 0; i < positions.length; i++) positions[i] *= unit;
-        group.add(stepMesh({ positions, normal: new THREE.BufferAttribute(normals, 3), indices, groups }));
+        group.add(stepMesh({ positions, normalAttribute: new THREE.BufferAttribute(normals, 3), indices, groups }));
     }
     return group;
 }
@@ -96,7 +96,7 @@ function occtObject({ meshes }) {
     const group = new THREE.Group();
     for (const mesh of meshes) {
         const { indices, groups } = groupByFace(mesh.indices, mesh.faces, mesh.color ?? [0.69, 0.69, 0.69]);
-        group.add(stepMesh({ name: mesh.name, positions: mesh.positions, normal: mesh.normals && new THREE.BufferAttribute(mesh.normals, 3), indices, groups }));
+        group.add(stepMesh({ name: mesh.name, positions: mesh.positions, normalAttribute: mesh.normals && new THREE.BufferAttribute(mesh.normals, 3), indices, groups }));
     }
     return group;
 }
@@ -104,7 +104,7 @@ function occtObject({ meshes }) {
 function cachedObject(bytes) {
     const group = new THREE.Group();
     for (const { name, positions, normals, indices, groups } of decodeStepCache(MeshoptDecoder, bytes)) {
-        group.add(stepMesh({ name, positions, normal: new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(normals, 4), 3, 0, true), indices, groups }));
+        group.add(stepMesh({ name, positions, normalAttribute: new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(normals, 4), 3, 0, true), indices, groups }));
     }
     return group;
 }
@@ -139,9 +139,9 @@ export async function loadStep({ cached, readAll, sendCache }) {
     }
     const bytes = await readAll();
     const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
-    const fast = unit && await foxtrotJob(bytes).catch(() => null);
+    const foxtrotParts = unit && await foxtrotJob(bytes).catch(() => null);
     // The last foxtrot worker took the file, so OpenCascade reads it again.
-    const object = fast?.some(part => part.indices.length) ? foxtrotObject(fast, unit) : occtObject(await occtJob(bytes.length ? bytes : await readAll()));
+    const object = foxtrotParts?.some(part => part.indices.length) ? foxtrotObject(foxtrotParts, unit) : occtObject(await occtJob(bytes.length ? bytes : await readAll()));
     if (sendCache) cacheStep(object, sendCache);
     return object;
 }
