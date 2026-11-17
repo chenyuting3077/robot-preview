@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PCDLoader } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/PCDLoader.js';
-import { readPcdPoints } from '../../packages/mesh-splat/webview/pcd.mjs';
+import { readPcdPoints, pcdReader } from '../../packages/mesh-splat/webview/pcd.mjs';
 import { linearByteTable } from '../../packages/mesh-splat/webview/ply.mjs';
 
 function binaryPcd(fields, rows, points = rows.length) {
@@ -29,3 +29,15 @@ test('leaves ascii, short bodies and double positions to PCDLoader', () => {
     assert.equal(readPcdPoints(binaryPcd(['x', 'y', 'z'], [[1, 2, 3]], 1000)), null);
     assert.equal(readPcdPoints(new TextEncoder().encode('FIELDS x y z\nSIZE 8 8 8\nTYPE F F F\nCOUNT 1 1 1\nPOINTS 0\nDATA binary\n')), null);
 });
+
+test('streamed chunks of any size give the same points', () => {
+    const rows = Array.from({ length: 50 }, (_, i) => [i, -i, i / 2, i * 10, 0]);
+    const bytes = binaryPcd(['x', 'y', 'z', 'intensity', 'normal_x'], rows);
+    const whole = readPcdPoints(bytes);
+    for (const size of [1, 7, 20, 333]) {
+        const reader = pcdReader();
+        for (let at = 0; at < bytes.length; at += size) assert.ok(reader.push(bytes.subarray(at, at + size)));
+        assert.deepEqual(reader.finish(), whole);
+    }
+});
+

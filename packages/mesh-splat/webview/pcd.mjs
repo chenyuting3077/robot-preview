@@ -2,40 +2,89 @@ import { linearByteTable } from './ply.mjs';
 
 // PCDLoader pushes every field of every point into plain arrays; a 1.2 GB
 // binary cloud (38.9M points, x y z intensity normal curvature) runs the
-// webview out of memory. This reads binary x y z (+ rgb) straight into typed
-// arrays and drops normals and intensity, which PointsMaterial never uses.
-// Anything else returns null and goes to PCDLoader.
-export function readPcdPoints(bytes) {
-    const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 4096)));
-    const data = /(^|[\r\n])DATA[ \t]+(\S+)[ \t]*\r?\n/i.exec(head);
-    if (data?.[2] !== 'binary') return null;
-    const field = key => new RegExp(`^${key}[ \\t]+(.*)$`, 'im').exec(head.replace(/^#.*/gm, ''))?.[1].trim().split(/\s+/) ?? [];
-    const fields = field('FIELDS'), sizes = field('SIZE').map(Number), types = field('TYPE');
-    const counts = field('COUNT').map(Number);
-    const count = parseInt(field('POINTS')[0]);
-    if (!(count >= 0) || sizes.length !== fields.length || types.length !== fields.length) return null;
-    const offsets = [];
-    let stride = 0;
-    fields.forEach((_, i) => { offsets.push(stride); stride += sizes[i] * (counts[i] ?? 1); });
-    const [x, y, z] = ['x', 'y', 'z'].map(name => fields.indexOf(name));
-    if ([x, y, z].some(i => i < 0 || types[i] !== 'F' || sizes[i] !== 4)) return null;
-    const start = data.index + data[0].length;
-    // A wrong POINTS must not make us allocate gigabytes for a short body.
-    if (start + stride * count > bytes.length) return null;
-    const rgb = fields.indexOf('rgb');
-    const view = new DataView(bytes.buffer, bytes.byteOffset + start, stride * count);
-    const positions = new Float32Array(count * 3);
-    const colors = rgb >= 0 && sizes[rgb] === 4 ? new Uint8Array(count * 3) : null;
-    const table = colors && linearByteTable();
-    for (let i = 0, row = 0; i < count; i++, row += stride) {
-        positions[i * 3] = view.getFloat32(row + offsets[x], true);
-        positions[i * 3 + 1] = view.getFloat32(row + offsets[y], true);
-        positions[i * 3 + 2] = view.getFloat32(row + offsets[z], true);
-        if (colors) {
-            colors[i * 3] = table[view.getUint8(row + offsets[rgb] + 2)];
-            colors[i * 3 + 1] = table[view.getUint8(row + offsets[rgb] + 1)];
-            colors[i * 3 + 2] = table[view.getUint8(row + offsets[rgb])];
-        }
+// webview out of memory. This reads binary x y z (+ rgb)
+// into typed arrays as the file streams in, so the file itself is never held
+// whole, and drops normals and intensity, which PointsMaterial never uses.
+// Anything else (push
+// returns false, or finish returns null) goes to PCDLoader.
+export function pcdReader() {
+    let head = new Uint8Array(0), layout = null, failed = false, partial, filled = 0, row = 0, kept = 0, result;
+    function setup(text, data) {
+        if (data[2] !== 'binary') return false;
+        const field = key => new RegExp(`^${key}[ \\t]+(.*)$`, 'im').exec(text.slice(0, data.index).replace(/^#.*/gm, ''))?.[1].trim().split(/\s+/) ?? [];
+        const fields = field('FIELDS'), sizes = field('SIZE').map(Number), types = field('TYPE');
+        const counts = field('COUNT').map(Number);
+        const count = parseInt(field('POINTS')[0]);
+        if (!(count >= 0) || sizes.length !== fields.length || types.length !== fields.length) return false;
+        const offsets = [];
+        let stride = 0;
+        fields.forEach((_, i) => { offsets.push(stride); stride += sizes[i] * (counts[i] ?? 1); });
+        const [x, y, z] = ['x', 'y', 'z'].map(name => fields.indexOf(name));
+        if ([x, y, z].some(i => i < 0 || types[i] !== 'F' || sizes[i] !== 4) || !stride) return false;
+        const rgb = fields.indexOf('rgb');
+        const keep = count;
+        layout = { count, keep, stride, x: offsets[x], y: offsets[y], z: offsets[z],
+            rgb: rgb >= 0 && sizes[rgb] === 4 ? offsets[rgb] : -1 };
+        partial = new Uint8Array(stride);
+        result = { positions: new Float32Array(keep * 3),
+            colors: layout.rgb >= 0 ? new Uint8Array(keep * 3) : null };
+        return true;
     }
-    return { positions, colors };
+    const table = linearByteTable();
+    function readRow(view, at) {
+        row++;
+        const { positions, colors } = result;
+        positions[kept * 3] = view.getFloat32(at + layout.x, true);
+        positions[kept * 3 + 1] = view.getFloat32(at + layout.y, true);
+        positions[kept * 3 + 2] = view.getFloat32(at + layout.z, true);
+        if (colors) {
+            colors[kept * 3] = table[view.getUint8(at + layout.rgb + 2)];
+            colors[kept * 3 + 1] = table[view.getUint8(at + layout.rgb + 1)];
+            colors[kept * 3 + 2] = table[view.getUint8(at + layout.rgb)];
+        }
+        kept++;
+    }
+    return {
+        push(chunk) {
+            if (failed) return false;
+            if (!layout) {
+                const joined = new Uint8Array(head.length + chunk.length);
+                joined.set(head);
+                joined.set(chunk, head.length);
+                const text = new TextDecoder('latin1').decode(joined.subarray(0, 65536));
+                const data = /(^|[\r\n])DATA[ \t]+(\S+)[ \t]*\r?\n/i.exec(text);
+                if (!data) {
+                    head = joined;
+                    return !(failed = joined.length > 65536);
+                }
+                if (!setup(text, data)) return !(failed = true);
+                chunk = joined.subarray(data.index + data[0].length);
+                head = null;
+            }
+            const { count, stride } = layout;
+            let at = 0;
+            if (filled) {
+                at = Math.min(stride - filled, chunk.length);
+                partial.set(chunk.subarray(0, at), filled);
+                filled += at;
+                if (filled < stride) return true;
+                if (row < count) readRow(new DataView(partial.buffer), 0);
+                filled = 0;
+            }
+            const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            for (; at + stride <= chunk.length && row < count; at += stride) readRow(view, at);
+            if (row < count && at < chunk.length) {
+                partial.set(chunk.subarray(at));
+                filled = chunk.length - at;
+            }
+            return true;
+        },
+        // A short body means POINTS is wrong; PCDLoader decides what to show.
+        finish: () => (!failed && layout && row === layout.count && kept === layout.keep ? result : null)
+    };
+}
+
+export function readPcdPoints(bytes) {
+    const reader = pcdReader();
+    return reader.push(bytes) ? reader.finish() : null;
 }

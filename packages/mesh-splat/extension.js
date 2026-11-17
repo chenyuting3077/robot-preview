@@ -8,6 +8,7 @@ const escapeAttr = text => String(text).replace(/&/g, '&amp;').replace(/"/g, '&q
 // Tessellating a STEP assembly takes seconds (foxtrot) to minutes (OpenCascade), so the webview sends back
 // its tessellation as GLB and later opens of the same file (path, mtime, size, extension version) load that instead.
 const CACHE_LIMIT = 1 << 30;
+const READ_PIECE = 16 << 20;
 
 function stepCache(cacheDir, fileUri, stat, version) {
     if (!cacheDir || !/\.ste?p$/i.test(fileUri.path)) return null;
@@ -58,7 +59,10 @@ function activate(context) {
             // The GLB arrives in pieces, each acknowledged before the next is sent, and goes straight to disk:
             // one 139 MB message was held by the workbench, the extension host and the main process at once.
             let incoming = null;
+            let reading = null;
+            panel.onDidDispose(() => reading?.then(handle => handle.close(), () => {}));
             panel.webview.onDidReceiveMessage(async message => {
+                if (message?.type === 'read') return read(message.at);
                 if (message?.type !== 'stepCache' || !cache) return;
                 const chunk = message.chunk instanceof ArrayBuffer ? new Uint8Array(message.chunk) : message.chunk;
                 if (!(chunk instanceof Uint8Array) || !Number.isInteger(message.size)) return;
@@ -93,6 +97,22 @@ function activate(context) {
                     total -= file.size;
                 }
             });
+            // VS Code hands a webview a fetched resource only once all of it is in memory (a 1.2 GB PCD grew
+            // the webview by 1.6 GB before parsing), so big files are read here and sent in pieces on request.
+            const read = async at => {
+                try {
+                    if (!Number.isSafeInteger(at) || at < 0) throw new Error('bad offset');
+                    if (at === 0) {
+                        reading?.then(handle => handle.close(), () => {});
+                        reading = fs.promises.open(document.uri.fsPath, 'r');
+                    }
+                    const buffer = new Uint8Array(READ_PIECE);
+                    const { bytesRead } = await (await reading).read(buffer, 0, READ_PIECE, at);
+                    panel.webview.postMessage({ type: 'readReply', at, chunk: bytesRead < READ_PIECE ? buffer.slice(0, bytesRead) : buffer });
+                } catch (error) {
+                    panel.webview.postMessage({ type: 'readReply', at, error: String(error?.message ?? error) });
+                }
+            };
             const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, path.basename(document.uri.path)));
             watcher.onDidChange(render);
             panel.onDidDispose(() => watcher.dispose());

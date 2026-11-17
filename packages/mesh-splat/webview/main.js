@@ -17,7 +17,7 @@ import { flatNormals, percentile, grown } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { groupByColor, mergeMeshes, stepLengthUnit } from './step.mjs';
-import { readPcdPoints } from './pcd.mjs';
+import { pcdReader } from './pcd.mjs';
 import StepWorker from './step-worker.js?worker&inline';
 import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
 import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
@@ -171,10 +171,36 @@ function withUp(object, up) {
     return object;
 }
 const loadGltf = async () => withUp((await new GLTFLoader().loadAsync(src)).scene, '+Y');
-async function loadPcd() {
-    const bytes = await fetchBytes();
-    const points = readPcdPoints(bytes);
-    if (!points) return pointsOf(new PCDLoader().parse(bytes.buffer).geometry);
+// In VS Code the extension reads the file in pieces (see extension.js); elsewhere, and when it cannot read the file, fetch streams it.
+// Pieces are 16 MB (READ_PIECE there); three in flight keep the transfer busy while one is parsed.
+const readReplies = new Map();
+const PIECE = 16 << 20;
+async function* fileChunks() {
+    const request = at => new Promise(resolve => { readReplies.set(at, resolve); vscodeApi.postMessage({ type: 'read', at }); })
+        .finally(() => readReplies.delete(at));
+    const ahead = vscodeApi ? [0, 1, 2].map(i => request(i * PIECE)) : [];
+    for (let at = 0; ahead.length; at += PIECE) {
+        const { chunk, error } = await ahead.shift();
+        if (error && at === 0) break;
+        if (error) throw new Error(error);
+        if (!chunk.byteLength) return;
+        ahead.push(request(at + 3 * PIECE));
+        yield new Uint8Array(chunk.buffer ?? chunk, chunk.byteOffset ?? 0, chunk.byteLength);
+        if (chunk.byteLength < PIECE) return;
+    }
+    const stream = (await fetch(src)).body.getReader();
+    try {
+        for (let chunk; !(chunk = await stream.read()).done;) yield chunk.value;
+    } finally {
+        stream.cancel();
+    }
+}
+
+async function loadPcd(info) {
+    const reader = pcdReader();
+    for await (const chunk of fileChunks()) if (!reader.push(chunk)) break;
+    const points = reader.finish();
+    if (!points) return pointsOf(new PCDLoader().parse((await fetchBytes()).buffer).geometry);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(points.positions, 3));
     if (points.colors) geometry.setAttribute('color', new THREE.BufferAttribute(points.colors, 3, true));
@@ -298,7 +324,10 @@ function cacheStep(object) {
 // One 16 MB piece at a time, each acknowledged by the extension, so the workbench and the extension host
 // never hold the whole GLB.
 let cacheAck = null;
-window.addEventListener('message', ({ data }) => { if (data?.type === 'stepCacheAck') cacheAck?.(); });
+window.addEventListener('message', ({ data }) => {
+    if (data?.type === 'stepCacheAck') cacheAck?.();
+    if (data?.type === 'readReply') readReplies.get(data.at)?.(data);
+});
 async function sendCache(glb) {
     const piece = 16 << 20;
     for (let at = 0; at < glb.byteLength; at += piece) {

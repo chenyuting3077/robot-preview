@@ -38,3 +38,21 @@ test('STEP cache drops oldest GLBs past 1 GB and keeps the new one', async () =>
     assert.equal(left.length, 2);
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('reads the opened file in pieces on request', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-read-'));
+    const file = path.join(root, 'cloud.pcd');
+    fs.writeFileSync(file, 'abcdef');
+    const env = loadExtension({ workspace: root, extension, globalStorage: path.join(root, 'storage') });
+    env.activate();
+    const replies = [];
+    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage: m => replies.push(m), onDidReceiveMessage: listener => { panel.listener = listener; } }, onDidDispose() {} };
+    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
+    await panel.listener({ type: 'read', at: 0 });
+    await panel.listener({ type: 'read', at: 6 });
+    await panel.listener({ type: 'read', at: -1 });
+    assert.equal(new TextDecoder().decode(replies[0].chunk), 'abcdef');
+    assert.equal(replies[1].chunk.length, 0);
+    assert.ok(replies[2].error);
+    fs.rmSync(root, { recursive: true, force: true });
+});
