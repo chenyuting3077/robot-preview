@@ -131,7 +131,7 @@ function cacheStep(object, sendCache) {
 }
 
 // `cached` is the cache file's URL, or ''. The transport's `sendCache` is null outside VS Code.
-export async function loadStep(cached, { readAll, sendCache }) {
+export async function stepModel(cached, { readAll, sendCache }) {
     // A cache that is gone (another editor's trim) or unreadable is replaced by tessellating again.
     if (cached) {
         const object = await fetch(cached)

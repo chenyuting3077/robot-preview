@@ -17,7 +17,6 @@ import { createCloudColors } from './cloud-colors.mjs';
 import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
-import { loadStep as loadStepFile } from './step-load.mjs';
 import { pcdReader, dropNaNPoints } from './pcd.mjs';
 import { createTransport } from './transport.mjs';
 
@@ -209,7 +208,7 @@ async function loadUsd(info) {
 const loadStep = async info => {
     info.format = 'STEP';
     // STEP declares no up axis; the AMR (Autodesk) export is Y-up, Z-up exports need the up menu.
-    return withUp(await loadStepFile(cached, transport), '+Y');
+    return withUp(await (await import('./step-load.mjs')).stepModel(cached, transport), '+Y');
 };
 
 const LOADERS = {
