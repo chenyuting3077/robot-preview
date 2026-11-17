@@ -40,3 +40,16 @@ test('colorize leaves NaN out of the range', () => {
     assert.deepEqual([...colors.subarray(3, 6)], [...colors.subarray(0, 3)]);
     assert.notDeepEqual([...colors.subarray(0, 3)], [...colors.subarray(48 * 3, 49 * 3)]);
 });
+
+test('heights follow the placing matrix; colorRange spans every list', () => {
+    // Translated by 10 up y and rotated so local z points along y.
+    const matrix = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0, 0, 10, 0, 1];
+    assert.deepEqual([...heights(new Float32Array([0, 0, 2]), '+Y', matrix)], [12]);
+    const [low, high] = colorRange([Float32Array.from({ length: 50 }, (_, i) => i), Float32Array.from({ length: 50 }, (_, i) => 100 + i)]);
+    assert.ok(low < 5 && high > 140);
+});
+
+test('finitePoints lists the points with finite xyz', () => {
+    assert.equal(finitePoints(new Float32Array([1, 2, 3])), null);
+    assert.deepEqual(finitePoints(new Float32Array([1, 2, 3, NaN, NaN, NaN, 4, 5, 6])), [0, 2]);
+});

@@ -367,13 +367,18 @@ function setPointSize(size) {
 let clouds = [];
 function setColorMode(mode) {
     document.querySelectorAll('[data-color]').forEach(button => button.classList.toggle('active', button.dataset.color === mode));
-    for (const cloud of clouds) {
+    // Heights in the root's frame, where the up axis applies; one range over all clouds.
+    root.updateMatrixWorld(true);
+    const toRoot = root.matrixWorld.clone().invert();
+    const values = clouds.map(({ geometry, matrixWorld }) => (mode === 'intensity' ? geometry.userData.intensity
+        : mode === 'height' && heights(geometry.attributes.position.array, $('up-select').value, toRoot.clone().multiply(matrixWorld).elements)));
+    const range = values.some(Boolean) && colorRange(values.filter(Boolean));
+    clouds.forEach((cloud, c) => {
         const { geometry, material } = cloud;
-        const values = mode === 'intensity' ? geometry.userData.intensity : mode === 'height' && heights(geometry.attributes.position.array, $('up-select').value);
         // One mapped attribute per cloud, refilled in place: a replaced attribute keeps its GPU buffer until the geometry is disposed.
-        if (values) {
-            const mapped = cloud.userData.mapped ??= new THREE.BufferAttribute(new Uint8Array(values.length * 3), 3, true);
-            colorize(values, mapped.array);
+        if (values[c]) {
+            const mapped = cloud.userData.mapped ??= new THREE.BufferAttribute(new Uint8Array(values[c].length * 3), 3, true);
+            colorize(values[c], mapped.array, range);
             mapped.needsUpdate = true;
             geometry.setAttribute('color', mapped);
         }
@@ -382,7 +387,7 @@ function setColorMode(mode) {
         material.vertexColors = hasColor(geometry);
         material.color.set(hasColor(geometry) ? 0xffffff : 0x9aa7b8);
         material.needsUpdate = true;
-    }
+    });
 }
 
 // Runs before setMode can add points to meshes, so every Points here is a point cloud.
