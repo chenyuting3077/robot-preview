@@ -167,7 +167,9 @@ function activate(context) {
                 writer.dispose();
             });
             const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, path.basename(document.uri.path)));
+            // Editors that save by writing a new file and renaming it over the old one fire create, not change.
             watcher.onDidChange(render);
+            watcher.onDidCreate(render);
             panel.onDidDispose(() => watcher.dispose());
             await render();
         }

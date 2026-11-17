@@ -59,6 +59,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
     const fire = (name, event) => (listeners[name] || []).forEach(callback => callback(event));
 
     const state = {
+        watched: {},
         docs: [],
         posted: [],
         panels: [],
@@ -160,7 +161,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
                 readDirectory: async uri => (await fsp.readdir(uri.fsPath)).map(name => [name, 1]),
                 delete: async uri => fsp.rm(uri.fsPath)
             },
-            createFileSystemWatcher: () => ({ onDidChange() {}, onDidCreate() {}, onDidDelete() {}, dispose() {} }),
+            createFileSystemWatcher: () => ({ onDidChange: f => { state.watched.change = f; }, onDidCreate: f => { state.watched.create = f; }, onDidDelete() {}, dispose() {} }),
             onDidChangeTextDocument: on('change'),
             onDidSaveTextDocument: on('save'),
             onDidChangeConfiguration: on('config'),

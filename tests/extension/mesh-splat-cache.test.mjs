@@ -113,3 +113,19 @@ test('a cache piece past the announced size is refused', async () => {
     assert.deepEqual(fs.readdirSync(path.join(storage, 'step-cache')), []);
     fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('a save that renames a new file over the old one re-renders with a new cache key', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-rename-'));
+    const step = path.join(root, 'part.stp');
+    fs.writeFileSync(step, 'ISO-10303-21;');
+    const env = loadExtension({ workspace: root, extension, globalStorage: path.join(root, 'storage') });
+    env.activate();
+    const panel = { webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage() {}, onDidReceiveMessage() {} }, onDidDispose() {} };
+    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(step) }, panel);
+    const before = panel.webview.html.match(/data-key="([^"]+)"/)[1];
+    fs.writeFileSync(`${step}.tmp`, 'ISO-10303-21; changed');
+    fs.renameSync(`${step}.tmp`, step);
+    await env.state.watched.create();
+    assert.notEqual(panel.webview.html.match(/data-key="([^"]+)"/)[1], before);
+    fs.rmSync(root, { recursive: true, force: true });
+});
