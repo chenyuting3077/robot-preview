@@ -17,7 +17,7 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 
 ## Large point clouds
 
-- VS Code reads a fetched webview resource whole before handing it over: a 1.2 GB PCD grew the webview by 1.6 GB with the viewer keeping one point. Binary PCD is therefore read by the extension in 16 MB pieces, three in flight (one at a time: 17 s against 7.6 s).
+- VS Code reads a fetched webview resource whole before handing it over: a 1.2 GB PCD grew the webview by 1.6 GB with the viewer keeping one point. PCD (binary, ASCII and `binary_compressed`) is therefore read by the extension in 16 MB pieces, three in flight (one at a time: 17 s against 7.6 s). `binary_compressed` stores columns, so it is inflated whole before its points are read. A 7.1M-point map against PCDLoader: ASCII 238 MB 3.8–4.1 s, +1.1–1.2 GB against 4.4–5.7 s, +2.4–2.5 GB; `binary_compressed` 84 MB 2.1 s, +0.9 GB against 2.4–3.0 s, +1.4–1.7 GB.
 - Past 10M points an even 10M are shown, and the info popover says so. Not a LOD: zooming in never shows the dropped points.
 - 1.2 GB, 38.9M-point Livox map: 5.0–5.3 s, +1.2–1.5 GB, 21 fps orbiting (7 runs); 0.2.0 cannot open it. 181 MB, 4.5M-face binary PLY mesh: 1.8 s, +1.05 GB; 0.2.0 went past 6 GB.
 
@@ -50,4 +50,4 @@ foxtrot (Rust, patched) tessellates; OpenCascade (`occt-import-js`, rebuilt at `
 
 ## Not supported
 
-E57, PTX, NXS, X3D and other MeshLab-only formats, Draco / Meshopt compressed glTF, ASCII 2DGS PLY, ASCII or `binary_compressed` PCD of a few hundred MB.
+E57, PTX, NXS, X3D and other MeshLab-only formats, Draco / Meshopt compressed glTF, ASCII 2DGS PLY.

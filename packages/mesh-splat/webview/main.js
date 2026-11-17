@@ -173,8 +173,7 @@ async function loadPcd(info) {
     const reader = pcdReader(POINT_LIMIT);
     for await (const chunk of transport.fileChunks()) if (!reader.push(chunk)) break;
     const points = reader.finish();
-    // ponytail: ASCII and binary_compressed PCD still go whole through PCDLoader, which runs out of memory
-    // on files of a few hundred MB; stream them like binary if such files turn up.
+    // Only a header the reader does not know (no numeric x y z) reaches PCDLoader, whole.
     if (!points) {
         const geometry = new PCDLoader().parse((await fetchBytes()).buffer).geometry;
         const kept = dropNaNPoints(geometry.attributes);
