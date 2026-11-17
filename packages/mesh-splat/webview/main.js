@@ -381,15 +381,15 @@ function cachedObject(bytes) {
 // never hold the whole GLB.
 let cacheAck = null;
 window.addEventListener('message', ({ data }) => {
-    if (data?.type === 'stepCacheAck') cacheAck?.();
+    if (data?.type === 'stepCacheAck') cacheAck?.(data);
     if (data?.type === 'readReply') readReplies.get(data.at)?.(data);
 });
-async function sendCache(glb) {
-    const piece = 16 << 20;
-    for (let at = 0; at < glb.byteLength; at += piece) {
+async function sendCache(bytes) {
+    for (let at = 0; at < bytes.byteLength; at += PIECE) {
         const acked = new Promise(resolve => { cacheAck = resolve; });
-        vscodeApi.postMessage({ type: 'stepCache', at, size: glb.byteLength, chunk: glb.slice(at, at + piece) });
-        await acked;
+        vscodeApi.postMessage({ type: 'stepCache', at, size: bytes.byteLength, chunk: bytes.slice(at, at + PIECE) });
+        const { error } = await acked;
+        if (error) return console.warn('STEP cache not written:', error);
     }
 }
 

@@ -56,23 +56,35 @@ function activate(context) {
                 cache = stepCache(cacheDir, document.uri, stat, manifest.version);
                 panel.webview.html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache);
             };
-            // The GLB arrives in pieces, each acknowledged before the next is sent, and goes straight to disk:
+            // The cache arrives in pieces, each acknowledged before the next is sent, and goes straight to disk:
             // one 139 MB message was held by the workbench, the extension host and the main process at once.
             let incoming = null;
             let reading = null;
-            panel.onDidDispose(() => reading?.then(handle => handle.close(), () => {}));
+            panel.onDidDispose(() => {
+                reading?.then(handle => handle.close(), () => {});
+                incoming?.handle.close().catch(() => {});
+            });
             panel.webview.onDidReceiveMessage(async message => {
                 if (message?.type === 'read') return read(message.at);
-                if (message?.type !== 'stepCache' || !cache) return;
+                if (message?.type !== 'stepCache') return;
+                try {
+                    await receiveCache(message);
+                } catch (error) {
+                    incoming?.handle.close().catch(() => {});
+                    incoming = null;
+                    panel.webview.postMessage({ type: 'stepCacheAck', error: String(error?.message ?? error) });
+                }
+            });
+            const receiveCache = async message => {
                 const chunk = message.chunk instanceof ArrayBuffer ? new Uint8Array(message.chunk) : message.chunk;
-                if (!(chunk instanceof Uint8Array) || !Number.isInteger(message.size)) return;
+                if (!cache || !(chunk instanceof Uint8Array) || !Number.isInteger(message.size)) throw new Error('bad cache piece');
                 if (message.at === 0) {
                     await incoming?.handle.close();
                     await fs.promises.mkdir(cacheDir.fsPath, { recursive: true });
-                    const target = cache.uri;
-                    incoming = { target, written: 0, handle: await fs.promises.open(`${target.fsPath}.part`, 'w') };
+                    const target = cache.uri.fsPath;
+                    incoming = { target, written: 0, handle: await fs.promises.open(`${target}.part`, 'w') };
                 }
-                if (!incoming || message.at !== incoming.written) return;
+                if (!incoming || message.at !== incoming.written) throw new Error('cache piece out of order');
                 await incoming.handle.write(chunk, 0, chunk.length, message.at);
                 incoming.written += chunk.length;
                 panel.webview.postMessage({ type: 'stepCacheAck' });
@@ -80,11 +92,12 @@ function activate(context) {
                 const { target, handle } = incoming;
                 incoming = null;
                 await handle.close();
-                const prefix = path.basename(target.fsPath).split('-')[0];
+                const prefix = path.basename(target).split('-')[0];
                 for (const file of await fs.promises.readdir(cacheDir.fsPath)) {
-                    if (file.startsWith(`${prefix}-`) && !file.endsWith('.part')) await fs.promises.rm(path.join(cacheDir.fsPath, file), { force: true });
+                    const full = path.join(cacheDir.fsPath, file);
+                    if (file.startsWith(`${prefix}-`) && !file.endsWith('.part') && full !== target) await fs.promises.rm(full, { force: true });
                 }
-                await fs.promises.rename(`${target.fsPath}.part`, target.fsPath);
+                await fs.promises.rename(`${target}.part`, target);
                 // Oldest first until the folder fits; the 39 MB AMR caches as 85 MB.
                 const files = await Promise.all((await fs.promises.readdir(cacheDir.fsPath)).map(async file => {
                     const full = path.join(cacheDir.fsPath, file);
@@ -92,11 +105,11 @@ function activate(context) {
                 }));
                 let total = files.reduce((sum, file) => sum + file.size, 0);
                 for (const file of files.sort((a, b) => a.mtimeMs - b.mtimeMs)) {
-                    if (total <= CACHE_LIMIT || file.full === target.fsPath) break;
+                    if (total <= CACHE_LIMIT || file.full === target) break;
                     await fs.promises.rm(file.full, { force: true });
                     total -= file.size;
                 }
-            });
+            };
             // VS Code hands a webview a fetched resource only once all of it is in memory (a 1.2 GB PCD grew
             // the webview by 1.6 GB before parsing), so big files are read here and sent in pieces on request.
             const read = async at => {
