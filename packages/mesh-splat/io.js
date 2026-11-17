@@ -9,6 +9,22 @@ const messageOf = error => String(error?.message ?? error);
 // `keys` maps each cache file name this editor's pages were rendered with to that STEP file's prefix.
 // Pieces go straight to disk because one 139 MB message was held by the workbench, the extension host and
 // the main process at once; each editor writes its own .part so two editors of one file don't collide.
+// Cache writes in progress in this extension host. A .part names its writer's pid, so another window's
+// write in progress is told apart from one a closed window left behind.
+const writing = new Set();
+const alive = pid => {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return error.code === 'EPERM';
+    }
+};
+const busyPart = (full, file) => {
+    const pid = Number(file.match(/\.(\d+)\.[0-9a-f]+\.part$/)?.[1]);
+    return writing.has(full) || (pid > 0 && pid !== process.pid && alive(pid));
+};
+
 function cacheWriter(dir, keys, post) {
     let incoming = null;
     let queue = Promise.resolve();
@@ -16,6 +32,7 @@ function cacheWriter(dir, keys, post) {
     const drop = () => {
         if (incoming) {
             const { handle, part } = incoming;
+            writing.delete(part);
             handle.close().catch(() => {}).then(() => fs.promises.rm(part, { force: true }));
         }
         incoming = null;
@@ -27,7 +44,8 @@ function cacheWriter(dir, keys, post) {
             drop();
             await fs.promises.mkdir(dir, { recursive: true });
             const target = path.join(dir, message.key);
-            const part = `${target}.${crypto.randomBytes(4).toString('hex')}.part`;
+            const part = `${target}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.part`;
+            writing.add(part);
             incoming = { target, part, prefix: keys.get(message.key), written: 0, size: message.size, handle: await fs.promises.open(part, 'w') };
         }
         if (!incoming || message.at !== incoming.written) throw new Error('cache piece out of order');
@@ -43,6 +61,7 @@ function cacheWriter(dir, keys, post) {
             if (file.startsWith(`${prefix}-`) && !file.endsWith('.part') && full !== target) await fs.promises.rm(full, { force: true });
         }
         await fs.promises.rename(part, target);
+        writing.delete(part);
         await trimCache(dir, target);
     };
     return {
@@ -58,17 +77,14 @@ function cacheWriter(dir, keys, post) {
     };
 }
 
-// Oldest first until the folder fits. A .part younger than an hour may be another editor's write in
-// progress; older ones are left over from a closed window and go like any entry.
-// ponytail: an hour is a guess at the longest write; a write that slow loses its .part to the trim and
-// fails its rename, so track live writes across editors if that is ever seen.
+// Oldest first until the folder fits; a .part still being written stays, a left-over one goes like any entry.
 async function trimCache(dir, keep) {
-    const now = Date.now();
     const files = (await Promise.all((await fs.promises.readdir(dir)).map(async file => {
         const full = path.join(dir, file);
+        if (file.endsWith('.part') && busyPart(full, file)) return null;
         const stat = await fs.promises.stat(full).catch(() => null);
-        return stat && { full, size: stat.size, mtimeMs: stat.mtimeMs, busy: file.endsWith('.part') && now - stat.mtimeMs < 3600e3 };
-    }))).filter(file => file && !file.busy);
+        return stat && { full, size: stat.size, mtimeMs: stat.mtimeMs };
+    }))).filter(Boolean);
     let total = files.reduce((sum, file) => sum + file.size, 0);
     for (const file of files.sort((a, b) => a.mtimeMs - b.mtimeMs)) {
         if (total <= CACHE_LIMIT) break;
