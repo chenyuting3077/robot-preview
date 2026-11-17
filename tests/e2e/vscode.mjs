@@ -81,7 +81,8 @@ while (!state && Date.now() - start < 60000) {
 if (!state) { console.log('viewer webview did not appear'); await killAll(); process.exit(1); }
 stage('viewer webview found');
 let s;
-while (Date.now() - start < 600000) {
+// WAIT_S (default 600) bounds the wait for the viewer; OpenCascade on a big assembly needs longer.
+while (Date.now() - start < (+process.env.WAIT_S || 600) * 1000) {
     s = await Promise.race([state(), sleep(5000)]).catch(() => null);
     if (s?.ready && !s.loading) break;
     await sleep(200);
