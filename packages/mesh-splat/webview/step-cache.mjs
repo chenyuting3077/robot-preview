@@ -2,9 +2,9 @@
 // mantissa), octahedral 8-bit normals and indices. A 3.96M-vertex, 3.67M-triangle assembly: 132.6 MB of
 // arrays -> 24.2 MB, 2.3 s to encode, 0.2 s to decode, positions within 0.016 of a 333-unit model (Node 22).
 // The index codec may rotate a triangle's corners, which keeps its winding.
-const FORMAT = 'robot-preview-step-cache-2';
+const FORMAT = 'robot-preview-step-cache-3';
 
-// meshes: [{ name, positions: Float32Array, normals: Float32Array, indices: Uint32Array, groups: [[start, count, srgb]] }]
+// meshes: [{ name, positions: Float32Array, normals: Float32Array, indices: Uint32Array, groups: [{ start, count, color }] }]
 export function encodeStepCache(encoder, meshes) {
     const parts = [];
     let size = 0;

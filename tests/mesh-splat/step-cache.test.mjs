@@ -10,7 +10,7 @@ test('STEP cache round-trips meshes within the codec precision', async () => {
     const positions = new Float32Array([0, 0, 0, 1.5, 0, 0, 0, 2.25, 0, 0, 0, -3]);
     const normals = new Float32Array([0, 0, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0]);
     const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
-    const groups = [[0, 3, [1, 0, 0]], [3, 3, [0.5, 0.5, 0.5]]];
+    const groups = [{ start: 0, count: 3, color: [1, 0, 0] }, { start: 3, count: 3, color: [0.5, 0.5, 0.5] }];
     const [mesh] = decodeStepCache(MeshoptDecoder, encodeStepCache(MeshoptEncoder, [{ name: 'part', positions, normals, indices, groups }]));
     assert.equal(mesh.name, 'part');
     assert.deepEqual(mesh.groups, groups);

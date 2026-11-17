@@ -5,15 +5,15 @@ import { encodeStepCache } from './step-cache.mjs';
 import { groupByColor } from './step.mjs';
 
 // One job per worker: a Rust panic aborts the foxtrot instance, so the caller starts a fresh worker each time.
-self.onmessage = async ({ data: { engine, bytes, wasm, part, parts, meshes: cacheMeshes } }) => {
+self.onmessage = async ({ data: { job, bytes, wasm, part, parts, meshes: cacheMeshes } }) => {
     try {
-        if (engine === 'encode') {
+        if (job === 'encode') {
             await MeshoptEncoder.ready;
             const out = encodeStepCache(MeshoptEncoder, cacheMeshes);
             self.postMessage(out, [out.buffer]);
             return;
         }
-        if (engine === 'foxtrot') {
+        if (job === 'foxtrot') {
             const { memory } = await initFoxtrot({ module_or_path: wasm });
             const at = reserve_input(bytes.length);
             new Uint8Array(memory.buffer, at, bytes.length).set(bytes);

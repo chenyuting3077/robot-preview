@@ -6,8 +6,6 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'meshoptimizer/decoder';
-import { decodeStepCache } from './step-cache.mjs';
 import { ThreeMFLoader } from 'three/examples/jsm/loaders/3MFLoader.js';
 import { VRMLLoader } from 'three/examples/jsm/loaders/VRMLLoader.js';
 import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
@@ -17,11 +15,9 @@ import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } f
 import { flatNormals, percentile, grown, colorize, heights } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
-import { stepLengthUnit } from './step.mjs';
+import { loadStep as loadStepFile } from './step-load.mjs';
 import { pcdReader } from './pcd.mjs';
-import StepWorker from './step-worker.js?worker&inline';
-import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
-import occtWasm from '../vendor/occt/occt-import-js.wasm?url';
+import { createTransport } from './transport.mjs';
 
 const STRINGS = {
     en: { colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element' },
@@ -35,6 +31,7 @@ const $ = id => document.getElementById(id);
 
 const { src, name, bytes: fileSize, cached, key: cacheKey } = document.body.dataset;
 const vscodeApi = globalThis.acquireVsCodeApi?.();
+const { fileChunks, readAll, sendCache } = createTransport({ vscodeApi, src, fileSize, cacheKey });
 const ext = name.split('.').pop().toLowerCase();
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -174,43 +171,6 @@ function withUp(object, up) {
 const loadGltf = async () => withUp((await new GLTFLoader().loadAsync(src)).scene, '+Y');
 // ponytail: an even sample, not a LOD; zooming in never shows the dropped points. A Potree-style octree would.
 const POINT_LIMIT = 10_000_000;
-// In VS Code the extension reads the file in pieces (see extension.js); elsewhere, and when it cannot read the file, fetch streams it.
-// Pieces are 16 MB (READ_PIECE there); three in flight keep the transfer busy while one is parsed.
-const readReplies = new Map();
-const PIECE = 16 << 20;
-async function* fileChunks() {
-    const request = at => new Promise(resolve => { readReplies.set(at, resolve); vscodeApi.postMessage({ type: 'read', at }); })
-        .finally(() => readReplies.delete(at));
-    const ahead = vscodeApi ? [0, 1, 2].map(i => request(i * PIECE)) : [];
-    for (let at = 0; ahead.length; at += PIECE) {
-        const { chunk, error } = await ahead.shift();
-        if (error && at === 0) break;
-        if (error) throw new Error(error);
-        if (!chunk.byteLength) return;
-        ahead.push(request(at + 3 * PIECE));
-        yield new Uint8Array(chunk.buffer ?? chunk, chunk.byteOffset ?? 0, chunk.byteLength);
-        if (chunk.byteLength < PIECE) return;
-    }
-    const stream = (await fetch(src)).body.getReader();
-    try {
-        for (let chunk; !(chunk = await stream.read()).done;) yield chunk.value;
-    } finally {
-        stream.cancel();
-    }
-}
-
-// Sized from the stat the page was rendered with; a save mid-read re-renders the page anyway.
-async function readAll() {
-    const out = new Uint8Array(Number(fileSize));
-    let at = 0;
-    for await (const chunk of fileChunks()) {
-        if (at + chunk.length > out.length) throw new Error('the file changed while it was read');
-        out.set(chunk, at);
-        at += chunk.length;
-    }
-    return out.subarray(0, at);
-}
-
 async function loadPcd(info) {
     const reader = pcdReader(POINT_LIMIT);
     for await (const chunk of fileChunks()) if (!reader.push(chunk)) break;
@@ -245,185 +205,11 @@ async function loadUsd(info) {
     return withUp(group, upAxis === 'Y' ? '+Y' : '+Z');
 }
 
-// STEP is B-rep and needs a CAD kernel to tessellate.
-// ponytail: foxtrot skips under 1% of faces, left as small holes; fix foxtrot's surface cases, or run
-// OpenCascade on the skipped faces only, if a model needs them. foxtrot shows a 39 MB assembly in 7.5 s; OpenCascade (C++) gets every face but takes minutes on
-// large assemblies, so it runs only when the length unit is unclear or foxtrot aborts (a Rust panic kills
-// the whole WASM instance) or yields no triangles (it skips shapes it does not know). Both run in a worker so the view keeps turning meanwhile.
-// The worker gets the WASM bytes, not its URL, so it does not depend on a fetch from a blob: worker
-// reaching the webview's service worker, which serves extension files in VS Code.
-// `give` hands the worker `bytes` itself, leaving it empty here, instead of a copy.
-// `workers` collects each worker, so a caller can stop the rest when one fails.
-async function stepJob(engine, bytes, part = 0, parts = 1, give = false, workers = []) {
-    const copy = give ? bytes : bytes.slice();
-    const wasm = await fetch(new URL(engine === 'foxtrot' ? foxtrotWasm : occtWasm, document.baseURI)).then(response => response.arrayBuffer());
-    return new Promise((resolve, reject) => {
-        const worker = new StepWorker();
-        workers.push(worker);
-        worker.onmessage = ({ data }) => {
-            worker.terminate();
-            if (data.error) reject(new Error(data.error));
-            else resolve(data);
-        };
-        worker.onerror = event => {
-            worker.terminate();
-            reject(new Error(event.message));
-        };
-        worker.postMessage({ engine, bytes: copy, wasm, part, parts }, [wasm, copy.buffer]);
-    });
-}
-
-// Each worker parses the whole file and triangulates every parts-th face. A worker peaks at about 3.3x
-// the file (161 MB file: 512 MB); budgeting 8x keeps that file at two workers. AMR 5.0 s -> 2.2 s with 4 in Node.
-async function foxtrotJob(bytes) {
-    const parts = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1, 1 + Math.floor(1.5e9 / (8 * bytes.length))));
-    const workers = [];
-    // One mesh per worker: merging them would hold every array twice at the memory peak.
-    // When one fails OpenCascade runs next, so the others must not keep their memory meanwhile.
-    return Promise.all(Array.from({ length: parts }, (_, part) => stepJob('foxtrot', bytes, part, parts, part === parts - 1, workers)))
-        .catch(error => {
-            workers.forEach(worker => worker.terminate());
-            throw error;
-        });
-}
-
-const stepMaterials = new Map();
-const stepMaterial = color => {
-    const key = color.join();
-    if (!stepMaterials.has(key)) stepMaterials.set(key, new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(...color, THREE.SRGBColorSpace), roughness: 0.8, side: THREE.DoubleSide, userData: { srgb: color } }));
-    return stepMaterials.get(key);
-};
-
-function foxtrotObject(parts, unit) {
-    const group = new THREE.Group();
-    for (const { positions, normals, indices, groups } of parts) {
-        if (!indices.length) continue;
-        for (let i = 0; i < positions.length; i++) positions[i] *= unit;
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-        geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-        groups.forEach(({ start, count }, slot) => geometry.addGroup(start, count, slot));
-        group.add(new THREE.Mesh(geometry, groups.map(({ color }) => stepMaterial(color))));
-    }
-    return group;
-}
-
-function occtObject({ meshes }) {
-    const group = new THREE.Group();
-    for (const mesh of meshes) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3));
-        if (mesh.normals) geometry.setAttribute('normal', new THREE.BufferAttribute(mesh.normals, 3));
-        // Faces may carry their own color over the part's; each face is a run of triangles [first, last].
-        // Triangles are regrouped by material so a part draws once per color, not once per face.
-        const base = mesh.color ?? [0.69, 0.69, 0.69];
-        const used = [stepMaterial(base)];
-        const runs = [[]];
-        for (const { first, last, color } of mesh.faces ?? []) {
-            let slot = used.indexOf(stepMaterial(color ?? base));
-            if (slot < 0) slot = used.push(stepMaterial(color)) - 1;
-            (runs[slot] ??= []).push(first * 3, (last + 1) * 3);
-        }
-        const source = mesh.indices;
-        const covered = runs.flat().reduce((sum, value, i) => sum + (i % 2 ? value : -value), 0);
-        const regroup = runs.length > 1 && covered === source.length;
-        const index = regroup ? new Uint32Array(source.length) : source;
-        if (regroup) {
-            let offset = 0;
-            runs.forEach((ranges, slot) => {
-                const start = offset;
-                for (let i = 0; i < ranges.length; i += 2) {
-                    index.set(source.subarray(ranges[i], ranges[i + 1]), offset);
-                    offset += ranges[i + 1] - ranges[i];
-                }
-                geometry.addGroup(start, offset - start, slot);
-            });
-        }
-        geometry.setIndex(new THREE.BufferAttribute(index, 1));
-        if (!geometry.attributes.normal) geometry.computeVertexNormals();
-        group.add(Object.assign(new THREE.Mesh(geometry, regroup ? used : used[0]), { name: mesh.name }));
-    }
-    return group;
-}
-
-// Encoded in a worker after the first frame, so the model shows without waiting for it.
-function cacheStep(object) {
-    const meshes = [];
-    object.traverse(({ isMesh, name, geometry, material }) => {
-        if (!isMesh || !geometry.index?.count) return;
-        const color = slot => (Array.isArray(material) ? material[slot] : material).userData.srgb;
-        meshes.push({
-            name,
-            positions: geometry.attributes.position.array.slice(),
-            normals: geometry.attributes.normal.array.slice(),
-            indices: Uint32Array.from(geometry.index.array),
-            groups: geometry.groups.length ? geometry.groups.map(({ start, count, materialIndex }) => [start, count, color(materialIndex)]) : [[0, geometry.index.count, color(0)]]
-        });
-    });
-    if (!vscodeApi || !meshes.length) return;
-    setTimeout(() => {
-        const worker = new StepWorker();
-        worker.onmessage = ({ data }) => {
-            worker.terminate();
-            if (data instanceof Uint8Array) sendCache(data);
-            else console.warn('STEP cache not written:', data?.error);
-        };
-        worker.onerror = event => {
-            worker.terminate();
-            console.warn('STEP cache not written:', event.message);
-        };
-        worker.postMessage({ engine: 'encode', meshes }, meshes.flatMap(mesh => [mesh.positions.buffer, mesh.normals.buffer, mesh.indices.buffer]));
-    }, 500);
-}
-
-function cachedObject(bytes) {
-    const group = new THREE.Group();
-    for (const { name, positions, normals, indices, groups } of decodeStepCache(MeshoptDecoder, bytes)) {
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('normal', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(normals, 4), 3, 0, true));
-        geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-        groups.forEach(([start, count], slot) => geometry.addGroup(start, count, slot));
-        group.add(Object.assign(new THREE.Mesh(geometry, groups.map(([, , color]) => stepMaterial(color))), { name }));
-    }
-    return group;
-}
-
-// One piece at a time, each acknowledged by the extension, so the workbench and the extension host
-// never hold the whole cache file.
-let cacheAck = null;
-window.addEventListener('message', ({ data }) => {
-    if (data?.type === 'stepCacheAck') cacheAck?.(data);
-    if (data?.type === 'readReply') readReplies.get(data.at)?.(data);
-});
-async function sendCache(bytes) {
-    for (let at = 0; at < bytes.byteLength; at += PIECE) {
-        const acked = new Promise(resolve => { cacheAck = resolve; });
-        vscodeApi.postMessage({ type: 'stepCache', key: cacheKey, at, size: bytes.byteLength, chunk: bytes.slice(at, at + PIECE) });
-        const { error } = await acked;
-        if (error) return console.warn('STEP cache not written:', error);
-    }
-}
-
-async function loadStep(info) {
+const loadStep = async info => {
     info.format = 'STEP';
     // STEP declares no up axis; the AMR (Autodesk) export is Y-up, Z-up exports need the up menu.
-    if (cached) {
-        const bytes = await fetch(cached).then(response => response.arrayBuffer()).then(buffer => new Uint8Array(buffer));
-        await MeshoptDecoder.ready;
-        // An unreadable cache is replaced by tessellating again.
-        const object = await Promise.resolve().then(() => cachedObject(bytes)).catch(error => (console.warn('STEP cache unreadable:', error), null));
-        if (object) return withUp(object, '+Y');
-    }
-    const bytes = await readAll();
-    const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
-    const fast = unit && await foxtrotJob(bytes).catch(() => null);
-    // The last foxtrot worker took the file, so OpenCascade reads it again.
-    const object = fast?.some(part => part.indices.length) ? foxtrotObject(fast, unit) : occtObject(await stepJob('occt', bytes.length ? bytes : await readAll(), 0, 1, true));
-    cacheStep(object);
-    return withUp(object, '+Y');
-}
+    return withUp(await loadStepFile({ cached, readAll, sendCache }), '+Y');
+};
 
 const LOADERS = {
     stl: async () => {
