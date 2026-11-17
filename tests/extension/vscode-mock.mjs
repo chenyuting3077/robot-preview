@@ -50,7 +50,8 @@ export async function copyFixture() {
     return dir;
 }
 
-export function loadExtension({ workspace, config = {}, extension: extensionFile = extensionPath, globalStorage }) {
+// `root` is the extension's folder when its main file is not at the top (the USD package's dist/extension.js).
+export function loadExtension({ workspace, config = {}, extension: extensionFile = extensionPath, globalStorage, root = path.dirname(extensionFile) }) {
     const listeners = {};
     const on = name => callback => {
         (listeners[name] ||= []).push(callback);
@@ -231,7 +232,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
     Module._load = originalLoad;
 
     const context = {
-        extensionUri: { fsPath: path.dirname(extensionFile) },
+        extensionUri: { fsPath: root },
         globalStorageUri: globalStorage && { fsPath: globalStorage, path: globalStorage },
         subscriptions: [],
         globalState: { get: key => state.globalState.get(key), update: async (key, value) => state.globalState.set(key, value) },
