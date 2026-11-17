@@ -1,97 +1,43 @@
 # VS Code Extension
 
-## Which files are sent to the viewer
+Pitfalls of building and publishing it: issues #1 and #5.
 
-The webview cannot read the disk, so the extension sends files to it. It starts from the nearest ancestor directory containing `package.xml`; without one, the whole workspace folder is used (so the `urdf/` + `meshes/` sibling layout still works). Every `package://NAME/` and `$(find NAME)` found in the sent URDF / Xacro / XML files pulls in package `NAME` as well, recursively.
+## Files sent to the viewer
 
-Packages are looked up in this order, first match wins: the `robotPreviewUrdf.packages` setting, `package.xml` anywhere in the workspace, `ROS_PACKAGE_PATH`, `AMENT_PREFIX_PATH`, then `/opt/ros/*/share`. VS Code only sees `ROS_PACKAGE_PATH` / `AMENT_PREFIX_PATH` when launched from a sourced shell; `/opt/ros` is scanned so installed packages resolve either way. The setting comes first because it is the only fix for a package with no `package.xml` (CAD exporter output) or one shadowed by another checkout. Gazebo `model://NAME` is looked up as `NAME/` under `GZ_SIM_RESOURCE_PATH`, `IGN_GAZEBO_RESOURCE_PATH`, `GAZEBO_MODEL_PATH`, then `~/.gazebo/models`. A package or model that cannot be found produces a warning.
+- The webview cannot read the disk, so the extension sends the nearest `package.xml` package (or the workspace folder) plus every package a `package://` / `$(find)` names, recursively.
+- The `robotPreviewUrdf.packages` setting is searched before everything else: it is the only fix for a package without `package.xml` or shadowed by another checkout. `/opt/ros` is searched too, so packages resolve in a VS Code started outside a sourced shell.
+- A reference outside every package sends only that file and the textures it names; sending its directory would upload all of `~/Downloads` for one STL.
+- `$(env)` values: only the variables the model references are sent, because the environment can hold tokens.
 
-A `filename` / `file` that points outside every sent package (absolute path, `file://`, a `../` leaving the package, `$(env)` / `$(optenv)`) sends only that file, plus the materials and textures an `.obj` / `.mtl` / `.dae` names internally (`mtllib`, `map_*`, `<init_from>`). Sending the directory, or every image beside the mesh, would upload all of `~/Downloads` for one STL. Only regular files with a model or asset extension are sent, so a Gazebo plugin `filename` pointing at a recording or a path naming a directory is ignored. Such files are keyed by absolute path, which is also what the webview resolves an absolute or `file://` reference to. Outside files are not watched for changes made outside VS Code.
+## Editing
 
-Limits:
-
-- A referenced package is sent whole, including models that the opened file does not use; references inside those are followed too.
-- `.git`, dot-directories, `node_modules`, `build`, `install` and `log` are skipped.
-- Without `package.xml`, a large workspace is sent in full.
-
-Symlinked directories are followed (for `colcon build --symlink-install`), with a guard against link cycles.
-
-## Editing workflow
-
-The preview works like the Markdown preview: the source stays in VS Code's own text editor and the viewer opens beside it. There is a single preview; switching to a file that the current model includes (judged by its file name appearing in an `xacro:include` / `include`) keeps the full robot on screen, while switching to another top-level model replaces it. A closed preview does not reopen for the same file until the window is reloaded; `robotPreviewUrdf.autoOpen` disables auto-opening entirely. `.xml` opens automatically only when its root is `<mujoco>` or `<robot>`.
-
-By default the preview rebuilds 300 ms after typing stops, including unsaved text, like the built-in Markdown preview. The preview carries no unsaved marker of its own: the editor tab's ● already shows it, and the Markdown preview does the same. Combining the default with VS Code's `files.autoSave` removes the risk of forgetting to save. `robotPreviewUrdf.updateOn: "save"` rebuilds only on save; in that mode a rebuild triggered by something else still sends the saved file, never unsaved edits, while jumping to a definition and writing joint limits always work on the editor's current text. Changes made outside VS Code (CAD re-export, `git checkout`) are picked up by a file watcher. Only files whose editor version or disk mtime changed are resent, so large mesh sets are transferred once. Each update builds the new model off-screen, waits for every mesh (at most 15 s), and swaps it in within one frame without touching the camera; the previous approach of adding the model first and letting meshes, visibility and camera framing catch up over the next second is what made the robot flash. Edits arriving while a model is still building are merged, so only the newest version is built. Parsed meshes are cached per file content and deep-copied for each build (copying is far cheaper than reparsing STL/DAE, and a copy keeps per-link material colours and MJCF scaling from leaking between instances); an unchanged mesh is not reparsed across rebuilds. A mesh that cannot be resolved from the sent files fails immediately instead of falling back to urdf-loader's network loader, which never reports STL 404s and used to stall the swap for the full 15 s timeout. Camera and joint angles survive the reload; if the XML does not parse, the previous model stays, the error is shown in the viewer and reported in the Problems panel. Syntax errors are found by parsing every changed file with the webview's `DOMParser`, so they point at the right file and line even inside an included xacro; errors raised later while expanding xacro or building the model have no reliable source line and are attached to line 1 of the opened file, and only when no syntax error exists.
-
-Clicking a link in the 3D view or the structure graph selects its definition in the text editor; moving the cursor into a `<link>` / `<joint>` / `<body>` highlights it in the viewer. Names generated by xacro macros are matched by expanding `xacro:property` values from the same file and treating the remaining `${...}` as wildcards; the candidate with the most literal characters wins, and ties open a Quick Pick. Macro parameters passed from the call site are not evaluated, so a generic `${name}_link` can still match several definitions. Highlighting a wildcard match only marks the first link because the viewer tracks one highlighted link.
-
-Missing meshes are reported as warnings on the `filename` attribute that references them; when the path was built by a xacro expression and does not appear literally, the warning goes to line 1 of the opened file. Only URDF and xacro track missing meshes; MJCF reports them as a load error. The message names the file the extension expected (from the package, model or file directory), since "not found" alone does not say which of the lookups went wrong.
-
-A mesh the preview found only by ignoring case, or only by its file name, still displays but gets a warning: macOS and Windows file systems ignore case, so the model looks fine on the desktop and fails on the robot. The case warning has a quick fix that rewrites the reference to the file's actual case. An unknown package or Gazebo model is a warning on each `package://` / `$(find)` / `model://` occurrence rather than a popup, listing every place searched and marking unset environment variables, because the usual cause is VS Code started outside a sourced shell; its quick fix picks the folder and writes it to `robotPreviewUrdf.packages`. A YAML syntax error from `load_yaml` is reported at its line in the YAML file.
-
-Xacro arguments are entered per file in launch-file syntax (`name:=value`, no spaces inside values) and override the `<xacro:arg>` defaults. **Export Expanded URDF** saves the xacro output before the viewer strips `<gazebo>` and `<transmission>`, so the file matches what `xacro` would produce for those arguments.
-
-`.stl`, `.dae` and `.obj` can open in a separate read-only preview with the `.mtl` and textures from the same directory; its panel toggles are not saved, so they never change the robot preview's settings. Since 0.2.0 it is an optional editor (*Reopen Editor With…*) so it does not compete with Robot Preview: Mesh & Splat for the default.
-
-Editing a joint limit in the joints panel rewrites the `<limit>` of that joint in the source through a `WorkspaceEdit`, so it is undoable and leaves the file unsaved. Only a literal URDF `<joint name="…">` is written (values rounded to 6 decimals); joints generated by a xacro macro would change every instance, and MJCF `range` depends on the compiler's angle unit, so both are refused with a status-bar message.
-
-Display toggles, up axis, angle unit and panel visibility are stored in the extension's global state, so they carry over between models and workspaces. The open preview is restored after a window reload. The joints and structure panels start closed so the model is not covered; once opened they stay open for later previews.
-
-The viewer UI follows VS Code's theme and display language. `zh-TW`, `zh-HK` and `zh-Hant` show Traditional Chinese, other `zh-*` Simplified Chinese, everything else English.
-
-## Text editor navigation
-
-Go to definition, hover, completion and path links work with the preview closed, and search only the edited file's include chain: its includes, the files that include it, and their other includes. Searching the whole package, as the preview's file listing does, offered definitions from sibling robots and launch files. Includes are resolved on every request so an unsaved new include counts at once; only the package listing used to find the including files is cached, until a save, a file change on disk or a package change. Xacro scoping (macro-local properties, `scope="parent"`) is not modelled: every same-named definition is offered, the edited file's first. Hover shows the definition as written, not its evaluated value, which would need a full xacro expansion per hover. Arguments are set on the top-level file, so an included file shows the value set on the file that includes it, and `$(arg)` in a path uses that value or the default. A `${...}` inside a link name or path names a property, so it wins over the reference around it.
+- Like the Markdown preview: the source stays in the text editor, unsaved text rebuilds 300 ms after typing stops, and the tab's ● is the only unsaved marker.
+- A rebuild builds the new model off-screen and swaps it in one frame; adding it first and letting meshes and camera catch up made the robot flash.
+- Parsed meshes are cached per file content and deep-copied per build: cheaper than reparsing, and a copy keeps material colours and MJCF scaling from leaking between instances.
+- Go to definition and hover search only the include chain of the edited file; the whole package offered definitions from sibling robots.
+- Joint limits are written back only for a literal URDF `<joint>`: a xacro macro would change every instance, and an MJCF `range` depends on the compiler's angle unit.
 
 ## Model checks
 
-Checks run in the webview because only there is xacro expanded and the mesh sizes known. Severity follows consequence: an error is something ROS's URDF parser rejects (urdfdom also refuses a `<limit>` without effort or velocity and an `<inertial>` without `<mass>`), a warning something that breaks simulation or planning. Only the first root link is exempt from the inertia rule: KDL and robot_state_publisher ignore the root's inertia and fixed arms often omit it, but an extra root is a mistake, not a base. A joint with an unknown parent still gives its child a parent, so one typo does not also report a second root.
+- An error is what ROS's URDF parser rejects; a warning is what breaks simulation or planning.
+- The scale rule fires at a 100x visual / collision size gap: a mm / m mistake is 1000x, a simplified collision shape a few x.
+- Elements inside a `<xacro:macro>` are reported once, at the macro, without a quick fix, since an edit there changes every instance. MJCF is not checked: MuJoCo's compiler already is.
 
-The inertia test uses a relative tolerance: a point mass is exactly singular, yet its determinant can round to a tiny positive value (+5e-25 for 1 kg at 3 cm/4 cm), which a strict `> 0` accepted.
+## Xacro
 
-The scale rule fires only when a link's visual and collision sizes differ 100x or more: a mm/m mistake is 1000x, a simplified collision shape a few x, and a mistake in the visual is already obvious in the preview. The collision is usually hidden, which is why its mistakes reach Gazebo or MoveIt unnoticed.
+- xacro-parser 0.3.11 with `patches/xacro-parser@0.3.11.patch`, checked against ROS 2 xacro's output for the UR5e (`tests/fixtures/xacro/`). Upstream breaks `ur_description` on scopes, `^` defaults, dictionaries, quoted whitespace and `True` / `False`.
+- `load_yaml` files must match the path exactly: the mesh resolver's case and name guesses would load a file ROS would not.
 
-Elements written inside a `<xacro:macro>` are reported once, at that line, listing the instances, and get no quick fix, since an edit there changes every instance; this holds for literal names inside a macro too. Results are only placed in files that belong to the loaded model, so a same-named link in an unrelated file of the package is not marked. The missing-limit fix inserts placeholder values with a TODO comment because they look real; its effort and velocity are not 0 so it does not trigger the zero-effort rule at once. Rules are disabled by id in `robotPreviewUrdf.checks.disabled`; the id is each Problems entry's code. MJCF is not checked: MuJoCo's compiler already reports these errors.
+## DAE geometry in Rust
 
-## Xacro compatibility
+- Only the geometry is parsed in Rust (`rust/dae`, 100 KB of WASM); ColladaLoader still reads materials, units and the node tree, so its material and node-collapse rules hold by construction. Unhandled features (vertex colors, a second UV set, skinning, CDATA) go to ColladaLoader alone.
+- Release 0.4.4 against this build: the RealSense xacro 2.14–2.38 s against 1.98–2.07 s, Franka 1.34–1.48 s against 1.33–1.35 s (VS Code 1.144, 3 runs each, interleaved).
 
-Expansion uses xacro-parser 0.3.11 with a local patch (`patches/xacro-parser@0.3.11.patch`), checked against ROS 2 xacro's own output for the UR5e (`tests/fixtures/xacro/`, regenerated with `generate-golden.sh`). Upstream differs from ROS xacro in ways `ur_description` depends on: child scopes copied their parent, so a `scope="parent"` property set later was invisible; `^` macro defaults threw; dictionaries were inlined into expressions as `[object Object]`; whitespace inside quoted strings and commas between arguments broke tokens. The previous workaround defined `True` / `False` as the strings `"True"` / `"False"`, which made `xacro:if value="False"` and `x if False else y` take the true branch; they are now booleans and print as Python does. The patch also exposes the current file's directory (`$(dirname)`, relative `load_yaml`) and the argument defaults (`$(eval)` sees args declared in included files). These are candidates for an upstream PR.
+## Limits
 
-`load_yaml` is missing upstream because an expression cannot wait for a file read ([issue #91](https://github.com/gkjohnson/xacro-parser/issues/91)). Here the yaml files are read before expansion, once some file calls it, and the path must match exactly: the mesh resolver's case and file-name guesses would load a different file where ROS fails. Python's `a if c else b` and `d['k']` are rewritten before parsing by a scanner (strings and nested parentheses must survive) because xacro-parser only handles a lookup at the end of an expression and expr-eval's `[]` turns a string key into index 0.
-
-`$(env)` / `$(optenv)` values come from the extension, which sends only the variables the model files reference: the webview has no `process.env`, and the full environment can contain tokens.
-
-`<xacro:arg>` defaults containing `$(...)` or `${...}` are left to the parser to evaluate; prefilling them as text (the previous behaviour) passed `$(find x)` through verbatim, and an empty default became `false`.
-
-## DAE geometry is parsed in Rust
-
-Only the geometry is parsed in Rust (`rust/dae`, no crates, 100 KB of WASM); ColladaLoader still reads materials, textures, units, up axis and the node tree. Rewriting all of ColladaLoader would have to match its material, transparency and node-collapse rules by hand; this split keeps them by construction. Vertex colors, a second UV set, skinning, UVs on only some primitives, CDATA and entities in ids go to ColladaLoader alone. Every DAE in the Jazzy TurtleBot 4 meshes, the RealSense `d435.dae` and a CAD-exported robot gave the same attributes, groups, materials and matrices both ways.
-
-`rust/dae/build.sh` rebuilds `src/wasm/dae.wasm`.
-
-In VS Code 1.144 (2026-11-17, `tests/e2e/vscode.mjs`, from `code -r` to the last mesh, so it includes opening the editor and expanding xacro; release 0.4.4 and this build interleaved, 3 runs each): the RealSense xacro 1.98-2.07 s against 2.14-2.38 s, Franka `panda_arm_hand.urdf` 1.33-1.35 s against 1.34-1.48 s.
-
-## Content Security Policy needs `unsafe-eval`
-
-The webview only loads the extension's own files plus `blob:` / `data:` (meshes and the embedded WASM). `script-src` still includes `'unsafe-eval'` because mujoco-js (embind) builds its bindings with `new Function` when the module starts; without it MuJoCo simulation fails.
-
-## USD is not supported
-
-The removed USD viewer needed `SharedArrayBuffer`, which requires cross-origin isolation that VS Code webviews do not provide.
+- The CSP keeps `'unsafe-eval'`: mujoco-js builds its bindings with `new Function`.
+- USD stays in its own extension: the removed USD viewer needed `SharedArrayBuffer`, which VS Code webviews cannot isolate for.
 
 ## Tests
 
-`pnpm test` runs the viewer and extension tests in Node; the extension runs against a mocked `vscode` module and the two-package workspace in `tests/fixtures/ros_ws`, copied to a temp directory because tests edit files. `pnpm test:e2e` builds the webview and drives it in headless Chrome under the same CSP as the extension; it needs `google-chrome` (or `CHROME=<path>`) and runs on Node 22 for the built-in `WebSocket`. On Node 18 `tests/setup.mjs` supplies the missing global `File`.
-
-Headless Chrome is neither VS Code's process layout nor its GPU path, so load time and memory are measured in VS Code itself with `tests/e2e/vscode.mjs`, old and new builds interleaved in one session. Pitfalls of measuring there: issue #1.
-
-The Marketplace README image is excluded from the `.vsix` and loaded from GitHub (`--baseImagesUrl`), so `packages/urdf-mjcf/images` must be pushed before publishing.
-
-Both extensions are published by uploading the `.vsix` at marketplace.visualstudio.com/manage. Global PATs stop working on 2026-12-01, and `vsce publish --azure-credential` needs an Entra ID account: the `chenyuting3077` publisher is a personal Microsoft account, and `az login` with it either returns no identity (`organizations` endpoint) or fails with `scope 'https://management.core.windows.net//.default' does not exist` (consumer tenant).
-
-## Packaging needs Node 20
-
-`@vscode/vsce` 3.x requires Node 20 and 2.x pulls a Node-20-only `undici`, so the `package` script runs vsce through `npx -p node@20` and works on a Node 18 system.
-
-## Files must be sent as plain `Uint8Array`
-
-`vscode.workspace.fs.readFile` returns a Node `Buffer`. Posted to the webview as-is it arrives as `[object Object]`, every file becomes that string and nothing loads, without any error. The extension copies it into a plain `Uint8Array` before posting.
+`pnpm test` runs viewer and extension tests in Node against a mocked `vscode`; `pnpm test:e2e` drives the webview in headless Chrome under the extension's CSP (Node 22, `google-chrome` or `CHROME=`). Load time and memory are measured in VS Code itself with `tests/e2e/vscode.mjs`, old and new builds interleaved.

@@ -1,105 +1,52 @@
 # Robot Preview: Mesh & Splat
 
-## Why Spark instead of PlayCanvas / supersplat-viewer
+Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` (2026-11-17, old and new builds interleaved in one session) unless marked otherwise. Pitfalls met along the way: issues #1, #2, #4.
 
-Measured 2026-11-05 on an RTX PRO 1000 Blackwell Laptop GPU, headless Chrome, 1280×720, same camera orbit for 8 s, 3 runs each:
+## Splats: Spark
 
-| File | Spark load / FPS | PlayCanvas 2.23 load / FPS |
-|---|---|---|
-| 3DGS, 881,110 splats | 1.1–1.3 s / 330–380 | 1.3–1.4 s / 390–400 |
-| 3DGS, 240,709 splats | 0.37 s / 570–620 | 0.50–0.57 s / 600–620 |
-
-- Both are far above 60 FPS; vsync was off, so the numbers say "fast enough", not which is faster. Image quality at the same view was indistinguishable.
-- PlayCanvas rendered nothing under ANGLE's Vulkan backend (`FRAMEBUFFER_UNSUPPORTED` on `GsplatWorkBuffer`, no visible error); it only worked with `--use-angle=gl`. Spark worked on both.
-- Spark is three.js, so meshes and splats share one scene, camera and loader set with the URDF & MJCF extension.
-- Spark needs three ≥ 0.180 while the URDF viewer is on 0.163, so this package keeps its own `node_modules` instead of sharing code with the root.
-
-## 2DGS files
-
-2DGS PLY files store only `scale_0` and `scale_1`; Spark throws `Missing scale_2 property` and PlayCanvas crashes. On load a `scale_2 = ln(1e-6)` is inserted per splat (binary little-endian PLY only), turning each disc into a flat 3D Gaussian. Edge-on views differ slightly from the 2DGS ray–splat intersection renderer (推測; compare a grazing-angle screenshot against the official 2DGS viewer to confirm).
+- Spark, not PlayCanvas: PlayCanvas rendered nothing under ANGLE's Vulkan backend, and Spark is three.js, so meshes and splats share one scene. Both stay far above 60 FPS (headless Chrome, RTX PRO 1000, 881 k splats: Spark 330–380, PlayCanvas 390–400).
+- Spark needs three ≥ 0.180 while the URDF viewer is on 0.163, so this package keeps its own `node_modules`.
+- 2DGS PLY has no `scale_2`; one of `ln(1e-6)` is added so Spark draws each disc as a flat Gaussian (binary little-endian only).
 
 ## Defaults
 
-- The up menu starts at the file's declared up axis (glTF / VRML `+Y`, DAE `<up_axis>`, USD `upAxis`); three's rotation of Z-up DAE / USD to Y-up is undone so the menu shows `+Z` for them. Everything that declares none, STL / OBJ / PLY / point clouds / splats and DAE / USD without the field, starts at `+Z` as in ROS, at the user's request. Raw COLMAP / 3DGS splats need `-Y` by hand.
-- The camera frames the 2nd–98th percentile of splat centres so floaters far from the scene do not shrink it.
-- `.asc` is an optional editor because the extension is also used by PGP signatures.
-- The URDF & MJCF extension's mesh editor became optional in 0.2.0 so the two extensions do not both claim `.stl` / `.dae` / `.obj`.
-- `.xyz` / `.pts` columns after x y z are read as colors only when every point has integer 0–255 RGB; `x y z nx ny nz` normals would otherwise turn into colors.
-- `customEditors` selectors list only lowercase patterns: VS Code matches them case-insensitively (`foo.STL` opens fine), and listing both `*.stl` and `*.STL` makes it report two default editors for the same file.
-- `retainContextWhenHidden` is on: re-reading a 200 MB splat on every tab switch takes seconds.
-
-## Camera controls
-
-The camera key handling creates vectors only by cloning the camera's own, so one copy runs on three 0.163 (URDF) and 0.187 (Spark, USD) alike.
-
-- Middle-drag pans (RViz, Unity, Fusion 360) instead of OrbitControls' default dolly; the wheel already zooms.
-- `W` `S` move along the view direction (Unity / Unreal fly mode) rather than SuperSplat's level forward, `A` `D` strafe level, and `Q` `E` turn in place around the camera's own up axis (perpendicular to the view, so a tilted view sweeps sideways on screen) instead of moving down / up, at the user's request. Speed scales with the distance to the pivot so small parts and room scans feel the same.
-- Damping is off in both, matching the original URDF viewer.
-
-## USD
-
-- Parser: three.js 0.187's pure-JS `USDLoader` reads USDA, USDC and USDZ (three ≤ 0.180 only had a USDC stub, hence the upgrade). Rejected: `@needle-tools/usd` (PolyForm Noncommercial license). TinyUSDZ 0.9.1 (WASM, has its own composition) failed all five test files in headless Chrome: `PMS_0526.usdc` "Invalid Prim name", the Isaac Sim export "connection ... got `outputs:a`" on a UsdPreviewSurface, and the OpenChessSet / Teapot / Mini Car Kit compositions from [usd-wg/assets](https://github.com/usd-wg/assets) failed to resolve their layers.
-- three's own composition is not used: it put every root prim of a referenced layer under the referencing prim and matched `</a/b>` by the last name only, which stacked a whole H1 humanoid on every link (10.6 M faces instead of 0.39 M). References, payloads, sublayers and variants are flattened first and three only builds objects.
-- three 0.187 crate reader bugs found on the Isaac Sim 5.0 robot assets: `ReferenceListOp`, `PayloadListOp`, `Payload` and `StringVector` (sublayers) were not decoded at all; inlined `double3` / `half3` vectors such as `xformOp:scale = (1, 1, 1)` came out as the integer 65793; and paths were decoded with the total path count instead of the encoded one, which scrambled every path once the two counts needed different code-table lengths (Franka's `panda_link3.usd`, `h1.usd`). The USDA parser reads only `prepend references` / `payload`, no `subLayers`, no `over` / `class`. The fixes override private methods, so three stays pinned to an exact version.
-- three's composer applied only exactly named xformOps, so suffixed ops such as Isaac Sim's `xformOp:rotateX:unitsResolve` and rotation orders other than XYZ were silently dropped; `applyTransform` is replaced. `!resetXformStack!` is not supported (the prim still inherits its parent's transform).
-- Some crate prim specs carry no `specifier` (Franka's `over` prims for the unselected Robotiq gripper); a prim without one counts as defined only if something under it has a type.
-- `purpose = "guide"` prims (Isaac Sim's collision shapes) start hidden, as in usdview, and can be shown from the Stage panel.
-- Load time in Node (parse + composition + three's composer, no GPU upload), and frame rate / heap after `gc()` in headless Chrome on an Intel Arrow Lake iGPU through ANGLE GL (`PERF=1 ANGLE=gl` in the e2e test; headless adds ~3 s of GPU start-up to every page):
-
-  | File | Faces | Load | three composer | FPS | Heap |
-  |---|---|---|---|---|---|
-  | Franka (14 files) | 94 k | 0.12 s | 0.09 s | 60 | — |
-  | Unitree H1 (4 files) | 0.39 M | 0.27 s | 0.19 s | 60 | — |
-  | UR10e (3 files) | 1.6 M | 1.0 s | 0.81 s | 60 | 314 MB |
-  | Isaac Sim 3DGS export, 141 MB | 2.3 M + 375 k splats | 1.3 s | 0.82 s | 58 | 534 MB |
-  | Simple_Warehouse (1848 files) | 0.52 M, 14.5 k objects | 2.0 s | 0.87 s | 52 | 190 MB |
-
-  The heap is mostly the geometry arrays three keeps for raycasting and point mode (推測; confirm with a DevTools heap snapshot of the webview). Looking up a reference's subtree in a sorted key list instead of scanning every spec took the warehouse from 2.3 s to 2.0 s; the rest is spread over crate parsing, GC and three's composer, so nothing more was optimized.
-- `ParticleField3DGaussianSplat` is not known to three; its attributes are rewritten as an in-memory 3DGS PLY and handed to Spark, which has no public API for SH coefficients, so view-dependent color survives. Without SH coefficients the color comes from `primvars:displayColor`.
-- `.usda` is an optional editor: it is text people edit.
-- Files that fail to load or parse are listed as "Not loaded" in the info popover instead of failing the whole stage. three's USDA parser throws on some files (`StandardShaderBall`'s `shaderball.usda`: "Cannot set properties of undefined").
-- Checked on Isaac Sim 5.0 assets (Franka, UR10e, Unitree Go2 and H1, TurtleBot3, ANYmal D): all render with correct link poses. TurtleBot3's file carries a 50 m ground plane, which sets the initial framing; hide it in the Stage panel.
-- "Stage" stays untranslated in zh-TW / zh-CN, as in Omniverse, so it is not confused with a generic 3D scene.
-- Not supported: USDA `variantSet` blocks (the Teapot's geometry lives in one), MaterialX and MDL materials (geometry renders in the default gray), PointInstancer, `specializes`, `inherits` and time-sampled visibility.
+- Files that declare no up axis start at `+Z`, as in ROS; raw COLMAP / 3DGS splats need `-Y` by hand.
+- The camera frames the 2nd–98th percentile of splat centres, so floaters don't shrink the view.
+- `.asc` and `.usda` are optional editors (PGP signatures, hand-edited text). `retainContextWhenHidden` is on: re-reading a 200 MB splat on a tab switch takes seconds.
 
 ## Large point clouds
 
-VS Code hands a webview a fetched resource only after reading all of it into memory: a 1.2 GB binary PCD (Livox Mid-360 + FAST-LIO2 map, 38.9M points) grew the webview by 1.6 GB even when the viewer kept a single point (VS Code 1.144, 2026-11-17). Binary PCD is therefore read by the extension and posted in 16 MB pieces, three in flight: one at a time took 17 s against 7.6 s for that file in the same session. ASCII and `binary_compressed` PCD still go through PCDLoader with the whole file.
+- VS Code reads a fetched webview resource whole before handing it over: a 1.2 GB PCD grew the webview by 1.6 GB with the viewer keeping one point. Binary PCD is therefore read by the extension in 16 MB pieces, three in flight (one at a time: 17 s against 7.6 s).
+- Past 10M points an even 10M are shown, and the info popover says so. Not a LOD: zooming in never shows the dropped points.
+- 1.2 GB, 38.9M-point Livox map: 5.2–5.3 s, +1.2–1.3 GB, 21 fps orbiting; 0.2.0 cannot open it. 181 MB, 4.5M-face binary PLY mesh: 1.8 s, +1.05 GB; 0.2.0 went past 6 GB.
 
-Past 10M points an evenly spaced 10M are shown, and the info popover says how many of the total; zooming in never shows the dropped points. A Potree-style octree would, at the cost of a converter and a second viewer.
+## USD
 
-Intensity and height colors span the 2nd-98th percentile, so a few far points don't flatten the rest into one color.
-
-In VS Code 1.144 (2026-11-17, `tests/e2e/vscode.mjs`, release 0.2.0 and this build interleaved, 3 runs each) this build opens that file in 5.2-5.3 s, grows all processes by 1.2-1.3 GB and orbits at 21 fps; 0.2.0 cannot open it ("Array buffer allocation failed" at +5.3-5.4 GB twice, past the 6 GB limit once). A 181 MB, 4.5M-face binary PLY mesh: 1.75-1.89 s and +1.05-1.07 GB, 33-35 fps; 0.2.0 went past 6 GB in all three runs.
-
-## Not supported
-
-E57, PTX, NXS, X3D and other MeshLab-only formats, Draco / Meshopt compressed glTF, ASCII 2DGS PLY.
+- three 0.187's `USDLoader` reads USDA / USDC / USDZ. `@needle-tools/usd` is non-commercial; TinyUSDZ 0.9.1 failed all five test files.
+- Composition (references, payloads, sublayers, variants) is done here, not by three: three stacked a whole H1 humanoid on every link (10.6 M faces instead of 0.39 M). Its crate-reader fixes override private methods, so three is pinned to an exact version.
+- Not supported: USDA `variantSet` blocks, MaterialX / MDL materials, PointInstancer, `specializes`, `inherits`, time-sampled visibility, `!resetXformStack!`.
 
 ## STEP
 
-STEP is B-rep, so a CAD kernel has to tessellate it. Time to the first frame and growth of all processes in VS Code 1.144 (2026-11-17, `tests/e2e/vscode.mjs`, one session; foxtrot 2 runs, OpenCascade `-O3` 1 run, forced through the fallback):
+foxtrot (Rust, patched) tessellates; OpenCascade (`occt-import-js`, rebuilt at `-O3`) runs only when the length unit is ambiguous or foxtrot aborts. Time to the first frame and growth of all processes:
 
 | File | OpenCascade | foxtrot, first open | foxtrot, cached |
 |---|---|---|---|
-| Respeaker, 2.7 MB | 3.0 s, +0.76 GB | 1.0-1.2 s, +0.50-0.53 GB | 0.9-1.0 s, +0.43-0.50 GB |
-| 719E, 18 MB | 7.3 s, +1.09 GB | 1.6 s, +0.71-0.74 GB | 0.9 s, +0.44 GB |
-| EEP500T, 30 MB | 18.1 s, +2.46 GB | 2.4-2.5 s, +1.26-1.28 GB | 1.3 s, +0.64-0.65 GB |
-| AMR, 39 MB | 59.3 s, +2.78 GB | 3.0-3.1 s, +1.45-1.48 GB | 1.2 s, +0.61-0.63 GB |
-| Assembly, 161 MB | no triangles after 116 s, +3.0 GB | 13.7-15.1 s, +2.15-2.20 GB (webview +1.56-1.64) | 1.3-1.4 s, +0.67-0.72 GB |
+| Respeaker, 2.7 MB | 3.0 s, +0.76 GB | 1.0–1.2 s, +0.50 GB | 0.9–1.0 s, +0.43–0.50 GB |
+| 719E, 18 MB | 7.3 s, +1.09 GB | 1.6 s, +0.71–0.74 GB | 0.9 s, +0.44 GB |
+| EEP500T, 30 MB | 18.1 s, +2.46 GB | 2.4–2.5 s, +1.26–1.28 GB | 1.3 s, +0.64 GB |
+| AMR, 39 MB | 59.3 s, +2.78 GB | 3.0–3.1 s, +1.45–1.48 GB | 1.2 s, +0.61–0.63 GB |
+| Assembly, 161 MB | no triangles after 116 s | 13.7–15.1 s, +2.15–2.20 GB | 1.3–1.4 s, +0.67–0.72 GB |
 
-- OpenCascade's time is in reading and transferring the STEP model, not tessellation: a 10x coarser deflection cut the AMR triangles by 47% and the time by nothing (145 vs 151 s in Node). The CPU profile has no hot spot to fix from JS.
-- occt-import-js ships `-Oz`. Rebuilding the same source with CMake's Release `-O3` (`patches/occt-import-js.patch`) opens the AMR in 72 s in Node, against 131–148 s at `-Oz`, with identical triangles; the WASM is 12.1 MB against 7.6 MB.
-- foxtrot (Rust, unmaintained since 2021) parses and triangulates without building a B-rep model. Unpatched it skipped 3.5% of the AMR's faces and 12% of the Respeaker's: extrusion and revolution surfaces were missing, and its curve projection used a fixed 0.01 tolerance and an unbounded Newton loop, which reordered points on sub-millimetre arcs. `patches/foxtrot.patch` adds both surfaces, a size-relative tolerance with a ternary-search fallback, per-face colors (`OVER_RIDING_STYLED_ITEM`) and an indexed mesh API. It still skips 0.2–0.6% of faces (closed B-spline edges, `TRIMMED_CURVE`, triangulation errors on spheres / tori), and makes about 4.5x OpenCascade's triangles.
-- So foxtrot's mesh is final, holes included (2026-11-17, native foxtrot: AMR 117 of 18,255 faces skipped, EEP500T 20 of 14,919, Respeaker 3 of 1,468). OpenCascade `-O3` runs only when the length unit is not a single assigned one or foxtrot aborts. Refining every file with holes in the background cost 1–2 minutes of CPU per open for under 1% of faces.
-- foxtrot aborts on a Rust panic: WASM has no unwinding, so its `catch_unwind` around each face only works natively, and each job gets a fresh worker. The patch turns the panics we hit outside triangulation into skips (an omitted `ref_direction` defaulted to +X even for an X axis, giving a singular frame; unknown shape representations), and the `cdt` asserts a 161 MB assembly hit while inserting nearly collinear points into an error, so those 5 faces are skipped. OpenCascade gives that file no triangles (table above).
-- truck (`truck-stepio` 0.3.0 + `truck-meshalgo` 0.4.0, native, 2026-11-17, tolerance 0.1% of each shell's size) is not a replacement: EEP500T 8.7 s and 623 MB RSS for 2.2M triangles (foxtrot in one WASM worker: 2.9 s), `719E-3D.STEP` 68 s for 6.9M triangles (foxtrot 133K), and the 161 MB assembly had not finished when it passed 6 GB. Its `Table` hands out shells without the assembly's placements, and it rejects non-UTF-8 files unless read lossily.
-- foxtrot keeps file units; the unit comes from the `LENGTH_UNIT` a `GLOBAL_UNIT_ASSIGNED_CONTEXT` names, because SolidWorks also declares an unused metre next to the millimetre it uses.
-- STEP has no up axis. The AMR (Autodesk export) is Y-up with its floor at y = 0, so STEP starts `+Y`; flat boards exported Z-up need `+Z` from the menu.
-- foxtrot runs in up to 4 workers, each parsing the whole file, because its faces are independent once parsed; they split the faces round-robin, since splitting by solid left one AMR worker with most of the time. Node, 2026-11-17, one worker against the most it gets: AMR 5.0 s against 2.2 s (four), EEP500T 2.9 s against 1.5 s (four), the 161 MB assembly 21 s against 13.5 s (two). Each extra worker costs a parse (161 MB file: 512 MB a worker, budgeted as 8x the file), so the worker count drops with file size to keep that under 1.5 GB.
-- WASM memory never shrinks, so the patch frees the input once flattened, writes entities straight into their slots instead of collecting a second copy, and drops the parsed file before packing the mesh. It also boxes the 175 `Entity` variants over 48 bytes (addresses, B-spline surfaces): the enum is 56 bytes instead of 272, and the 161 MB file's 1.93 M entities are mostly 1.08 M `CARTESIAN_POINT`s, so the boxes add 14 MB. WASM memory of one worker on the 161 MB file split in two (Node 22): 640 MB with these, 1224 MB without.
-- Entities are parsed on first use, and the type scans (assemblies, styles) parse only blocks whose text holds the type's keyword, so a worker keeps the entities its half of the faces reaches; the file is flattened over its own bytes, so it is in memory once. WASM memory of one worker on the 161 MB file (Node 22): 512 MB, against 640 MB parsing every entity up front, about 5% slower, with the same triangles, faces and failures. What is left: the flattened text 162 MB, which parsed entities borrow, the id index 60 MB, and the mesh at 72 bytes a vertex (f64 position, normal and color) whose last doubling holds two copies.
-- The memory peak is the second before the first frame, while both workers are still alive, so anything else alive then counts: a merged copy of the workers' meshes, per-vertex colors, a copy of the file for the last worker, and the worker's own copy during the WASM call. Avoiding all four, the 161 MB first open grew the webview by 1.59-1.74 GB against 1.83-1.95 GB with them (VS Code 1.144, one session).
-- Sent to the extension as one message, a 139 MB cache was held by the extension host, the main process and a second renderer at once, each growing by 0.2-0.9 GB (VS Code 1.144); hence acknowledged pieces written with Node `fs`.
-- The cache is meshopt buffers (format in `webview/step-cache.mjs`), not glTF: 25.6 MB for the 161 MB assembly against 139 MB as GLB, and in one VS Code session its cached open took 2.1 s against the GLB's 3.4 s. glTF with `EXT_meshopt_compression` would have meant writing the extension's bufferViews and quantized accessors by hand for no reader but ours. Its file name carries the extension version, so a tessellation fix drops old entries, and the folder is trimmed oldest-first to 1 GB.
-- `vendor/build.sh` rebuilds both WASMs from pinned commits. Pitfalls met along the way: issue #2; panics that still abort a file: #3.
+- foxtrot leaves under 1% of faces as holes (native: AMR 117 of 18,255 faces). Filling them would mean an OpenCascade run (table) on every open, so the holes stay.
+- OpenCascade is rebuilt at `-O3` (12.1 MB of WASM against 7.6 MB) from the shipped `-Oz`: the AMR in 55–59 s against 80–82 s, EEP500T in 17.8 s against 20.1–20.2 s, with the same faces.
+- foxtrot runs up to 4 workers, each parsing the whole file, fewer for big files so their memory stays under 1.5 GB. One worker against that: EEP500T 3.9–4.0 s against 2.4 s, the AMR 5.9–6.0 s against 2.9–3.1 s, the 161 MB file 24.1–24.2 s against 14.0–14.1 s for 0.2–0.3 GB less memory.
+- Memory peaks the second before the first frame, while every worker is alive, and WASM memory never shrinks: the 161 MB first open grows the webview by 1.56–1.69 GB, against the 1.5 GB aimed for. One worker holds 512 MB of WASM (Node 22).
+- The cache is meshopt buffers, not glTF: 25.6 MB against 139 MB as GLB for the 161 MB assembly, and glTF's meshopt extension would have meant writing its accessors by hand for no reader but ours.
+- truck (`truck-stepio` 0.3.0) is no replacement: EEP500T took 8.7 s native against foxtrot's 2.9 s in one WASM worker (Node), the 161 MB file went past 6 GB, and it drops assembly placements.
+- STEP has no up axis; it starts `+Y` because the AMR (Autodesk) is Y-up.
+- Panics foxtrot still has abort the whole file: issue #3.
+
+## Not supported
+
+E57, PTX, NXS, X3D and other MeshLab-only formats, Draco / Meshopt compressed glTF, ASCII 2DGS PLY, ASCII or `binary_compressed` PCD of a few hundred MB.
