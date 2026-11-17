@@ -16,7 +16,7 @@ import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } f
 import { flatNormals, percentile, grown } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
-import { stepLengthUnit } from './step.mjs';
+import { groupByColor, stepLengthUnit } from './step.mjs';
 import { readPcdPoints } from './pcd.mjs';
 import StepWorker from './step-worker.js?worker&inline';
 import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
@@ -228,19 +228,16 @@ const stepMaterial = color => {
     return stepMaterials.get(key);
 };
 
-const srgbToLinear = c => (c < 0.04045 ? c * 0.0773993808 : Math.pow(c * 0.9478672986 + 0.0521327014, 2.4));
-
 function foxtrotObject({ positions, normals, colors, indices }, unit) {
     for (let i = 0; i < positions.length; i++) positions[i] *= unit;
-    // STEP colors are sRGB; vertex colors are read as linear.
-    for (let i = 0; i < colors.length; i++) colors[i] = srgbToLinear(colors[i]);
+    const grouped = groupByColor(colors, indices);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+    geometry.setIndex(new THREE.BufferAttribute(grouped.indices, 1));
+    grouped.groups.forEach(({ start, count }, slot) => geometry.addGroup(start, count, slot));
     const group = new THREE.Group();
-    group.add(new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide })));
+    group.add(new THREE.Mesh(geometry, grouped.groups.map(({ color }) => stepMaterial(color))));
     return group;
 }
 
@@ -284,7 +281,9 @@ function occtObject({ meshes }) {
 
 // Exported after the first frame so the model shows without waiting for it.
 function cacheStep(object) {
-    if (vscodeApi) setTimeout(() => new GLTFExporter().parseAsync(object, { binary: true }).then(glb => vscodeApi.postMessage({ type: 'stepCache', glb: new Uint8Array(glb) })), 500);
+    let triangles = 0;
+    object.traverse(child => { triangles += child.geometry?.index?.count ?? 0; });
+    if (vscodeApi && triangles) setTimeout(() => new GLTFExporter().parseAsync(object, { binary: true }).then(glb => vscodeApi.postMessage({ type: 'stepCache', glb: new Uint8Array(glb) })), 500);
 }
 
 async function loadStep(info) {

@@ -23,3 +23,33 @@ export function stepLengthUnit(text) {
     }
     return units.size === 1 ? [...units][0] : null;
 }
+
+// foxtrot colors every vertex of a face alike, so triangles regroup by their first vertex's 8-bit sRGB color
+// and draw one material per color; a per-vertex color attribute would be a quarter of the cached GLB.
+export function groupByColor(colors, indices) {
+    const triangles = indices.length / 3;
+    const keys = new Uint32Array(triangles);
+    const counts = new Map();
+    for (let t = 0; t < triangles; t++) {
+        const v = indices[t * 3] * 3;
+        const key = (Math.round(colors[v] * 255) << 16) | (Math.round(colors[v + 1] * 255) << 8) | Math.round(colors[v + 2] * 255);
+        keys[t] = key;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const groups = [];
+    const offsets = new Map();
+    let start = 0;
+    for (const [key, count] of counts) {
+        groups.push({ color: [key >> 16, (key >> 8) & 255, key & 255].map(c => c / 255), start: start * 3, count: count * 3 });
+        offsets.set(key, start);
+        start += count;
+    }
+    if (groups.length < 2) return { indices, groups };
+    const sorted = new Uint32Array(indices.length);
+    for (let t = 0; t < triangles; t++) {
+        const at = offsets.get(keys[t]);
+        offsets.set(keys[t], at + 1);
+        sorted.set(indices.subarray(t * 3, t * 3 + 3), at * 3);
+    }
+    return { indices: sorted, groups };
+}

@@ -24,3 +24,13 @@ test('only units the context assigns count', () => {
 test('the same unit declared twice is still one unit', () => {
     assert.equal(stepLengthUnit('#5=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));\n#15=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));'), 1e-3);
 });
+
+test('groupByColor sorts triangles into one group per face color', async () => {
+    const { groupByColor } = await import('../../packages/mesh-splat/webview/step.mjs');
+    const colors = new Float32Array([1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1]);
+    const indices = new Uint32Array([0, 1, 2, 3, 4, 5, 2, 1, 0]);
+    const { indices: sorted, groups } = groupByColor(colors, indices);
+    assert.deepEqual([...sorted], [0, 1, 2, 2, 1, 0, 3, 4, 5]);
+    assert.deepEqual(groups, [{ color: [1, 0, 0], start: 0, count: 6 }, { color: [0, 0, 1], start: 6, count: 3 }]);
+    assert.equal(groupByColor(colors, indices.subarray(0, 3)).indices.length, 3);
+});

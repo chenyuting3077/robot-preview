@@ -84,4 +84,6 @@ STEP is B-rep, so a CAD kernel has to tessellate it. Times to open in headless C
 - foxtrot keeps file units; the unit comes from the `LENGTH_UNIT` a `GLOBAL_UNIT_ASSIGNED_CONTEXT` names, because SolidWorks also declares an unused metre next to the millimetre it uses.
 - STEP has no up axis. The AMR (Autodesk export) is Y-up with its floor at y = 0, so STEP starts `+Y`; flat boards exported Z-up need `+Z` from the menu.
 - Embind builds call wrappers with `new Function`, which the webview CSP blocks; `vite.config.js` replaces them at build time. wasm-bindgen's glue needs no eval.
+- The cache stores foxtrot's mesh with one material per face color instead of per-vertex colors: AMR 85 MB, EEP500T 111 MB (114 and 149 MB with vertex colors). Its file name carries the extension version, so a tessellation fix drops old entries, and the folder is trimmed oldest-first to 1 GB.
+- Timing a cached open right after a multi-million-triangle page measures that page's teardown: the Respeaker took 1.9–4.1 s there and 0.2 s alone.
 - `vendor/build.sh` rebuilds both WASMs from pinned commits.
