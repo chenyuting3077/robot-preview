@@ -15,9 +15,22 @@ export function createTransport({ vscodeApi, src, fileSize, cacheKey, piece }) {
         if (data?.type === 'readReply') replies.get(`${data.id}:${data.at}`)?.(data);
     });
 
+    // A size other than the rendered one means a save mid-read, which re-renders the page; the page
+    // keeps showing that it is loading instead of an error (see main.js). Checked once a read ends, so a
+    // reader that stops early (a header PCDLoader must take) is not an error.
+    const changed = () => Object.assign(new Error('the file changed while it was read'), { name: 'FileChanged' });
+    async function* fileChunks() {
+        let total = 0;
+        for await (const chunk of pieces()) {
+            total += chunk.length;
+            yield chunk;
+        }
+        if (total !== Number(fileSize)) throw changed();
+    }
+
     // Each read has its own id, so replies of an abandoned read never answer a later one.
     // Three pieces in flight keep the transfer busy while one is parsed.
-    async function* fileChunks() {
+    async function* pieces() {
         const id = ++reads;
         const request = at => new Promise(resolve => {
             replies.set(`${id}:${at}`, resolve);
@@ -47,9 +60,7 @@ export function createTransport({ vscodeApi, src, fileSize, cacheKey, piece }) {
         }
     }
 
-    // A size other than the rendered one means a save mid-read, which re-renders the page; the page
-    // keeps showing that it is loading instead of an error (see main.js).
-    const changed = () => Object.assign(new Error('the file changed while it was read'), { name: 'FileChanged' });
+
     async function readAll() {
         const out = new Uint8Array(Number(fileSize));
         let at = 0;

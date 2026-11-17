@@ -74,3 +74,11 @@ test('sends the cache in pieces under its key and stops at an error ack', async 
     }
     assert.deepEqual(seen.cache.map(m => [m.key, m.at, m.size, m.chunk.length]), [['part-1-2-0.meshopt', 0, 40, 16], ['part-1-2-0.meshopt', 16, 40, 16]]);
 });
+
+test('streaming a file whose size changed since the page was rendered ends in FileChanged', async () => {
+    for (const actual of [40, 140]) {
+        const { vscodeApi } = fakeExtension(bytes(actual), 16);
+        const { fileChunks } = createTransport({ vscodeApi, src: 'unused', fileSize: 100, cacheKey: 'k', piece: 16 });
+        await assert.rejects((async () => { for await (const chunk of fileChunks()) void chunk; })(), { name: 'FileChanged' });
+    }
+});
