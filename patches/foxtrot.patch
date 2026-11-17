@@ -4124,7 +4124,7 @@ index 7e00a09..20c6e06 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..c55b284 100644
+index ad4ba6e..8e23e9a 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
 @@ -21,7 +21,20 @@ use crate::{
@@ -4426,9 +4426,9 @@ index ad4ba6e..c55b284 100644
 -fn item_defined_transformation(s: &StepFile, t: Id<ItemDefinedTransformation_>) -> DMat4 {
 -    let i = s.entity(t).expect("Could not get ItemDefinedTransform");
 +/// A growing array kept in fixed-size blocks. WASM memory never shrinks, and a Vec that doubles leaves
-+/// its old block's space behind for good: four of them cost a 161 MB file's worker 95 MB more.
++/// its old block's space behind for good: four of them cost a 161 MB file's worker 95 MB more (Node 22).
 +pub struct Blocks<T> {
-+    pub blocks: Vec<Vec<T>>,
++    blocks: Vec<Vec<T>>,
 +    len: usize,
 +}
 +
@@ -4453,7 +4453,7 @@ index ad4ba6e..c55b284 100644
 +            self.len += 1;
 +        }
 +    }
-+    pub fn to_vec(&self) -> Vec<T> where T: Clone { self.blocks.concat() }
++    pub fn into_blocks(self) -> Vec<Vec<T>> { self.blocks }
 +}
 +
 +/// A mesh as f32 arrays: xyz positions, normals and 0-1 colors per vertex, three indices per triangle.
@@ -5140,7 +5140,7 @@ index ad4ba6e..c55b284 100644
          },
          Entity::SurfaceCurve(v) => {
              curve(s, edge_curve, v.curve_3d, orientation)?
-@@ -772,10 +1011,39 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -772,10 +1011,40 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
      })
  }
  
@@ -5164,8 +5164,9 @@ index ad4ba6e..c55b284 100644
 +        blocks.extend(0..BLOCK as u32 + 3);
 +        blocks.extend([7]);
 +        assert_eq!(blocks.len(), BLOCK + 4);
-+        assert_eq!(blocks.blocks.len(), 2);
-+        let all = blocks.to_vec();
++        let all = blocks.into_blocks();
++        assert_eq!(all.len(), 2);
++        let all = all.concat();
 +        assert_eq!((all[BLOCK - 1], all[BLOCK], all[BLOCK + 3]), (BLOCK as u32 - 1, BLOCK as u32, 7));
 +    }
 +
@@ -5249,10 +5250,18 @@ index e463b4b..4ab8969 100644
  [lib]
  crate-type = ["cdylib", "rlib"]
 diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
-index 0e65527..514f3cf 100644
+index 0e65527..60fd8cb 100644
 --- a/wasm/src/lib.rs
 +++ b/wasm/src/lib.rs
-@@ -52,3 +52,97 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
+@@ -8,6 +8,7 @@
+ /// Vertices are rows of three indexes into the triangle array
+ ///
+ use wasm_bindgen::prelude::*;
++use triangulate::triangulate::Blocks;
+ use log::{Level};
+ 
+ #[wasm_bindgen]
+@@ -52,3 +53,95 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
          .map(|f| *f as f32)
          .collect()
  }
@@ -5269,15 +5278,13 @@ index 0e65527..514f3cf 100644
 +    failed: usize,
 +}
 +
-+use triangulate::triangulate::Blocks;
-+
 +// Copied block by block into a JS array, so WASM never holds a whole array in one piece.
 +macro_rules! to_js {
 +    ($blocks:expr, $array:ty) => {{
 +        let blocks = std::mem::take(&mut $blocks);
 +        let out = <$array>::new_with_length(blocks.len() as u32);
 +        let mut at = 0;
-+        for block in blocks.blocks {
++        for block in blocks.into_blocks() {
 +            out.subarray(at, at + block.len() as u32).copy_from(&block);
 +            at += block.len() as u32;
 +        }
