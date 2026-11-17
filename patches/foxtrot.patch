@@ -4125,7 +4125,7 @@ index 7e00a09..20c6e06 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..3b964df 100644
+index ad4ba6e..018f129 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
 @@ -23,14 +23,28 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
@@ -4493,7 +4493,7 @@ index ad4ba6e..3b964df 100644
          .and_then(|fill: &FillAreaStyle_| if fill.fill_styles.len() != 1 {
                  None
              } else {
-@@ -305,63 +379,101 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
+@@ -305,63 +379,112 @@ fn presentation_style_color(s: &StepFile, p: PresentationStyleAssignment)
          .map(|c| DVec3::new(c.red, c.green, c.blue))
  }
  
@@ -4548,16 +4548,16 @@ index ad4ba6e..3b964df 100644
 +        ref_direction = project(default_ref);
 +    }
 +    Ok((location, axis, ref_direction.normalize()))
-+}
-+
+ }
+ 
+-fn shell(s: &StepFile, c: Shell, mesh: &mut Mesh, stats: &mut Stats) {
 +#[derive(Clone, Copy)]
 +struct Split { part: usize, parts: usize, offset: usize }
 +
 +impl Split {
 +    fn mine(&self, i: usize) -> bool { (i + self.offset) % self.parts == self.part }
- }
- 
--fn shell(s: &StepFile, c: Shell, mesh: &mut Mesh, stats: &mut Stats) {
++}
++
 +fn shell(s: &StepFile, c: Shell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
      match &s[c] {
 -        Entity::ClosedShell(_) => closed_shell(s, c.cast(), mesh, stats),
@@ -4572,21 +4572,16 @@ index ad4ba6e..3b964df 100644
 -    let cs = s.entity(c).expect("Could not get OpenShell");
 -    for face in &cs.cfs_faces {
 -        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
+-            error!("Failed to triangulate {:?}: {}", s[*face], err);
+-        }
+-    }
 +fn open_shell(s: &StepFile, c: OpenShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
 +    let Some(cs) = s.entity(c) else {
 +        warn!("Skipping a missing OpenShell");
 +        stats.num_errors += 1;
 +        return;
 +    };
-+    for (i, face) in cs.cfs_faces.iter().enumerate() {
-+        if !split.mine(i) {
-+            continue;
-+        }
-+        if let Err(err) = advanced_face(s, face.cast(), colors, mesh, stats) {
-             error!("Failed to triangulate {:?}: {}", s[*face], err);
-+            stats.num_errors += 1;
-         }
-     }
++    faces(s, &cs.cfs_faces, colors, mesh, stats, split);
      stats.num_shells += 1;
  }
  
@@ -4594,22 +4589,43 @@ index ad4ba6e..3b964df 100644
 -    let cs = s.entity(c).expect("Could not get ClosedShell");
 -    for face in &cs.cfs_faces {
 -        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
+-            error!("Failed to triangulate {:?}: {}", s[*face], err);
 +fn closed_shell(s: &StepFile, c: ClosedShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
 +    let Some(cs) = s.entity(c) else {
 +        warn!("Skipping a missing ClosedShell");
 +        stats.num_errors += 1;
 +        return;
 +    };
-+    for (i, face) in cs.cfs_faces.iter().enumerate() {
++    faces(s, &cs.cfs_faces, colors, mesh, stats, split);
++    stats.num_shells += 1;
++}
++
++// A face that fails or panics (an index past an array, say; the WASM build unwinds) is skipped, with
++// whatever it had added to the mesh.
++fn faces(s: &StepFile, faces: &[ap214::Face], colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
++    for (i, face) in faces.iter().enumerate() {
 +        if !split.mine(i) {
 +            continue;
 +        }
-+        if let Err(err) = advanced_face(s, face.cast(), colors, mesh, stats) {
-             error!("Failed to triangulate {:?}: {}", s[*face], err);
-+            stats.num_errors += 1;
++        let (verts, triangles) = (mesh.verts.len(), mesh.triangles.len());
++        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
++            advanced_face(s, face.cast(), colors, mesh, stats)
++        }));
++        match result {
++            Ok(Ok(())) => (),
++            Ok(Err(err)) => {
++                error!("Failed to triangulate {:?}: {}", s[*face], err);
++                stats.num_errors += 1;
++            },
++            Err(_) => {
++                error!("Panic while triangulating {:?}", s[*face]);
++                mesh.verts.truncate(verts);
++                mesh.triangles.truncate(triangles);
++                stats.num_panics += 1;
++            },
          }
      }
-     stats.num_shells += 1;
+-    stats.num_shells += 1;
  }
  
 -fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
@@ -4625,7 +4641,7 @@ index ad4ba6e..3b964df 100644
  
      // Grab the surface, returning early if it's unimplemented
      let mut surf = get_surface(s, face.face_geometry)?;
-@@ -379,7 +491,7 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -379,7 +502,7 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
  
          match bound_contours.len() {
              // We should always have non-zero items in the contour
@@ -4634,7 +4650,7 @@ index ad4ba6e..3b964df 100644
  
              // Special case for a single-vertex point, which shows up in
              // cones: we push it as a Steiner point, but without any
-@@ -417,7 +529,9 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -417,7 +540,9 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
  
                  // Close the loop by returning to the starting point
                  edges.pop();
@@ -4645,7 +4661,7 @@ index ad4ba6e..3b964df 100644
              }
          }
      }
-@@ -460,25 +574,32 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -460,25 +585,32 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              }
          }
      });
@@ -4696,7 +4712,7 @@ index ad4ba6e..3b964df 100644
          },
          Err(e) => {
              error!("Got panic while triangulating {}: {:?}",
-@@ -497,34 +618,60 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -497,34 +629,60 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
@@ -4765,7 +4781,7 @@ index ad4ba6e..3b964df 100644
              Ok(Surface::new_sphere(location, c.radius.0.0.0))
          },
          Entity::BSplineSurfaceWithKnots(b) =>
-@@ -532,25 +679,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -532,25 +690,25 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = b.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = b.u_multiplicities.iter()
@@ -4800,7 +4816,7 @@ index ad4ba6e..3b964df 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -574,22 +721,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -574,22 +732,22 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              // TODO: make KnotVector::from_multiplicies accept iterators?
              let u_knots: Vec<f64> = bspline.u_knots.iter().map(|k| k.0).collect();
              let u_multiplicities: Vec<usize> = bspline.u_multiplicities.iter()
@@ -4830,7 +4846,7 @@ index ad4ba6e..3b964df 100644
                  .into_iter()
                  .zip(rational.weights_data.iter())
                  .map(|(ctrl, weight)|
-@@ -600,8 +747,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -600,8 +758,8 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
                  .collect();
  
              let surf = NURBSSurface::new(
@@ -4841,7 +4857,7 @@ index ad4ba6e..3b964df 100644
                  u_knot_vec,
                  v_knot_vec,
                  control_points_list,
-@@ -609,6 +756,29 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -609,6 +767,29 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
@@ -4871,7 +4887,7 @@ index ad4ba6e..3b964df 100644
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,11 +786,69 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,11 +797,69 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
@@ -4943,7 +4959,7 @@ index ad4ba6e..3b964df 100644
      rows.iter()
          .map(|row| control_points_1d(s, row))
          .collect()
-@@ -630,7 +858,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -630,7 +869,7 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
      let (bound, orientation) = match &s[b] {
          Entity::FaceBound(b) => (b.bound, b.orientation),
          Entity::FaceOuterBound(b) => (b.bound, b.orientation),
@@ -4952,7 +4968,7 @@ index ad4ba6e..3b964df 100644
      };
      match &s[bound] {
          Entity::EdgeLoop(e) => {
-@@ -643,9 +871,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
+@@ -643,9 +882,9 @@ fn face_bound(s: &StepFile, b: FaceBound) -> Result<Vec<DVec3>, Error> {
          Entity::VertexLoop(v) => {
              // This is an "edge loop" with a single vertex, which is
              // used for cones and not really anything else.
@@ -4964,7 +4980,7 @@ index ad4ba6e..3b964df 100644
      }
  }
  
-@@ -659,7 +887,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -659,7 +898,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
          if i > 0 {
              out.pop();
          }
@@ -4973,7 +4989,7 @@ index ad4ba6e..3b964df 100644
          let o = edge_curve(s, edge.edge_element.cast(), edge.orientation)?;
          out.extend(o.into_iter());
      }
-@@ -667,7 +895,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
+@@ -667,7 +906,7 @@ fn edge_loop(s: &StepFile, edge_list: &[OrientedEdge])
  }
  
  fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3>, Error> {
@@ -4982,7 +4998,7 @@ index ad4ba6e..3b964df 100644
      let curve = curve(s, edge_curve, edge_curve.edge_geometry, orientation)?;
  
      let (start, end) = if orientation {
-@@ -675,8 +903,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
+@@ -675,8 +914,8 @@ fn edge_curve(s: &StepFile, e: EdgeCurve, orientation: bool) -> Result<Vec<DVec3
      } else {
          (edge_curve.edge_end, edge_curve.edge_start)
      };
@@ -4993,7 +5009,7 @@ index ad4ba6e..3b964df 100644
      Ok(curve.build(u, v))
  }
  
-@@ -685,42 +913,40 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -685,42 +924,40 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
  {
      Ok(match &s[curve_id] {
          Entity::Circle(c) => {
@@ -5047,7 +5063,7 @@ index ad4ba6e..3b964df 100644
          },
          Entity::ComplexEntity(v) if v.len() == 2 => {
              let bspline = if let Entity::BSplineCurveWithKnots(b) = &v[0] {
-@@ -737,25 +963,25 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -737,25 +974,25 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
              };
              let knots: Vec<f64> = bspline.knots.iter().map(|k| k.0).collect();
              let multiplicities: Vec<usize> = bspline.knot_multiplicities.iter()
@@ -5079,7 +5095,7 @@ index ad4ba6e..3b964df 100644
          },
          Entity::SurfaceCurve(v) => {
              curve(s, edge_curve, v.curve_3d, orientation)?
-@@ -772,10 +998,28 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
+@@ -772,10 +1009,28 @@ fn curve(s: &StepFile, edge_curve: &ap214::EdgeCurve_,
      })
  }
  
@@ -5112,10 +5128,10 @@ index ad4ba6e..3b964df 100644
 +}
 diff --git a/triangulate/tests/malformed.rs b/triangulate/tests/malformed.rs
 new file mode 100644
-index 0000000..0dc8e90
+index 0000000..c91e293
 --- /dev/null
 +++ b/triangulate/tests/malformed.rs
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,48 @@
 +use step::step_file::StepFile;
 +use triangulate::triangulate::triangulate;
 +
@@ -5134,6 +5150,35 @@ index 0000000..0dc8e90
 +    assert_eq!(stats.num_faces, 1);
 +    assert_eq!(stats.num_errors, 1);
 +    assert_eq!(stats.num_panics, 0);
++}
++
++// A degree-3 B-spline edge with two control points: evaluating it indexes past them inside nurbs.
++#[test]
++fn a_panic_in_a_face_skips_only_that_face() {
++    let text = b"ISO-10303-21;HEADER;ENDSEC;DATA;
++#1=MANIFOLD_SOLID_BREP('',#2);
++#2=CLOSED_SHELL('',(#3));
++#3=ADVANCED_FACE('',(#4),#20,.T.);
++#4=FACE_OUTER_BOUND('',#5,.T.);
++#5=EDGE_LOOP('',(#6));
++#6=ORIENTED_EDGE('',*,*,#7,.T.);
++#7=EDGE_CURVE('',#8,#8,#10,.T.);
++#8=VERTEX_POINT('',#9);
++#9=CARTESIAN_POINT('',(0.,0.,0.));
++#10=B_SPLINE_CURVE_WITH_KNOTS('',3,(#9,#11),.UNSPECIFIED.,.T.,.F.,(4,4),(0.,1.),.UNSPECIFIED.);
++#11=CARTESIAN_POINT('',(1.,0.,0.));
++#20=PLANE('',#21);
++#21=AXIS2_PLACEMENT_3D('',#9,#22,#23);
++#22=DIRECTION('',(0.,0.,1.));
++#23=DIRECTION('',(1.,0.,0.));
++ENDSEC;END-ISO-10303-21;";
++    let flat = StepFile::strip_flatten(text);
++    let step = StepFile::parse(&flat);
++    let (mesh, stats) = triangulate(&step);
++    assert_eq!(mesh.triangles.len(), 0);
++    assert_eq!(mesh.verts.len(), 0);
++    assert_eq!(stats.num_faces, 1);
++    assert_eq!(stats.num_panics, 1);
 +}
 diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
 index 0e65527..bbb0594 100644
