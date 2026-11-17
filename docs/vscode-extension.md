@@ -64,9 +64,9 @@ Expansion uses xacro-parser 0.3.11 with a local patch (`patches/xacro-parser@0.3
 
 ## DAE geometry is parsed in Rust
 
-ColladaLoader spends its time in `DOMParser` and in splitting `<float_array>` / `<p>` text, which together are about half of a URDF load with large DAE meshes. `rust/dae` (no crates, 100 KB of WASM) builds the vertex data the way ColladaLoader does and returns the file with those numbers removed; ColladaLoader then parses the small remainder for materials, textures, units, up axis and the node tree, and the Rust buffers replace its empty geometries. Rewriting all of ColladaLoader in Rust would have to match its material, transparency and node-collapse rules by hand; this split keeps them by construction. Files outside the handled subset (vertex colors, a second UV set, skinning, UVs on only some primitives, CDATA, entities in ids) go to ColladaLoader alone. Every DAE in the Jazzy TurtleBot 4 meshes, the RealSense `d435.dae` and a CAD-exported robot gave the same attributes, groups, materials and matrices both ways.
+Only the geometry is parsed in Rust (`rust/dae`, no crates, 100 KB of WASM); ColladaLoader still reads materials, textures, units, up axis and the node tree. Rewriting all of ColladaLoader would have to match its material, transparency and node-collapse rules by hand; this split keeps them by construction. Vertex colors, a second UV set, skinning, UVs on only some primitives, CDATA and entities in ids go to ColladaLoader alone. Every DAE in the Jazzy TurtleBot 4 meshes, the RealSense `d435.dae` and a CAD-exported robot gave the same attributes, groups, materials and matrices both ways.
 
-Parse time of one DAE, headless Chrome, 2026-11-17, Intel Arrow Lake, best of 3, with `rust/dae` against ColladaLoader alone: `l515.dae` 33 MB 155 against 438 ms, `d435.dae` 16 MB 63 against 202 ms, `oakd_pro.dae` 12 MB 55 against 212 ms. `rust/dae/build.sh` rebuilds `src/wasm/dae.wasm`.
+`rust/dae/build.sh` rebuilds `src/wasm/dae.wasm`.
 
 In VS Code 1.144 (2026-11-17, `tests/e2e/vscode.mjs`, from `code -r` to the last mesh, so it includes opening the editor and expanding xacro; release 0.4.4 and this build interleaved, 3 runs each): the RealSense xacro 1.98-2.07 s against 2.14-2.38 s, Franka `panda_arm_hand.urdf` 1.33-1.35 s against 1.34-1.48 s.
 

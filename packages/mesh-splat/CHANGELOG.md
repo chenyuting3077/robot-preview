@@ -5,8 +5,8 @@
 - PLY files with double-precision coordinates render; WebGL rejected their Float64 attributes and the view stayed empty.
 - Binary PLY meshes load without PLYLoader: in VS Code a 181 MB, 4.5M-face mesh opens in 1.8 s and grows memory by 1.05 GB; 0.2.0 went past 6 GB.
 - Binary PCD point clouds load into typed arrays instead of PCDLoader's growing arrays, keeping only position, color and intensity; NaN points are dropped.
-- STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up, with under 1% of faces left as small holes. In VS Code a 39 MB assembly shows in 3.0 s and a 161 MB one in 13.7-15.1 s with 2.0-2.2 GB of memory; later opens of the unchanged file load a cached copy in 0.8-1.4 s. The cache is dropped when the extension updates and trimmed to 1 GB.
-- Large binary PCD files are streamed from the extension, and past 10M points an even 10M are shown. A 1.2 GB, 38.9M-point map opens in 5.1-5.5 s with 1.1-1.3 GB of memory and orbits at 21 fps; 0.2.0 went past 6 GB in two of three runs.
+- STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up, with under 1% of faces left as small holes. In VS Code a 39 MB assembly shows in 3.0 s and a 161 MB one in 13.7-15.1 s with 2.2 GB of memory; later opens of the unchanged file load a cached copy in 0.9-1.4 s. The cache is dropped when the extension updates and trimmed to 1 GB.
+- Large binary PCD files are streamed from the extension, and past 10M points an even 10M are shown. A 1.2 GB, 38.9M-point map opens in 5.2-5.3 s with 1.2-1.3 GB of memory and orbits at 21 fps; 0.2.0 cannot open it.
 - Point clouds can be colored by original color, height or intensity (Display menu); clouds without RGB start in intensity or height.
 
 ## 0.2.0
