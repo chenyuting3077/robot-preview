@@ -66,11 +66,12 @@ function activate(context) {
             const post = message => panel.webview.postMessage(message);
             const writer = cacheWriter(cacheDir?.fsPath, keys, post);
             const reader = fileReader(document.uri.fsPath, post);
-            panel.webview.onDidReceiveMessage(message => {
-                if (message?.type === 'read') return reader.read(message.id, message.at);
-                if (message?.type === 'readDone') return reader.done(message.id);
-                if (message?.type === 'stepCache') return writer.receive(message);
-            });
+            const handlers = {
+                read: message => reader.read(message.id, message.at),
+                readDone: message => reader.done(message.id),
+                stepCache: message => writer.receive(message)
+            };
+            panel.webview.onDidReceiveMessage(message => Object.hasOwn(handlers, message?.type) && handlers[message.type](message));
             panel.onDidDispose(() => {
                 reader.dispose();
                 writer.dispose();
