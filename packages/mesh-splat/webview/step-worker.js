@@ -2,11 +2,11 @@ import initFoxtrot, { step_to_mesh } from '../vendor/foxtrot/foxtrot.js';
 import occtimportjs from '../vendor/occt/occt-import-js.js';
 
 // One job per worker: a Rust panic aborts the foxtrot instance, so the caller starts a fresh worker each time.
-self.onmessage = async ({ data: { engine, bytes, wasm } }) => {
+self.onmessage = async ({ data: { engine, bytes, wasm, part, parts } }) => {
     try {
         if (engine === 'foxtrot') {
             await initFoxtrot({ module_or_path: wasm });
-            const mesh = step_to_mesh(bytes);
+            const mesh = step_to_mesh(bytes, part, parts);
             const out = { positions: mesh.take_positions(), normals: mesh.take_normals(), colors: mesh.take_colors(), indices: mesh.take_indices() };
             self.postMessage(out, [out.positions.buffer, out.normals.buffer, out.colors.buffer, out.indices.buffer]);
             return;

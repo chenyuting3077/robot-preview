@@ -6,6 +6,7 @@
 - Binary PLY meshes load without PLYLoader: a 181 MB, 4.5M-face mesh parses in 0.18 s instead of 2.0 s, with half the memory.
 - Binary PCD point clouds load into typed arrays instead of PCDLoader's growing arrays, keeping only position and color.
 - STEP files (`.stp` `.step`) open as meshes, in meters, with part and face colors, starting +Y up. A 39 MB assembly shows in about 8 s (was about 100 s), with under 1% of faces left as small holes; later opens of the unchanged file load a cached copy in about 1 s. A 161 MB assembly that used to fall back to OpenCascade and never finish opens in 24 s.
+- STEP files tessellate on up to 4 threads: the 39 MB assembly 8 s -> 5 s, a 30 MB one 3.8 -> 1.9 s, the 161 MB one 24 -> 14 s, using less memory per thread than before.
 - The STEP cache is about a quarter smaller, is dropped when the extension updates, and is trimmed to 1 GB.
 
 ## 0.2.0

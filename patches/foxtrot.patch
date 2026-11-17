@@ -126,6 +126,105 @@ index 8b1583e..2cb7528 100644
      }
  
      pub fn as_polyline(&self, u_start: f64, u_end: f64, num_points_per_knot: usize) -> Vec<DVec3> {
+diff --git a/step/src/step_file.rs b/step/src/step_file.rs
+index 404dfcc..ef9414c 100644
+--- a/step/src/step_file.rs
++++ b/step/src/step_file.rs
+@@ -25,40 +25,50 @@ impl<'a> StepFile<'a> {
+             .position(|b| b == b"ENDSEC;")
+             .unwrap_or(0) + data_start;
+ 
+-        // Parse every block, accumulating a Vec of Results.  We parse in
+-        // single-threaded mode in WASM builds, because there's no thread
+-        // pool.
+-        let block_iter = {
+-            let block_slice = &blocks[data_start..data_end];
+-            #[cfg(feature = "rayon")]
+-            { block_slice.par_iter() }
+-            #[cfg(not(feature = "rayon"))]
+-            { block_slice.iter() }
+-        };
+-
+-        let parsed: Vec<(usize, Entity)> = block_iter
+-            .filter_map(|b| parse_entity_decl(*b)
+-                .or_else(|e| {
+-                    warn!("Failed to parse {}: {:?}",
+-                        std::str::from_utf8(b).unwrap_or("[INVALID UTF-8]"),
+-                              e);
+-                    parse_entity_fallback(*b)
+-                })
+-                .ok())
+-            .map(|b| b.1)
+-            .collect();
+-
+-        // Awkward construction because `Entity` is not `Clone`
+-        let max_id = parsed.iter().map(|b| b.0).max().unwrap_or(0);
+-        let mut out: Vec<Entity> = (0..=max_id)
+-            .map(|_| Entity::_EmptySlot)
+-            .collect();
+-
+-        for p in parsed.into_iter() {
+-            out[p.0] = p.1;
++        let block_slice = &blocks[data_start..data_end];
++        let parse = |b: &&'a [u8]| parse_entity_decl(*b)
++            .or_else(|e| {
++                warn!("Failed to parse {}: {:?}",
++                    std::str::from_utf8(b).unwrap_or("[INVALID UTF-8]"),
++                          e);
++                parse_entity_fallback(*b)
++            })
++            .ok()
++            .map(|b| b.1);
++
++        // Single-threaded (WASM) builds write each entity straight into its slot: collecting
++        // them first held a second 272-byte copy of every entity, and WASM memory never shrinks.
++        #[cfg(not(feature = "rayon"))]
++        {
++            let max_id = block_slice.iter().filter_map(|b| entity_id(b)).max().unwrap_or(0);
++            let mut out: Vec<Entity> = (0..=max_id).map(|_| Entity::_EmptySlot).collect();
++            for (id, entity) in block_slice.iter().filter_map(parse) {
++                if id >= out.len() {
++                    out.resize_with(id + 1, || Entity::_EmptySlot);
++                }
++                out[id] = entity;
++            }
++            Self(out)
+         }
+ 
+-        Self(out)
++        #[cfg(feature = "rayon")]
++        {
++            let parsed: Vec<(usize, Entity)> = block_slice.par_iter()
++                .filter_map(parse)
++                .collect();
++
++            // Awkward construction because `Entity` is not `Clone`
++            let max_id = parsed.iter().map(|b| b.0).max().unwrap_or(0);
++            let mut out: Vec<Entity> = (0..=max_id)
++                .map(|_| Entity::_EmptySlot)
++                .collect();
++
++            for p in parsed.into_iter() {
++                out[p.0] = p.1;
++            }
++
++            Self(out)
++        }
+     }
+ 
+     /// Flattens a STEP file, removing comments and whitespace
+@@ -123,3 +133,11 @@ impl<'a, T> std::ops::Index<Id<T>> for StepFile<'a> {
+ pub trait FromEntity<'a> {
+     fn try_from_entity(e: &'a Entity<'a>) -> Option<&'a Self>;
+ }
++
++/// The id of a `#123=...` block, without parsing the entity.
++#[cfg(not(feature = "rayon"))]
++fn entity_id(block: &[u8]) -> Option<usize> {
++    let digits = block.strip_prefix(b"#")?;
++    let end = digits.iter().position(|c| !c.is_ascii_digit())?;
++    std::str::from_utf8(&digits[..end]).ok()?.parse().ok()
++}
 diff --git a/triangulate/src/surface.rs b/triangulate/src/surface.rs
 index 7e00a09..d0bef87 100644
 --- a/triangulate/src/surface.rs
@@ -264,7 +363,7 @@ index 7e00a09..d0bef87 100644
                  let p = (*mat_i * DVec4::new(p.x, p.y, p.z, 1.0)).xyz();
                  let major_angle = p.y.atan2(p.z);
 diff --git a/triangulate/src/triangulate.rs b/triangulate/src/triangulate.rs
-index ad4ba6e..3b63c41 100644
+index ad4ba6e..ac9d46c 100644
 --- a/triangulate/src/triangulate.rs
 +++ b/triangulate/src/triangulate.rs
 @@ -23,6 +23,11 @@ use nurbs::{BSplineSurface, SampledCurve, SampledSurface, NURBSSurface, KnotVect
@@ -279,11 +378,17 @@ index ad4ba6e..3b63c41 100644
  /// `TransformStack` is a mapping of representations to transformed children.
  type TransformStack<'a> =
      HashMap<Representation<'a>, Vec<(Representation<'a>, DMat4)>>;
-@@ -64,18 +69,23 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
+@@ -64,18 +69,29 @@ fn transform_stack_roots<'a>(transform_stack: &TransformStack<'a>) -> Vec<Repres
  }
  
  pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
 -    let styled_items: Vec<_> = s.0.iter()
++    triangulate_part(s, 0, 1)
++}
++
++/// Triangulates every `parts`-th face, starting at `part`, so separate workers that each parse
++/// the file split the work. Splitting by solid left one worker with most of the AMR's time.
++pub fn triangulate_part(s: &StepFile, part: usize, parts: usize) -> (Mesh, Stats) {
 +    // Face colors usually come as OVER_RIDING_STYLED_ITEMs on top of the
 +    // solid's STYLED_ITEM.
 +    let styled_items: Vec<(&Vec<PresentationStyleAssignment>, RepresentationItem)> = s.0.iter()
@@ -310,7 +415,7 @@ index ad4ba6e..3b63c41 100644
              })
          .collect();
  
-@@ -124,7 +134,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -124,7 +140,11 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                  Entity::AdvancedBrepShapeRepresentation(b) => &b.items,
                  Entity::ShapeRepresentation(b) => &b.items,
                  Entity::ManifoldSurfaceShapeRepresentation(b) => &b.items,
@@ -323,25 +428,30 @@ index ad4ba6e..3b63c41 100644
              };
  
              for m in items.iter() {
-@@ -173,14 +187,14 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -169,18 +189,19 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+ 
+             // Fold operation
+             |(mut mesh, mut stats), (id, mats)| {
++                let split = Split { part, parts, offset: id.0 };
+                 let v_start = mesh.verts.len();
                  let t_start = mesh.triangles.len();
                  match &s[*id] {
                      Entity::ManifoldSolidBrep(b) =>
 -                        closed_shell(s, b.outer, &mut mesh, &mut stats),
-+                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats),
++                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats, split),
                      Entity::ShellBasedSurfaceModel(b) =>
                          for v in &b.sbsm_boundary {
 -                            shell(s, *v, &mut mesh, &mut stats);
-+                            shell(s, *v, &brep_colors, &mut mesh, &mut stats);
++                            shell(s, *v, &brep_colors, &mut mesh, &mut stats, split);
                          },
                      Entity::BrepWithVoids(b) =>
                          // TODO: handle voids
 -                        closed_shell(s, b.outer, &mut mesh, &mut stats),
-+                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats),
++                        closed_shell(s, b.outer, &brep_colors, &mut mesh, &mut stats, split),
                      _ => {
                          warn!("Skipping {:?} (not a known solid)", s[*id]);
                          return (mesh, stats);
-@@ -189,9 +203,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -189,9 +210,12 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
  
                  // Pick out a color from the color map and apply it to each
                  // newly-created vertex
@@ -355,7 +465,7 @@ index ad4ba6e..3b63c41 100644
  
                  // Build copies of the mesh by copying and applying transforms
                  let v_end = mesh.verts.len();
-@@ -205,6 +222,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -205,6 +229,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                          let n = mesh.verts[v].norm;
                          let norm = (mat * glm::vec3_to_vec4(&n)).xyz();
  
@@ -363,7 +473,7 @@ index ad4ba6e..3b63c41 100644
                          mesh.verts.push(mesh::Vertex { pos, norm, color });
                      }
                      let offset = mesh.verts.len() - v_end;
-@@ -226,7 +244,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
+@@ -226,7 +251,7 @@ pub fn triangulate(s: &StepFile) -> (Mesh, Stats) {
                      let n = mesh.verts[v].norm;
                      mesh.verts[v].norm = (mat * glm::vec3_to_vec4(&n)).xyz();
  
@@ -372,7 +482,7 @@ index ad4ba6e..3b63c41 100644
                  }
                  (mesh, stats)
              });
-@@ -320,44 +338,54 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
+@@ -320,44 +345,67 @@ fn direction(s: &StepFile, a: Direction) -> DVec3 {
  fn axis2_placement_3d(s: &StepFile, t: Id<Axis2Placement3d_>) -> (DVec3, DVec3, DVec3) {
      let a = s.entity(t).expect("Could not get Axis2Placement3d");
      let location = cartesian_point(s, a.location);
@@ -400,21 +510,32 @@ index ad4ba6e..3b63c41 100644
  }
  
 -fn shell(s: &StepFile, c: Shell, mesh: &mut Mesh, stats: &mut Stats) {
-+fn shell(s: &StepFile, c: Shell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats) {
++#[derive(Clone, Copy)]
++struct Split { part: usize, parts: usize, offset: usize }
++
++impl Split {
++    fn mine(&self, i: usize) -> bool { (i + self.offset) % self.parts == self.part }
++}
++
++fn shell(s: &StepFile, c: Shell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
      match &s[c] {
 -        Entity::ClosedShell(_) => closed_shell(s, c.cast(), mesh, stats),
 -        Entity::OpenShell(_) => open_shell(s, c.cast(), mesh, stats),
-+        Entity::ClosedShell(_) => closed_shell(s, c.cast(), colors, mesh, stats),
-+        Entity::OpenShell(_) => open_shell(s, c.cast(), colors, mesh, stats),
++        Entity::ClosedShell(_) => closed_shell(s, c.cast(), colors, mesh, stats, split),
++        Entity::OpenShell(_) => open_shell(s, c.cast(), colors, mesh, stats, split),
          h => warn!("Skipping {:?} (unknown Shell type)", h),
      }
  }
  
 -fn open_shell(s: &StepFile, c: OpenShell, mesh: &mut Mesh, stats: &mut Stats) {
-+fn open_shell(s: &StepFile, c: OpenShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats) {
++fn open_shell(s: &StepFile, c: OpenShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
      let cs = s.entity(c).expect("Could not get OpenShell");
-     for face in &cs.cfs_faces {
+-    for face in &cs.cfs_faces {
 -        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
++    for (i, face) in cs.cfs_faces.iter().enumerate() {
++        if !split.mine(i) {
++            continue;
++        }
 +        if let Err(err) = advanced_face(s, face.cast(), colors, mesh, stats) {
              error!("Failed to triangulate {:?}: {}", s[*face], err);
 +            stats.num_errors += 1;
@@ -424,10 +545,14 @@ index ad4ba6e..3b63c41 100644
  }
  
 -fn closed_shell(s: &StepFile, c: ClosedShell, mesh: &mut Mesh, stats: &mut Stats) {
-+fn closed_shell(s: &StepFile, c: ClosedShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats) {
++fn closed_shell(s: &StepFile, c: ClosedShell, colors: &Colors, mesh: &mut Mesh, stats: &mut Stats, split: Split) {
      let cs = s.entity(c).expect("Could not get ClosedShell");
-     for face in &cs.cfs_faces {
+-    for face in &cs.cfs_faces {
 -        if let Err(err) = advanced_face(s, face.cast(), mesh, stats) {
++    for (i, face) in cs.cfs_faces.iter().enumerate() {
++        if !split.mine(i) {
++            continue;
++        }
 +        if let Err(err) = advanced_face(s, face.cast(), colors, mesh, stats) {
              error!("Failed to triangulate {:?}: {}", s[*face], err);
 +            stats.num_errors += 1;
@@ -441,7 +566,7 @@ index ad4ba6e..3b63c41 100644
                   stats: &mut Stats) -> Result<(), Error>
  {
      let face = s.entity(f).expect("Could not get AdvancedFace");
-@@ -497,6 +525,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
+@@ -497,6 +545,10 @@ fn advanced_face(s: &StepFile, f: AdvancedFace, mesh: &mut Mesh,
              v.norm = -v.norm;
          }
      }
@@ -452,7 +577,7 @@ index ad4ba6e..3b63c41 100644
      Ok(())
  }
  
-@@ -609,6 +641,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -609,6 +661,17 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
              Ok(Surface::NURBS(SampledSurface::new(surf)))
  
          },
@@ -470,7 +595,7 @@ index ad4ba6e..3b63c41 100644
          e => {
              warn!("Could not get surface from {:?}", e);
              Err(Error::UnknownSurfaceType)
-@@ -616,6 +659,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
+@@ -616,6 +679,47 @@ fn get_surface(s: &StepFile, surf: ap214::Surface) -> Result<Surface, Error> {
      }
  }
  
@@ -519,10 +644,10 @@ index ad4ba6e..3b63c41 100644
      row.iter().map(|p| cartesian_point(s, *p)).collect()
  }
 diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
-index 0e65527..468918a 100644
+index 0e65527..93a7704 100644
 --- a/wasm/src/lib.rs
 +++ b/wasm/src/lib.rs
-@@ -52,3 +52,48 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
+@@ -52,3 +52,53 @@ pub fn step_to_triangle_buf(data: String) -> Vec<f32> {
          .map(|f| *f as f32)
          .collect()
  }
@@ -552,13 +677,18 @@ index 0e65527..468918a 100644
 +}
 +
 +#[wasm_bindgen]
-+pub fn step_to_mesh(data: &[u8]) -> StepMesh {
++pub fn step_to_mesh(data: Vec<u8>, part: usize, parts: usize) -> StepMesh {
 +    use step::step_file::StepFile;
-+    use triangulate::triangulate::triangulate;
++    use triangulate::triangulate::triangulate_part;
 +
-+    let flat = StepFile::strip_flatten(data);
++    // Owned and freed as soon as possible: WASM memory never shrinks, so every copy alive at
++    // the same time raises the worker's memory for good.
++    let flat = StepFile::strip_flatten(&data);
++    drop(data);
 +    let step = StepFile::parse(&flat);
-+    let (mesh, stats) = triangulate(&step);
++    let (mesh, stats) = triangulate_part(&step, part, parts.max(1));
++    drop(step);
++    drop(flat);
 +    let pack = |f: &dyn Fn(&triangulate::mesh::Vertex) -> [f64; 3]| -> Vec<f32> {
 +        mesh.verts.iter().flat_map(|v| f(v)).map(|x| x as f32).collect()
 +    };

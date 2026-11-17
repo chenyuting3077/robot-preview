@@ -80,12 +80,16 @@ export function init_log() {
 
 /**
  * @param {Uint8Array | number[]} data
+ * @param {number} part
+ * @param {number} parts
  * @returns {StepMesh}
  */
-export function step_to_mesh(data) {
+export function step_to_mesh(data, part, parts) {
+    const val2 = +part;
+    const val3 = +parts;
     const ptr0 = passArray8ToWasm0(data, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.step_to_mesh(ptr0, len0);
+    const ret = wasm.step_to_mesh(ptr0, len0, val2, val3);
     return StepMesh.__wrap(ret);
 }
 

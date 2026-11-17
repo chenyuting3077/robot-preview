@@ -16,7 +16,7 @@ import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } f
 import { flatNormals, percentile, grown } from './geometry.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
-import { groupByColor, stepLengthUnit } from './step.mjs';
+import { groupByColor, mergeMeshes, stepLengthUnit } from './step.mjs';
 import { readPcdPoints } from './pcd.mjs';
 import StepWorker from './step-worker.js?worker&inline';
 import foxtrotWasm from '../vendor/foxtrot/foxtrot_bg.wasm?url';
@@ -204,7 +204,7 @@ async function loadUsd(info) {
 // the whole WASM instance) or yields no triangles (it skips shapes it does not know). Both run in a worker so the view keeps turning meanwhile.
 // The worker gets the WASM bytes, not its URL, so it does not depend on a fetch from a blob: worker
 // reaching the webview's service worker, which serves extension files in VS Code.
-async function stepJob(engine, bytes) {
+async function stepJob(engine, bytes, part = 0, parts = 1) {
     const wasm = await fetch(new URL(engine === 'foxtrot' ? foxtrotWasm : occtWasm, document.baseURI)).then(response => response.arrayBuffer());
     return new Promise((resolve, reject) => {
         const worker = new StepWorker();
@@ -217,8 +217,15 @@ async function stepJob(engine, bytes) {
             worker.terminate();
             reject(new Error(event.message));
         };
-        worker.postMessage({ engine, bytes: bytes.slice(), wasm }, [wasm]);
+        worker.postMessage({ engine, bytes: bytes.slice(), wasm, part, parts }, [wasm]);
     });
+}
+
+// Each worker parses the whole file and triangulates every parts-th face. A worker costs about 8x
+// the file in memory (161 MB file: +1.25 GB), so big files get fewer; AMR 5.0 s -> 2.2 s with 4 in Node.
+async function foxtrotJob(bytes) {
+    const parts = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1, 1 + Math.floor(1.5e9 / (8 * bytes.length))));
+    return mergeMeshes(await Promise.all(Array.from({ length: parts }, (_, part) => stepJob('foxtrot', bytes, part, parts))));
 }
 
 const stepMaterials = new Map();
@@ -292,7 +299,7 @@ async function loadStep(info) {
     if (cached) return withUp((await new GLTFLoader().loadAsync(cached)).scene, '+Y');
     const bytes = await fetchBytes();
     const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
-    const fast = unit && await stepJob('foxtrot', bytes).catch(() => null);
+    const fast = unit && await foxtrotJob(bytes).catch(() => null);
     const object = fast?.indices.length ? foxtrotObject(fast, unit) : occtObject(await stepJob('occt', bytes));
     cacheStep(object);
     return withUp(object, '+Y');
