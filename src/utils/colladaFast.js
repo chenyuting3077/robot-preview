@@ -7,7 +7,7 @@ let compiled = null;
 // float splitting only see materials and the scene graph. Returns null when rust/dae declines the file.
 export async function splitDaeGeometry(bytes) {
     compiled ||= fetch(daeWasmUrl).then(response => response.arrayBuffer()).then(buffer => WebAssembly.compile(buffer));
-    // A fresh instance per file: wasm memory never shrinks, and a 33 MB DAE grows it past 100 MB.
+    // A fresh instance per file: wasm memory never shrinks, and a 33 MB DAE (RealSense l515) grows it to 133 MB (Node 22).
     const { exports } = await WebAssembly.instantiate(await compiled);
     const input = exports.alloc(bytes.length);
     new Uint8Array(exports.memory.buffer).set(bytes, input);
