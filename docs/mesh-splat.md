@@ -18,7 +18,7 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 
 - VS Code reads a fetched webview resource whole before handing it over: a 1.2 GB PCD grew the webview by 1.6 GB with the viewer keeping one point. Binary PCD is therefore read by the extension in 16 MB pieces, three in flight (one at a time: 17 s against 7.6 s).
 - Past 10M points an even 10M are shown, and the info popover says so. Not a LOD: zooming in never shows the dropped points.
-- 1.2 GB, 38.9M-point Livox map: 5.2–5.3 s, +1.2–1.3 GB, 21 fps orbiting; 0.2.0 cannot open it. 181 MB, 4.5M-face binary PLY mesh: 1.8 s, +1.05 GB; 0.2.0 went past 6 GB.
+- 1.2 GB, 38.9M-point Livox map: 5.0–5.3 s, +1.2–1.5 GB, 21 fps orbiting (7 runs); 0.2.0 cannot open it. 181 MB, 4.5M-face binary PLY mesh: 1.8 s, +1.05 GB; 0.2.0 went past 6 GB.
 
 ## USD
 
