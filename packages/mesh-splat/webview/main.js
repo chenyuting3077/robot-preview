@@ -175,6 +175,8 @@ async function loadPcd(info) {
     const reader = pcdReader(POINT_LIMIT);
     for await (const chunk of fileChunks()) if (!reader.push(chunk)) break;
     const points = reader.finish();
+    // ponytail: ASCII and binary_compressed PCD still go whole through PCDLoader, which runs out of memory
+    // on files of a few hundred MB; stream them like binary if such files turn up.
     if (!points) {
         const geometry = new PCDLoader().parse((await fetchBytes()).buffer).geometry;
         // A NaN point makes the bounding box, and with it the framing, NaN.

@@ -56,6 +56,8 @@ function cacheWriter(dir, keys, post) {
 
 // Oldest first until the folder fits. A .part younger than an hour may be another editor's write in
 // progress; older ones are left over from a closed window and go like any entry.
+// ponytail: an hour is a guess at the longest write; a write that slow loses its .part to the trim and
+// fails its rename, so track live writes across editors if that is ever seen.
 async function trimCache(dir, keep) {
     const now = Date.now();
     const files = (await Promise.all((await fs.promises.readdir(dir)).map(async file => {
