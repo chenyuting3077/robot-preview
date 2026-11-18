@@ -35,3 +35,6 @@ Thumbs.db
 # VS Code extension package
 *.vsix
 target/
+
+# Large local files for measuring in VS Code
+/test-files/
