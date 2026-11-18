@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Marketplace description and keywords mention STEP CAD models.
+
 ## 0.3.0
 
 - STEP (`.stp` `.step`) opens as meshes with part and face colors; a 39 MB assembly in about 3 s, a 161 MB one in 16–17 s with about 2 GB of memory, and an unchanged file again in about 1 s.

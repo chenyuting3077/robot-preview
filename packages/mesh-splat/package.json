@@ -2,7 +2,7 @@
   "name": "robot-preview-mesh-splat",
   "displayName": "Robot Preview: Mesh & Splat",
   "description": "3D viewer for STL, PLY, OBJ, glTF meshes, STEP CAD models, point clouds (PCD, XYZ) and Gaussian splats (3DGS, 2DGS) inside VS Code",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
   "license": "Apache-2.0",
