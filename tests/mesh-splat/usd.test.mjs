@@ -129,6 +129,17 @@ def Xform "World"
     const { group, missingMaterials } = await composeUsd(new TextEncoder().encode(usda));
     assert.deepEqual(missingMaterials, ['/World/Looks/Gone']);
     assert.equal(group.getObjectByName('Tri').material.color.getHexString(), 'ffffff');
+    // A primitive bound to a missing material falls back to its displayColor.
+    const cube = await composeUsd(new TextEncoder().encode(`#usda 1.0
+def Cube "Box" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+)
+{
+    rel material:binding = </Looks/Gone>
+    color3f[] primvars:displayColor = [(0, 0.5, 0)]
+}
+`));
+    assert.deepEqual(cube.group.getObjectByName('Box').material.color.toArray(), [0, 0.5, 0]);
 });
 
 test('composeUsd reads USDA variantSet blocks with payloads, child prims and overs', async () => {

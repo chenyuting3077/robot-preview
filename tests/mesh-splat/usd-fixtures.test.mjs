@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { Euler, Matrix4, Vector3 } from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
-import { composeUsd } from '../../packages/mesh-splat/webview/usd.mjs';
+import { composeUsd, dropUndefined, parseLayer } from '../../packages/mesh-splat/webview/usd.mjs';
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
 
 // Files are served under an https base, as the webview's resource URLs are: three only resolves against http(s) bases.
@@ -33,7 +33,7 @@ const radius = mesh => {
     mesh.geometry.computeBoundingSphere();
     return +mesh.geometry.boundingSphere.radius.toFixed(4);
 };
-// Skipped unless every named file was downloaded, so a partial fetch skips rather than fails.
+// Skipped unless the named files were downloaded; the layers they reference are not checked.
 const fetched = (dir, ...files) => files.every(file => fs.existsSync(new URL(file, dir))) ? {} : { skip: 'run npm run fixtures:usd first' };
 
 // usd-wg/assets (tests/fixtures/usd/usd-wg/README.md)
@@ -183,6 +183,12 @@ test('isaac: prim types that are not drawn are listed, physics joints included',
     assert.equal(types.PhysicsRevoluteJoint, 7);
     assert.equal(types.PhysicsPrismaticJoint, 2);
     assert.equal(types.Xform, undefined);
+});
+
+test('isaac: crate layers carry active = false', fetched(ISAAC, '5.1/Isaac/Robots/FrankaRobotics/FrankaPanda/configuration/franka_Gripper_Robotiq_2F_85.usd'), async () => {
+    const { specsByPath } = parseLayer(new Uint8Array(await readFile(new URL('5.1/Isaac/Robots/FrankaRobotics/FrankaPanda/configuration/franka_Gripper_Robotiq_2F_85.usd', ISAAC))));
+    assert.equal(specsByPath['/panda/panda_hand/geometry'].fields.active, false);
+    assert.equal(dropUndefined({ '/panda': { fields: { typeName: 'Xform', specifier: 0 } }, ...specsByPath })['/panda/panda_hand/geometry'], undefined);
 });
 
 test('isaac: OmniPBR materials fall back to their diffuse colour', fetched(ISAAC, '5.1/Isaac/Robots/Unitree/G1/g1.usd'), async () => {
