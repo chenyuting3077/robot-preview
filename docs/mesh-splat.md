@@ -47,8 +47,9 @@ foxtrot (Rust, patched) tessellates; OpenCascade (`occt-import-js`, rebuilt at `
 - The cache is meshopt buffers, not glTF: 25.6 MB against 139 MB as GLB for the 161 MB assembly, and glTF's meshopt extension would have meant writing its accessors by hand for no reader but ours.
 - truck (`truck-stepio` 0.3.0) is no replacement: it drops assembly placements, and was slower than foxtrot and ran out of memory on the 161 MB file outside VS Code.
 - STEP has no up axis; it starts `+Y` because the AMR (Autodesk) is Y-up.
+- IGES goes to OpenCascade only (foxtrot reads STEP alone), starts `+Y` like STEP, and is cached like STEP.
 - foxtrot's WASM is built with unwinding (nightly `-Zbuild-std`, `vendor/build.sh`), so a panic skips its face; stable Rust's WASM std only aborts, which loses the whole file to OpenCascade.
 
 ## Not supported
 
-E57, PTX, NXS, X3D and other MeshLab-only formats, Draco / Meshopt compressed glTF, ASCII 2DGS PLY.
+E57, PTX, NXS, X3D and other MeshLab-only formats, KTX2 / Basis glTF textures, ASCII 2DGS PLY.

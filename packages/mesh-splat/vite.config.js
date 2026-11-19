@@ -27,10 +27,22 @@ const occtWithoutEval = {
     }
 };
 
+// DRACOLoader points at both of three's Draco builds, so both are emitted; glTF loading picks the glTF-only one
+// (DRACO_GLTF_CONFIG), and this drops the general one (about 1 MB) that nothing loads.
+const dracoGltfOnly = {
+    name: 'draco-gltf-only',
+    generateBundle(options, bundle) {
+        for (const [file, asset] of Object.entries(bundle)) {
+            const sources = asset.type === 'asset' ? asset.originalFileNames : [];
+            if (sources.length && sources.every(source => /libs[\\/]draco[\\/]draco_/.test(source))) delete bundle[file];
+        }
+    }
+};
+
 export default defineConfig({
     root: 'webview',
     base: './',
-    plugins: [occtWithoutEval],
+    plugins: [occtWithoutEval, dracoGltfOnly],
     worker: { plugins: () => [occtWithoutEval] },
     build: {
         // The emscripten glue in vendor/occt is CommonJS.

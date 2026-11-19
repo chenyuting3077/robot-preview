@@ -68,9 +68,9 @@ async function foxtrotJob(bytes) {
     });
 }
 
-const occtJob = async bytes => {
+const occtJob = async (bytes, format) => {
     const wasm = await wasmOf(occtWasm);
-    return runWorker({ job: 'occt', bytes, wasm }, [wasm, bytes.buffer]);
+    return runWorker({ job: 'occt', bytes, wasm, format }, [wasm, bytes.buffer]);
 };
 
 const stepMaterials = new Map();
@@ -137,7 +137,8 @@ function cacheStep(object, sendCache) {
 }
 
 // `cached` is the cache file's URL, or ''. The transport's `sendCache` is null outside VS Code.
-export async function stepModel(cached, { readAll, sendCache }) {
+// IGES goes to OpenCascade only: foxtrot reads STEP alone.
+export async function stepModel(cached, { readAll, sendCache }, format = 'STEP') {
     // A cache that is gone (another editor's trim) or unreadable is replaced by tessellating again.
     if (cached) {
         const object = await fetch(cached)
@@ -147,10 +148,10 @@ export async function stepModel(cached, { readAll, sendCache }) {
         if (object) return object;
     }
     const bytes = await readAll();
-    const unit = stepLengthUnit(new TextDecoder('latin1').decode(bytes));
+    const unit = format === 'STEP' ? stepLengthUnit(new TextDecoder('latin1').decode(bytes)) : null;
     const foxtrotParts = unit && await foxtrotJob(bytes).catch(() => null);
     // The last foxtrot worker took the file, so OpenCascade reads it again.
-    const object = foxtrotParts?.some(part => part.indices.length) ? foxtrotObject(foxtrotParts, unit) : occtObject(await occtJob(bytes.length ? bytes : await readAll()));
+    const object = foxtrotParts?.some(part => part.indices.length) ? foxtrotObject(foxtrotParts, unit) : occtObject(await occtJob(bytes.length ? bytes : await readAll(), format));
     // OpenCascade can finish without a single triangle (the 161 MB assembly does); an empty view would look like a hang.
     let triangles = 0;
     object.traverse(child => { triangles += child.geometry?.index?.count ?? 0; });

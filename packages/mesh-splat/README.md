@@ -1,6 +1,6 @@
 # Robot Preview: Gaussian Splat, Point Cloud, STEP & STL Viewer
 
-Open Gaussian splats, point clouds, STEP CAD models and meshes in VS Code as a 3D view, including the large files other viewers give up on.
+Open Gaussian splats, point clouds, STEP and IGES CAD models and meshes in VS Code as a 3D view, including the large files other viewers give up on.
 
 ![preview](images/preview.png)
 
@@ -15,8 +15,8 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 ## Formats
 
-- Meshes: `.stl` `.ply` `.obj` (+ `.mtl`) `.off` `.dae` `.gltf` `.glb` `.3mf` `.wrl` `.3ds`
-- CAD: `.stp` `.step` with part and face colors
+- Meshes: `.stl` `.ply` `.obj` (+ `.mtl`) `.off` `.dae` `.gltf` `.glb` (including Draco and meshopt compression) `.3mf` `.wrl` `.3ds`
+- CAD: `.stp` `.step` with part and face colors, `.igs` `.iges`
 - Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.xyz` `.pts`, and `.asc` through *Reopen Editor With…*
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
 
@@ -24,6 +24,7 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 - Solid, wireframe and point display, point size, up-axis selection, and vertex / face / splat counts.
 - Color point clouds by their original color, height or intensity.
+- Save the view as a PNG screenshot.
 - Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls.
 - Works in Restricted Mode.
 

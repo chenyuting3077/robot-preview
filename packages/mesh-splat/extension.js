@@ -11,7 +11,7 @@ const escapeAttr = text => String(text).replace(/&/g, '&amp;').replace(/"/g, '&q
 // size, `build`) load that instead. `build` names the extension version and the tessellators' WASM, so a
 // rebuilt foxtrot or OpenCascade drops old entries even without a version bump.
 function stepCache(cacheDir, fileUri, stat, build) {
-    if (!cacheDir || !/\.ste?p$/i.test(fileUri.path)) return null;
+    if (!cacheDir || !/\.(ste?p|ige?s)$/i.test(fileUri.path)) return null;
     const prefix = crypto.createHash('sha1').update(fileUri.path).digest('hex').slice(0, 16);
     return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}-${build}.meshopt`) };
 }
@@ -40,6 +40,17 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn
         .replace(/<html lang="[^"]*">/, `<html lang="${vscode.env.language}">`)
         .replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><base href="${webview.asWebviewUri(distUri)}/">`)
         .replace('<body>', `<body ${Object.entries(data).map(([key, value]) => `data-${key}="${escapeAttr(value)}"`).join(' ')}>`);
+}
+
+async function saveScreenshot(fileUri, data) {
+    if (typeof data !== 'string' || !data) return;
+    const target = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.joinPath(fileUri, '..', `${path.parse(fileUri.path).name}.png`),
+        filters: { 'PNG image': ['png'] }
+    });
+    if (!target) return;
+    await vscode.workspace.fs.writeFile(target, Buffer.from(data, 'base64'));
+    vscode.window.setStatusBarMessage(`Robot Preview: saved ${vscode.workspace.asRelativePath(target.fsPath)}`, 4000);
 }
 
 function activate(context) {
@@ -82,7 +93,8 @@ function activate(context) {
             const handlers = {
                 read: message => reader.read(message.id, message.at, message.mtime),
                 readDone: message => reader.done(message.id),
-                stepCache: message => writer.receive(message)
+                stepCache: message => writer.receive(message),
+                screenshot: message => saveScreenshot(document.uri, message.data)
             };
             panel.webview.onDidReceiveMessage(message => Object.hasOwn(handlers, message?.type) && handlers[message.type](message));
             panel.onDidDispose(() => {

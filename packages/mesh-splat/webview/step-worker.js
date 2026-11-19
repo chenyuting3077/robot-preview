@@ -25,9 +25,9 @@ const JOBS = {
         const out = { positions: mesh.take_positions(), normals: mesh.take_normals(), indices, groups };
         return [out, [out.positions.buffer, out.normals.buffer, out.indices.buffer]];
     },
-    async occt({ bytes, wasm }) {
+    async occt({ bytes, wasm, format }) {
         const occt = await occtimportjs({ wasmBinary: wasm });
-        const result = occt.ReadStepFile(bytes, { linearUnit: 'meter' });
+        const result = (format === 'IGES' ? occt.ReadIgesFile : occt.ReadStepFile)(bytes, { linearUnit: 'meter' });
         if (!result.success) throw new Error('OpenCascade could not read the file');
         const meshes = result.meshes.map(mesh => ({
             name: mesh.name,

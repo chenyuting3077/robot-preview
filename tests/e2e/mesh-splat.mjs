@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadExtension, sleep, fakePanel } from '../extension/vscode-mock.mjs';
+import { MeshoptEncoder } from '../../packages/mesh-splat/node_modules/meshoptimizer/meshopt_encoder.js';
 
 const extension = new URL('../../packages/mesh-splat/extension.js', import.meta.url).pathname;
 const shots = process.env.SHOTS;
@@ -20,6 +21,37 @@ function splatPly(scales, count = 2000) {
         row.forEach((value, j) => body.writeFloatLE(value, (i * props.length + j) * 4));
     }
     return Buffer.concat([head, body]);
+}
+
+// A unit cube whose vertex and index data exist only EXT_meshopt_compression-encoded, so it shows only if
+// the viewer decodes meshopt.
+await MeshoptEncoder.ready;
+function meshoptCube() {
+    const positions = new Float32Array(Array.from({ length: 8 }, (_, i) => [i & 1, (i >> 1) & 1, (i >> 2) & 1]).flat());
+    const indices = new Uint16Array([[0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]].flatMap(([a, b, c, d]) => [a, b, c, a, c, d]));
+    const vertices = MeshoptEncoder.encodeVertexBuffer(new Uint8Array(positions.buffer), 8, 12);
+    const triangles = MeshoptEncoder.encodeIndexBuffer(new Uint8Array(indices.buffer), indices.length, 2);
+    const at = (vertices.length + 3) & ~3;
+    const packed = Buffer.alloc(at + triangles.length);
+    packed.set(vertices, 0);
+    packed.set(triangles, at);
+    const meshopt = (byteOffset, byteLength, byteStride, count, mode) => ({ EXT_meshopt_compression: { buffer: 0, byteOffset, byteLength, byteStride, count, mode } });
+    return JSON.stringify({
+        asset: { version: '2.0' }, extensionsUsed: ['EXT_meshopt_compression'], extensionsRequired: ['EXT_meshopt_compression'],
+        scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }], meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+        accessors: [
+            { bufferView: 0, componentType: 5126, count: 8, type: 'VEC3', min: [0, 0, 0], max: [1, 1, 1] },
+            { bufferView: 1, componentType: 5123, count: indices.length, type: 'SCALAR' }
+        ],
+        bufferViews: [
+            { buffer: 1, byteLength: positions.byteLength, byteStride: 12, extensions: meshopt(0, vertices.length, 12, 8, 'ATTRIBUTES') },
+            { buffer: 1, byteLength: indices.byteLength, extensions: meshopt(at, triangles.length, 2, indices.length, 'TRIANGLES') }
+        ],
+        buffers: [
+            { byteLength: packed.length, uri: `data:application/octet-stream;base64,${packed.toString('base64')}` },
+            { byteLength: positions.byteLength + indices.byteLength, extensions: { EXT_meshopt_compression: { fallback: true } } }
+        ]
+    });
 }
 
 function fixtures(dir) {
@@ -41,6 +73,7 @@ function fixtures(dir) {
             bufferViews: [{ buffer: 0, byteLength: 36 }],
             buffers: [{ byteLength: 36, uri: `data:application/octet-stream;base64,${triangle.toString('base64')}` }]
         }),
+        'cube-meshopt.gltf': meshoptCube(),
         'gauss3d.ply': splatPly(['scale_0', 'scale_1', 'scale_2']),
         'gauss2d.ply': splatPly(['scale_0', 'scale_1']),
         'scene.usda': `#usda 1.0\n(\n    upAxis = "Z"\n    defaultPrim = "World"\n)\ndef Xform "World"\n{\n    def Mesh "Tri"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh "Hidden"\n    {\n        token visibility = "invisible"\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(50, 0, 0), (51, 0, 0), (50, 1, 0)]\n    }\n    def ParticleField3DGaussianSplat "Gaussians"\n    {\n        point3f[] positions = [(0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)]\n        quatf[] orientations = [(1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0)]\n        float3[] scales = [(0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1)]\n        float[] opacities = [0.9, 0.9, 0.9, 0.9]\n        int radiance:sphericalHarmonicsDegree = 0\n        float3[] radiance:sphericalHarmonicsCoefficients = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)]\n    }\n}\n`,
@@ -121,7 +154,9 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsC
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
 const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];
 // STEP files open twice: tessellated first, then from the cache the first open handed to the extension.
-for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) {
+// CAD files (STEP, IGES) open twice: tessellated first, then from the cache the first open handed to the extension.
+const CAD = /\.(ste?p|ige?s)$/i;
+for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const name = path.basename(file);
     const reopen = pages.has(`/page/${name}`);
     pages.set(`/page/${name}`, await htmlFor(file));
@@ -134,7 +169,7 @@ for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) 
         await sleep(200);
     }
     let camera = ` shown ${Math.round((Date.now() - started) / 100) / 10}s`;
-    if (/\.ste?p$/i.test(name) && !state.loading && !state.error && !reopen) {
+    if (CAD.test(name) && !state.loading && !state.error && !reopen) {
         // POSTed, not returned through CDP: a 150 MB cache file as a base64 string stalls the protocol.
         const posted = await evaluate(`new Promise(async resolve => {
             const done = () => window.__cache?.length > 0 && window.__cache.reduce((n, m) => n + m.chunk.byteLength, 0) === window.__cache[0].size;
@@ -196,14 +231,33 @@ for (const file of [...files, ...files.filter(file => /\.ste?p$/i.test(file))]) 
                 display: visible(document.getElementById('display-menu-btn')),
                 modes: visible(document.querySelector('[data-mode]')),
                 sizes: visible(document.querySelector('[data-size]')),
-                up: document.getElementById('up-select').value
+                up: document.getElementById('up-select').value,
+                shot: (() => {
+                    const button = document.getElementById('screenshot-btn');
+                    if (!visible(button)) return false;
+                    window.__posted = null;
+                    button.click();
+                    return window.__posted?.type === 'screenshot' && window.__posted.data.length > 100;
+                })()
             };
         })()`);
         const usdKind = ui.modes ? 'mesh' : 'splat';
-        const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|gltf|\.dae$|\.ste?p$/i, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
+        const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|\.gl(tf|b)$|\.dae$|\.(ste?p|ige?s)$/i, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
         const expected = { mesh: [true, true, true], points: [true, false, true], splat: [false, false, false] }[kind];
-        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gltf$|\.ste?p$/i.test(name) ? '+Y' : '+Z');
+        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gl(tf|b)$|\.(ste?p|ige?s)$/i.test(name) ? '+Y' : '+Z') && ui.shot;
         camera += ` ui ${JSON.stringify(ui)}`;
+        // The saved picture shows the model, not a blank or black frame: some pixels differ from the corner.
+        if (ui.shot) {
+            const drawn = await evaluate(`(async () => {
+                const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,' + window.__posted.data; });
+                const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+                const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0;
+                for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - d[0]) + Math.abs(d[i + 1] - d[1]) + Math.abs(d[i + 2] - d[2]) > 40) n++;
+                return n / (d.length / 4);
+            })()`);
+            state.uiOk &&= drawn > 0.001;
+            camera += ` shot ${(drawn * 100).toFixed(1)}%`;
+        }
         if (name === 'scene.usda') {
             const size = await evaluate('[innerWidth, innerHeight]');
             const shot = async () => (await send('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width: size[0], height: size[1], scale: 0.25 } })).data;
