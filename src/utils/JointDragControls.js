@@ -487,6 +487,12 @@ export class PointerJointDragControls extends JointDragControls {
         this._mouseMove = e => {
             updateMouse(e);
             raycaster.setFromCamera(mouse, this.camera);
+            // Orbiting the camera: the hover raycast is brute force over every triangle; on a 1.24M-triangle URDF
+            // orbiting ran at 43–49 fps with it and 57–59 fps without (real VS Code)
+            if (e.buttons && !this.manipulating) {
+                this.raycaster.ray.copy(raycaster.ray);
+                return;
+            }
             this.moveRay(raycaster.ray);
         };
 
