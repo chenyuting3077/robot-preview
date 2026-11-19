@@ -3,8 +3,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension, sleep, fakePanel } from '../extension/vscode-mock.mjs';
 import { fileURLToPath } from 'node:url';
+import { loadExtension, sleep, fakePanel, chromePath, webviewFile } from '../extension/vscode-mock.mjs';
 
 const extension = fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url));
 const shots = process.env.SHOTS;
@@ -78,7 +78,7 @@ const server = http.createServer((req, res) => {
     }
     let file;
     try {
-        file = fileURLToPath(new URL(url.pathname, 'file:'));
+        file = webviewFile(url.pathname);
     } catch {
         return res.writeHead(404).end();
     }
@@ -93,7 +93,7 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-e2e-'));
 const port = 9500 + Math.floor(Math.random() * 400);
-const chrome = spawn(process.env.CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : 'google-chrome'), [
+const chrome = spawn(chromePath(), [
     '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--window-size=900,600',
     '--use-gl=angle', `--use-angle=${process.env.ANGLE || 'swiftshader'}`, '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--js-flags=--expose-gc', 'about:blank'
 ], { stdio: 'ignore' });

@@ -5,8 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DOMParser } from 'linkedom';
 import { fileURLToPath } from 'node:url';
+import { DOMParser } from 'linkedom';
 
 globalThis.DOMParser ??= DOMParser;
 globalThis.XMLSerializer ??= class {

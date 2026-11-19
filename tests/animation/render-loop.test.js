@@ -37,7 +37,8 @@ test('renderIfNeeded submits one frame per dirty state', () => {
 });
 
 test('application has one animation loop and uses the dirty render gate', () => {
-    const mainSource = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8');
+    // autocrlf checks src/ out with CRLF on Windows.
+    const mainSource = readFileSync(new URL('../../src/main.js', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
     const sceneManagerSource = readFileSync(
         new URL('../../src/renderer/SceneManager.js', import.meta.url),
         'utf8'

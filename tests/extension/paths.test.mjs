@@ -315,19 +315,18 @@ test('packages setting paths accept ${workspaceFolder:name} and ~', async () => 
     const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-home-')));
     write(path.join(home, 'robots/env_pkg/meshes/e.stl'));
     // os.homedir() reads USERPROFILE on Windows.
-    const savedHome = process.env.HOME;
-    const savedProfile = process.env.USERPROFILE;
-    process.env.HOME = home;
-    process.env.USERPROFILE = home;
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    Object.assign(process.env, { HOME: home, USERPROFILE: home });
     try {
         const { load } = await startIn(ws, primary, { packages: { dup: `\${workspaceFolder:${path.basename(ws)}}/vendor/dup`, env_pkg: '~/robots/env_pkg' } });
         const keys = load.files.map(file => file.path);
         assert.ok(keys.includes('/dup/meshes/from_setting.stl'), keys.join(', '));
         assert.ok(keys.includes('/env_pkg/meshes/e.stl'), keys.join(', '));
     } finally {
-        process.env.HOME = savedHome;
-        if (savedProfile === undefined) delete process.env.USERPROFILE;
-        else process.env.USERPROFILE = savedProfile;
+        for (const [name, value] of Object.entries(saved)) {
+            if (value === undefined) delete process.env[name];
+            else process.env[name] = value;
+        }
     }
 });
 

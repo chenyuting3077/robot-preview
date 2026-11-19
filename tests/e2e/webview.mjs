@@ -3,12 +3,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { copyFixture, loadExtension, sleep } from '../extension/vscode-mock.mjs';
-import { createPathMatrix } from '../extension/path-fixture.mjs';
 import { fileURLToPath } from 'node:url';
+import { copyFixture, loadExtension, sleep, chromePath } from '../extension/vscode-mock.mjs';
+import { createPathMatrix } from '../extension/path-fixture.mjs';
 
 const dist = fileURLToPath(new URL('../../packages/urdf-mjcf/dist/', import.meta.url));
-const chromeBinary = process.env.CHROME || (process.platform === 'win32' ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : 'google-chrome');
+const chromeBinary = chromePath();
 const results = [];
 const check = (name, ok, detail = '') => {
     results.push(ok);

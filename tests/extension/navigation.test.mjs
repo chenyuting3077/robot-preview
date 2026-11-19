@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadExtension } from './vscode-mock.mjs';
 import { write } from './path-fixture.mjs';
-import { fileURLToPath } from 'node:url';
 
 const MAIN = `<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:include filename="$(find pkg)/urdf/parts.xacro"/>

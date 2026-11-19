@@ -8,8 +8,19 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const require = createRequire(import.meta.url);
 const extensionPath = fileURLToPath(new URL('../../packages/urdf-mjcf/extension.js', import.meta.url));
 export const fixtureWorkspace = fileURLToPath(new URL('../fixtures/ros_ws', import.meta.url));
-// The e2e servers serve a file at its URL path, which on Windows is /C:/...
+// The e2e servers serve a file at its URL path, which on Windows is /C:/...; webviewFile reads one back.
 const webviewPath = uri => pathToFileURL(uri.fsPath).pathname;
+export const webviewFile = urlPath => fileURLToPath(new URL(urlPath, 'file:'));
+
+// $CHROME, else Chrome where its installer puts it.
+export function chromePath() {
+    if (process.env.CHROME) return process.env.CHROME;
+    if (process.platform !== 'win32') return 'google-chrome';
+    const installs = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean)
+        .map(dir => path.join(dir, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+    return installs.find(file => fs.existsSync(file)) ?? 'chrome.exe';
+}
+
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // A custom editor's panel; it keeps the message listener and dispose callback the extension registers.

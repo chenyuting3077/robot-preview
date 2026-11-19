@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openMeshSplat } from './vscode-mock.mjs';
 import { fileURLToPath } from 'node:url';
+import { openMeshSplat } from './vscode-mock.mjs';
 
 test('STEP cache drops the oldest entries past 1 GB and keeps the new one', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-cache-'));

@@ -6,8 +6,8 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension, fakePanel } from '../extension/vscode-mock.mjs';
 import { fileURLToPath } from 'node:url';
+import { loadExtension, fakePanel, webviewFile } from '../extension/vscode-mock.mjs';
 
 const packages = fileURLToPath(new URL('../../packages/', import.meta.url));
 const required = { 'mesh-splat': ['dist/foxtrot_bg.wasm', 'dist/occt-import-js.wasm', 'dist/step-load.js', 'dist/spark.module.js'], usd: ['dist/usd.js', 'dist/stage.js', 'dist/spark.module.js'], 'urdf-mjcf': [] };
@@ -55,7 +55,7 @@ for (const name of Object.keys(required)) {
             continue;
         }
         const href = panel.webview.html.match(/<base href="([^"]+)"/)?.[1];
-        const base = href && fileURLToPath(new URL(href, 'file:'));
+        const base = href && webviewFile(href);
         const scripts = [...panel.webview.html.matchAll(/<script[^>]* src="([^"]+)"/g)].map(match => path.join(base, match[1]));
         check(scripts.length > 0 && scripts.every(file => fs.existsSync(file)), `${name} ${viewType} renders with its scripts`);
     }
