@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- Now listed as "Robot Preview: Gaussian Splat, Point Cloud, STEP & STL Viewer".
+- Save the view as a PNG screenshot with the camera button.
+- IGES (`.igs` `.iges`) opens through OpenCascade and reopens from the cache like STEP.
+- glTF with Draco or meshopt compression opens.
+- Grid, axes and bounding box in the Display menu, for splats too.
+- Point-cloud PLY colors by any other property (confidence, curvature, ...), with a legend of the range; PCD intensity is one of these.
+- An idle view draws nothing instead of redrawing every frame, so a large model left open no longer keeps the GPU busy.
+
 ## 0.3.1
 
 - Marketplace description and keywords mention STEP CAD models.
