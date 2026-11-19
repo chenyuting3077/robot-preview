@@ -197,7 +197,8 @@
     ]
   },
   "scripts": {
-    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/urdf-mjcf"
+    "package": "npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/urdf-mjcf",
+    "publish:ovsx": "npx --yes -p node@20 -p ovsx@0.10.6 ovsx publish --no-dependencies --skip-duplicate --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/urdf-mjcf"
   },
   "bugs": {
     "url": "https://github.com/chenyuting3077/robot-preview/issues"

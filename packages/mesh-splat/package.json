@@ -1,7 +1,7 @@
 {
   "name": "robot-preview-mesh-splat",
-  "displayName": "Robot Preview: Mesh & Splat",
-  "description": "3D viewer for STL, PLY, OBJ, glTF meshes, STEP CAD models, point clouds (PCD, XYZ) and Gaussian splats (3DGS, 2DGS) inside VS Code",
+  "displayName": "Robot Preview: Gaussian Splat, Point Cloud, STEP & STL Viewer",
+  "description": "Fast 3D viewer for Gaussian splats (3DGS, 2DGS), large point clouds (PCD, PLY, XYZ), STEP CAD models and meshes (STL, OBJ, glTF) inside VS Code",
   "version": "0.3.1",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
@@ -107,7 +107,8 @@
   },
   "scripts": {
     "build": "vite build",
-    "package": "vite build && npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/mesh-splat"
+    "package": "vite build && npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/mesh-splat",
+    "publish:ovsx": "npm run build && npx --yes -p node@20 -p ovsx@0.10.6 ovsx publish --no-dependencies --skip-duplicate --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/mesh-splat"
   },
   "keywords": [
     "mesh",
@@ -134,7 +135,12 @@
     "stp",
     "cad",
     "step viewer",
-    "cad viewer"
+    "cad viewer",
+    "2d gaussian splatting",
+    "lidar",
+    "large point cloud",
+    "3d model viewer",
+    "step file"
   ],
   "dependencies": {
     "@sparkjsdev/spark": "2.4.0",
