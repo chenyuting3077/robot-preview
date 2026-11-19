@@ -7,7 +7,7 @@
 - Isaac Sim's OmniPBR materials show their colour, texture, metallic and roughness instead of white.
 - Legacy NuRec Gaussian volumes (`.nurec`) open as splats.
 - Prims with `active = false` are left out, Cube / Sphere / other primitives take their `displayColor`, and `custom` attributes in `.usda` are read.
-- The info popover shows the stage's unit and lists prim types that are not drawn, such as physics joints.
+- The info popover shows the stage's unit, materials that are bound but not on the stage, and prim types that are not drawn, such as physics joints.
 
 ## 0.2.1
 

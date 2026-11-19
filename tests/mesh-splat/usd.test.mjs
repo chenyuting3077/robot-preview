@@ -4,6 +4,7 @@ import { Matrix4 } from '../../packages/mesh-splat/node_modules/three/build/thre
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
 import { USDCParser } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/usd/USDCParser.js';
 import { USDComposer } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/usd/USDComposer.js';
+import { nurecPly, unpack } from '../../packages/mesh-splat/webview/nurec.mjs';
 import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined, expandFloat32, triangulateTrisQuads, ArcUSDCParser } from '../../packages/mesh-splat/webview/usd.mjs';
 
 function rows(ply) {
@@ -108,6 +109,26 @@ test('applyVariants keeps only the selected variant under its prim', () => {
     assert.equal(specs['/R'].fields.typeName, 'Xform');
     assert.equal(specs['/R/Link'].fields.typeName, 'Mesh');
     assert.equal(specs['/R/Other'], undefined);
+});
+
+test('composeUsd reports a binding to a material that is not on the stage and keeps the default material', async () => {
+    const usda = `#usda 1.0
+def Xform "World"
+{
+    def Mesh "Tri" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </World/Looks/Gone>
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+}
+`;
+    const { group, missingMaterials } = await composeUsd(new TextEncoder().encode(usda));
+    assert.deepEqual(missingMaterials, ['/World/Looks/Gone']);
+    assert.equal(group.getObjectByName('Tri').material.color.getHexString(), 'ffffff');
 });
 
 test('composeUsd reads USDA variantSet blocks with payloads, child prims and overs', async () => {
@@ -315,4 +336,32 @@ test('triangulateTrisQuads matches three for triangles and quads, and leaves the
     assert.equal(triangulateTrisQuads([0, 1, 2, 3, 4], [5]), null);
     assert.equal(triangulateTrisQuads([0, 1, 2], [4]), null);
     assert.equal(triangulateTrisQuads([0, -1, 2], [3]), null);
+});
+
+test('unpack reads the MessagePack NuRec uses', () => {
+    const bytes = Uint8Array.from([0x83, 0xa1, 0x61, 0x93, 0x01, 0xff, 0xa1, 0x78, 0xa1, 0x62, 0xc4, 0x02, 0x05, 0x06, 0xa1, 0x63, 0xcb, 0x3f, 0xf8, 0, 0, 0, 0, 0, 0]);
+    const value = unpack(bytes);
+    assert.deepEqual(value.a, [1, -1, 'x']);
+    assert.deepEqual([...value.b], [5, 6]);
+    assert.equal(value.c, 1.5);
+});
+
+test('nurecPly copies raw 3DGUT parameters and regroups SH by channel', () => {
+    const half = values => new Uint8Array(Uint16Array.from(values, v => ({ 0: 0, 1: 0x3c00, 2: 0x4000, 3: 0x4200, 4: 0x4400, 5: 0x4500, 6: 0x4600, [-1]: 0xbc00 })[v]).buffer);
+    const tensor = (name, values, shape) => ({ [`.gaussians_nodes.gaussians.${name}`]: half(values), [`.gaussians_nodes.gaussians.${name}.shape`]: shape });
+    const ply = nurecPly({ nre_data: { state_dict: {
+        ...tensor('positions', [1, 2, 3], [1, 3]),
+        ...tensor('rotations', [0, 0, 0, 2], [1, 4]),
+        ...tensor('scales', [-1, -1, -1], [1, 3]),
+        ...tensor('densities', [2], [1, 1]),
+        ...tensor('features_albedo', [4, 5, 6], [1, 3]),
+        ...tensor('features_specular', [1, 2, 3, 4, 5, 6], [1, 6])
+    } } });
+    const header = readPlyHeader(ply);
+    assert.equal(header.headerLength % 4, 0);
+    const [row] = rows(ply);
+    assert.deepEqual([row.x, row.y, row.z, row.f_dc_0, row.f_dc_2], [1, 2, 3, 4, 6]);
+    assert.deepEqual([0, 1, 2, 3, 4, 5].map(i => row[`f_rest_${i}`]), [1, 4, 2, 5, 3, 6]);
+    assert.deepEqual([row.opacity, row.scale_0], [2, -1]);
+    assert.deepEqual([row.rot_0, row.rot_1, row.rot_2, row.rot_3], [0, 0, 0, 1]);
 });

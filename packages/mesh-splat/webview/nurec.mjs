@@ -12,23 +12,26 @@ export function unpack(bytes) {
         for (let i = 0; i < length; i++) out[read()] = read();
         return out;
     };
-    const fixed = [
+    const u8 = () => view.getUint8(at++);
+    const u16 = () => view.getUint16((at += 2) - 2);
+    const u32 = () => view.getUint32((at += 4) - 4);
+    const string = length => text.decode(take(length));
+    const handlers = new Map([
         [0xc0, () => null], [0xc2, () => false], [0xc3, () => true],
-        [0xc4, () => take(view.getUint8(at++))], [0xc5, () => take(view.getUint16((at += 2) - 2))], [0xc6, () => take(view.getUint32((at += 4) - 4))],
+        [0xc4, () => take(u8())], [0xc5, () => take(u16())], [0xc6, () => take(u32())],
         [0xca, () => view.getFloat32((at += 4) - 4)], [0xcb, () => view.getFloat64((at += 8) - 8)],
-        [0xcc, () => view.getUint8(at++)], [0xcd, () => view.getUint16((at += 2) - 2)], [0xce, () => view.getUint32((at += 4) - 4)], [0xcf, () => Number(view.getBigUint64((at += 8) - 8))],
+        [0xcc, u8], [0xcd, u16], [0xce, u32], [0xcf, () => Number(view.getBigUint64((at += 8) - 8))],
         [0xd0, () => view.getInt8(at++)], [0xd1, () => view.getInt16((at += 2) - 2)], [0xd2, () => view.getInt32((at += 4) - 4)], [0xd3, () => Number(view.getBigInt64((at += 8) - 8))],
-        [0xd9, () => text.decode(take(view.getUint8(at++)))], [0xda, () => text.decode(take(view.getUint16((at += 2) - 2)))], [0xdb, () => text.decode(take(view.getUint32((at += 4) - 4)))],
-        [0xdc, () => array(view.getUint16((at += 2) - 2))], [0xdd, () => array(view.getUint32((at += 4) - 4))],
-        [0xde, () => map(view.getUint16((at += 2) - 2))], [0xdf, () => map(view.getUint32((at += 4) - 4))]
-    ];
-    const handlers = new Map(fixed);
+        [0xd9, () => string(u8())], [0xda, () => string(u16())], [0xdb, () => string(u32())],
+        [0xdc, () => array(u16())], [0xdd, () => array(u32())],
+        [0xde, () => map(u16())], [0xdf, () => map(u32())]
+    ]);
     function read() {
         const byte = view.getUint8(at++);
         if (byte < 0x80) return byte;
         if (byte < 0x90) return map(byte & 0x0f);
         if (byte < 0xa0) return array(byte & 0x0f);
-        if (byte < 0xc0) return text.decode(take(byte & 0x1f));
+        if (byte < 0xc0) return string(byte & 0x1f);
         if (byte >= 0xe0) return byte - 0x100;
         const handler = handlers.get(byte);
         if (!handler) throw new Error(`NuRec: unsupported MessagePack type 0x${byte.toString(16)}`);
@@ -87,6 +90,7 @@ export function nurecPly(nurec) {
             for (let k = 0; k < rest; k++) body[row + 6 + c * rest + k] = specular.values[i * specular.width + k * 3 + c];
         }
         let j = row + 6 + rest * 3;
+        // A tensor the export left out falls back to an opaque (logit 10), small (e^-4) Gaussian.
         body[j++] = densities?.values[i] ?? 10;
         for (let c = 0; c < 3; c++) body[j++] = scales?.values[i * 3 + c] ?? -4;
         const q = rotations ? rotations.values.subarray(i * 4, i * 4 + 4) : [1, 0, 0, 0];

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { Euler, Matrix4, Vector3 } from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
 import { composeUsd } from '../../packages/mesh-splat/webview/usd.mjs';
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
 
@@ -32,7 +33,8 @@ const radius = mesh => {
     mesh.geometry.computeBoundingSphere();
     return +mesh.geometry.boundingSphere.radius.toFixed(4);
 };
-const fetched = dir => fs.existsSync(dir) ? {} : { skip: 'run scripts/fetch-usd-fixtures.mjs first' };
+// Skipped unless every named file was downloaded, so a partial fetch skips rather than fails.
+const fetched = (dir, ...files) => files.every(file => fs.existsSync(new URL(file, dir))) ? {} : { skip: 'run npm run fixtures:usd first' };
 
 // usd-wg/assets (tests/fixtures/usd/usd-wg/README.md)
 
@@ -90,6 +92,34 @@ test('usd-wg: nested and composed xformOps', async () => {
     assert.deepEqual(mesh.getWorldScale(mesh.scale.clone()).toArray().map(v => +v.toFixed(4)), [0.01, 0.02, 0.03]);
 });
 
+test('usd-wg: matrix transforms and xforms nested under a Scope', async () => {
+    const matrix = await load(WG, 'test_assets/schemaTests/usdGeom/transforms/matrix_transform.usda');
+    assert.deepEqual(position(matrix.group.getObjectByName('mesh')), [0.04, 0.05, 0.06]);
+    const scoped = await load(WG, 'test_assets/schemaTests/usdGeom/transforms/scopes_and_xforms_nested.usda');
+    assert.deepEqual(position(scoped.group.getObjectByName('D')), [0.04, 0.05, 0.06]);
+    assert.deepEqual(position(scoped.group.getObjectByName('cube')), [0.01, 0.01, 0.01]);
+});
+
+// Pivots and offsets in xformOpOrder, the order Maya writes them: the origin lands at T·Trpo·Trp·Rro·R·Trp⁻¹·Tspo·Tsp·H·Sso·S·Tsp⁻¹·0.
+test('usd-wg: a Maya-style pivot xformOp stack', async () => {
+    const { group } = await load(WG, 'test_assets/schemaTests/usdGeom/transforms/complex_transform.usda');
+    const rotate = ([x, y, z]) => new Matrix4().makeRotationFromEuler(new Euler(x * Math.PI / 180, y * Math.PI / 180, z * Math.PI / 180, 'ZYX'));
+    const move = ([x, y, z]) => new Matrix4().makeTranslation(x, y, z);
+    const expected = [
+        move([1, 2, 3]), move([4, 5, 6]), move([7, 8, 9]), rotate([10, 11, 12]), rotate([110, 120, 130]), move([-7, -8, -9]),
+        move([1, 2, 3]), move([4, 5, 6]), new Matrix4().set(1, 0, 0, 0, 0.5, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
+        new Matrix4().makeScale(7, 8, 9), new Matrix4().makeScale(0.1, 0.2, 0.3), move([-4, -5, -6])
+    ].reduce((matrix, step) => matrix.multiply(step), new Matrix4().makeScale(0.01, 0.01, 0.01));
+    const origin = new Vector3().applyMatrix4(expected).toArray().map(v => +v.toFixed(4));
+    assert.deepEqual(position(group.getObjectByName('mesh')), origin);
+});
+
+test('usd-wg: an over that nothing defines is not drawn, and an over on a sublayer prim applies', async () => {
+    const { group } = await load(WG, 'test_assets/foundation/stage_composition/over.usda');
+    assert.deepEqual(meshes(group).map(({ name }) => name).sort(), ['Cube', 'definedCube']);
+    assert.deepEqual(group.getObjectByName('Cube').material.color.toArray(), [0, 0, 0.8]);
+});
+
 test('usd-wg: every UsdGeom primitive becomes a mesh', async () => {
     const { group } = await load(WG, 'test_assets/schemaTests/usdGeom/primitives/all_primitives.usda');
     assert.deepEqual(meshes(group).map(({ name }) => name), ['Capsule', 'Cone', 'Cube', 'Cylinder', 'Sphere']);
@@ -113,6 +143,21 @@ test('usd-wg: displayColor colours primitives', async () => {
     assert.deepEqual(group.getObjectByName('CubeIsRender').material.color.toArray(), [0, 0.8, 0]);
 });
 
+// Known gaps (docs/mesh-splat.md, "Not supported"), kept as todo tests.
+
+test('usd-wg: inherits apply the opinions of a class', { todo: 'inherits are not composed' }, async () => {
+    const { group } = await load(WG, 'test_assets/foundation/stage_composition/class_inherit.usda');
+    assert.deepEqual(group.getObjectByName('cubeWithoutSetColor').material.color.toArray(), [0, 0.8, 0]);
+});
+
+// Across a reference, an inherit sees the referencing stage's override of its source; a specialize stays weaker than local.
+test('usd-wg: inherits and specializes across a reference', { todo: 'inherits and specializes are not composed' }, async () => {
+    const { group } = await load(WG, 'test_assets/foundation/stage_composition/inherit_and_specialize.usda');
+    const referenced = group.getObjectByName('cubeSceneReferenced');
+    assert.deepEqual(referenced.getObjectByName('inherits').material.color.toArray(), [0, 0.8, 0]);
+    assert.deepEqual(referenced.getObjectByName('specializes').material.color.toArray(), [0.8, 0.8, 0]);
+});
+
 // Isaac Sim robots (scripts/fetch-usd-fixtures.mjs)
 
 const ROBOTS = [
@@ -122,7 +167,7 @@ const ROBOTS = [
     ['5.1/Isaac/Robots/Unitree/G1/g1.usd', 49]
 ];
 
-test('isaac: robots compose Z-up in meters with every layer found and collisions hidden', fetched(ISAAC), async () => {
+test('isaac: robots compose Z-up in meters with every layer found and collisions hidden', fetched(ISAAC, ...ROBOTS.map(([file]) => file)), async () => {
     for (const [file, visible] of ROBOTS) {
         const { group, missing, upAxis } = await load(ISAAC, file);
         assert.deepEqual(missing, [], file);
@@ -132,7 +177,7 @@ test('isaac: robots compose Z-up in meters with every layer found and collisions
     }
 });
 
-test('isaac: prim types that are not drawn are listed, physics joints included', fetched(ISAAC), async () => {
+test('isaac: prim types that are not drawn are listed, physics joints included', fetched(ISAAC, '4.5/Isaac/Robots/Franka/franka.usd'), async () => {
     const { notShown } = await load(ISAAC, '4.5/Isaac/Robots/Franka/franka.usd');
     const types = Object.fromEntries(notShown);
     assert.equal(types.PhysicsRevoluteJoint, 7);
@@ -140,7 +185,7 @@ test('isaac: prim types that are not drawn are listed, physics joints included',
     assert.equal(types.Xform, undefined);
 });
 
-test('isaac: OmniPBR materials fall back to their diffuse colour', fetched(ISAAC), async () => {
+test('isaac: OmniPBR materials fall back to their diffuse colour', fetched(ISAAC, '5.1/Isaac/Robots/Unitree/G1/g1.usd'), async () => {
     const { group } = await load(ISAAC, '5.1/Isaac/Robots/Unitree/G1/g1.usd');
     const colours = new Set(meshes(group).filter(shown).map(mesh => [mesh.material].flat()[0]?.color?.getHexString()));
     assert.ok(colours.size > 1, [...colours].join());
@@ -148,13 +193,13 @@ test('isaac: OmniPBR materials fall back to their diffuse colour', fetched(ISAAC
 
 // NuRec Gaussian scenes (scripts/fetch-usd-fixtures.mjs with HF_TOKEN)
 
-test('nurec: a ParticleField USDZ yields its Gaussians', fetched(NUREC), async () => {
+test('nurec: a ParticleField USDZ yields its Gaussians', fetched(NUREC, 'xgrid-wormhole/wormhole.usdz'), async () => {
     const { gaussians, missing } = await load(NUREC, 'xgrid-wormhole/wormhole.usdz');
     assert.deepEqual(missing, []);
     assert.equal(gaussians.length, 1);
 });
 
-test('nurec: a stage referencing into a USDZ (a.usdz[b.usd]) yields its Gaussians', fetched(NUREC), async () => {
+test('nurec: a stage referencing into a USDZ (a.usdz[b.usd]) yields its Gaussians', fetched(NUREC, 'xgrid-wormhole/stage_particle.usd', 'xgrid-wormhole/stage_particle_with_sim_objects.usd', 'xgrid-wormhole/wormhole.usdz'), async () => {
     const stage = await load(NUREC, 'xgrid-wormhole/stage_particle.usd');
     assert.deepEqual(stage.missing, []);
     assert.equal(stage.gaussians.length, 1);
@@ -164,7 +209,7 @@ test('nurec: a stage referencing into a USDZ (a.usdz[b.usd]) yields its Gaussian
     assert.equal(withObjects.gaussians.length, 1);
 });
 
-test('nurec: a legacy NuRec volume yields its Gaussians', fetched(NUREC), async () => {
+test('nurec: a legacy NuRec volume yields its Gaussians', fetched(NUREC, 'zh_lounge/usd/zh_lounge.usda', 'zh_lounge/usd/gauss.usda', 'zh_lounge/usd/export_last.nurec'), async () => {
     const { gaussians, missing, notShown } = await load(NUREC, 'zh_lounge/usd/zh_lounge.usda');
     assert.deepEqual(missing, []);
     assert.deepEqual(notShown, []);

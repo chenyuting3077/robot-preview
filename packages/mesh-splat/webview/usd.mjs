@@ -2,7 +2,7 @@ import { USDAParser } from 'three/examples/jsm/loaders/usd/USDAParser.js';
 import { USDCParser } from 'three/examples/jsm/loaders/usd/USDCParser.js';
 import { USDComposer } from 'three/examples/jsm/loaders/usd/USDComposer.js';
 import { unzipSync } from 'three/examples/jsm/libs/fflate.module.js';
-import { Color, Euler, LinearSRGBColorSpace, LoaderUtils, Matrix4, Quaternion, SRGBColorSpace } from 'three';
+import { Euler, LinearSRGBColorSpace, LoaderUtils, Matrix4, Quaternion, SRGBColorSpace } from 'three';
 import { writeFace } from './geometry.mjs';
 import { nurecPly, readNurec } from './nurec.mjs';
 
@@ -359,7 +359,6 @@ export function gaussianPly(specs, path) {
 }
 
 const DEGREES = Math.PI / 180;
-const WHITE = new Color(1, 1, 1);
 
 function xformOpMatrix(kind, value) {
     const matrix = new Matrix4();
@@ -432,16 +431,19 @@ function applyOmniPBR(material, attrs, loadTexture) {
 }
 
 class XformUSDComposer extends USDComposer {
-    // three colours Mesh prims from displayColor but not Cube, Sphere and the other primitives.
+    // three colors Mesh prims from displayColor but not Cube, Sphere and the other primitives; a bound material wins.
     _buildGeomPrimitive(path, spec, typeName) {
         const mesh = super._buildGeomPrimitive(path, spec, typeName);
         const color = this._getAttributes(path)['primvars:displayColor'];
-        const material = mesh?.material;
-        if (color?.length >= 3 && material?.color?.equals(WHITE) && !material.map) material.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
+        if (color?.length >= 3 && mesh?.material?.color && !this._getMaterialBindingTarget(path)) mesh.material.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
         return mesh;
     }
 
+    // Bindings whose material is not on the stage keep three's default material and are reported.
+    missingMaterials = new Set();
+
     _applyMaterial(material, materialPath) {
+        if (!this.specsByPath[materialPath]) this.missingMaterials.add(materialPath);
         super._applyMaterial(material, materialPath);
         const shaders = (this.shadersByMaterialPath.get(materialPath) ?? []).map(path => this._getAttributes(path));
         if (shaders.some(attrs => attrs['info:id'])) return;
@@ -473,7 +475,8 @@ class XformUSDComposer extends USDComposer {
     }
 }
 
-// Prim types the composer draws or that only organise others; anything else on the stage is listed as not shown.
+// Prim types three's USDComposer builds (its _buildHierarchy, three 0.187) or that only organise others; anything else on
+// the stage is listed as not shown. Re-check against the composer when three is bumped.
 const DRAWN = new Set(['Xform', 'Scope', 'Mesh', 'Cube', 'Sphere', 'Cylinder', 'Cone', 'Capsule', 'Material', 'Shader', 'NodeGraph', 'GeomSubset',
     'Camera', 'DistantLight', 'SphereLight', 'RectLight', 'DiskLight', 'SkelRoot', 'Skeleton', 'SkelAnimation', 'ParticleField3DGaussianSplat', 'OmniNuRecFieldAsset']);
 const NOT_VISUAL = /^(Render|PhysicsScene$)/;
@@ -495,20 +498,7 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
         basePath = directory(USDZ_ROOT + first);
         bytes = files[first];
     }
-    const packages = new Map();
-    const readFile = read;
-    read = async url => {
-        const [, usdz, inner] = url.match(/^(.*?\.usdz)\/(.+)$/i) ?? [];
-        if (!usdz) return readFile(url);
-        if (!packages.has(usdz)) {
-            packages.set(usdz, readFile(usdz).then(zip => {
-                const files = unzipSync(zip);
-                for (const [name, data] of Object.entries(files)) if (!USD_FILE.test(name)) assets[`${usdz}/${name}`] = data;
-                return files;
-            }));
-        }
-        return (await packages.get(usdz))[decodeURIComponent(inner)] ?? noFile(url);
-    };
+    read = packageReader(read, assets);
     const data = await loadLayer(bytes, basePath, { read, missing, layers: new Map() });
     const specs = hideGuides(dropUndefined(data.specsByPath));
     const composer = new XformUSDComposer();
@@ -521,42 +511,82 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
     const walk = (object, path) => {
         for (const child of [...object.children]) {
             const childPath = `${path}/${child.name}`;
-            child.userData.usdType = specs[childPath]?.fields.typeName ?? '';
+            const type = specs[childPath]?.fields.typeName ?? '';
+            child.userData.usdType = type;
             if (specs[`${childPath}.visibility`]?.fields.default === 'invisible') child.visible = false;
-            if (specs[childPath]?.fields.typeName === 'ParticleField3DGaussianSplat') gaussians.push({ object: child, ply: gaussianPly(specs, childPath) });
-            if (specs[childPath]?.fields.typeName === 'Volume' && specs[`${childPath}.omni:nurec:isNuRecVolume`]?.fields.default) nurecVolumes.push({ object: child, path: childPath });
+            if (type === 'ParticleField3DGaussianSplat') gaussians.push({ object: child, ply: gaussianPly(specs, childPath) });
+            if (type === 'Volume' && specs[`${childPath}.omni:nurec:isNuRecVolume`]?.fields.default) nurecVolumes.push({ object: child, path: childPath });
             walk(child, childPath);
         }
     };
     walk(group, '');
     // Legacy NuRec: a Volume whose field assets all name one .nurec file holding the Gaussians.
+    // An unreadable file is missing; one that reads but holds no Gaussians leaves the Volume under not shown.
+    const shownVolumes = new Set();
     for (const { object, path } of nurecVolumes) {
-        const url = Object.keys(specs).find(key => key.startsWith(`${path}/`) && key.endsWith('.filePath') && specs[key].fields.default);
-        if (!url) continue;
-        const file = specs[url].fields.default;
+        const field = Object.keys(specs).find(key => key.startsWith(`${path}/`) && key.endsWith('.filePath') && specs[key].fields.default);
+        if (!field) continue;
+        const file = resolve(specs[field].fields.default.replace(/^@|@$/g, ''), basePath);
+        let bytes;
         try {
-            gaussians.push({ object, ply: nurecPly(readNurec(await read(new URL(file).href))) });
+            bytes = await read(new URL(file).href);
         } catch {
             missing.push(file);
+            continue;
+        }
+        try {
+            const ply = nurecPly(readNurec(bytes));
+            if (!ply) continue;
+            gaussians.push({ object, ply });
+            shownVolumes.add(path);
+        } catch (error) {
+            console.warn(`NuRec ${file}: ${error.message}`);
         }
     }
-    const types = new Map();
-    for (const [path, spec] of Object.entries(specs)) {
-        const type = spec.fields.typeName;
-        if (path.includes('.') || path === '/' || !type || DRAWN.has(type) || NOT_VISUAL.test(type)) continue;
-        if (type === 'Volume' && nurecVolumes.some(volume => volume.path === path)) continue;
-        types.set(type, (types.get(type) ?? 0) + 1);
-    }
     const displayPath = url => {
-        const href = new URL(url).href;
-        return decodeURIComponent(href.startsWith(basePath) ? href.slice(basePath.length) : href.split('/').slice(-2).join('/'));
+        try {
+            const href = new URL(url).href;
+            return decodeURIComponent(href.startsWith(basePath) ? href.slice(basePath.length) : href.split('/').slice(-2).join('/'));
+        } catch {
+            return url;
+        }
     };
     return {
         group,
         upAxis: data.specsByPath['/']?.fields.upAxis,
         metersPerUnit: data.specsByPath['/']?.fields.metersPerUnit,
         missing: missing.map(displayPath),
-        notShown: [...types].sort((a, b) => b[1] - a[1]),
+        missingMaterials: [...composer.missingMaterials],
+        notShown: notShownTypes(specs, shownVolumes),
         gaussians: gaussians.filter(({ ply }) => ply)
     };
+}
+
+// Reads a.usdz/inner (see `packaged`) out of the package, unzipping each package once; anything else goes to `read`.
+// The package's other files become assets so their textures resolve.
+function packageReader(read, assets) {
+    const packages = new Map();
+    return async url => {
+        const [, usdz, inner] = url.match(/^(.*?\.usdz)\/(.+)$/i) ?? [];
+        if (!usdz) return read(url);
+        if (!packages.has(usdz)) {
+            packages.set(usdz, read(usdz).then(zip => {
+                const files = unzipSync(zip);
+                for (const [name, data] of Object.entries(files)) if (!USD_FILE.test(name)) assets[`${usdz}/${name}`] = data;
+                return files;
+            }));
+        }
+        return (await packages.get(usdz))[decodeURIComponent(inner)] ?? noFile(url);
+    };
+}
+
+// Prim types on the stage that nothing draws, most frequent first.
+function notShownTypes(specs, shownVolumes) {
+    const types = new Map();
+    for (const [path, spec] of Object.entries(specs)) {
+        const type = spec.fields.typeName;
+        if (path.includes('.') || path === '/' || !type || DRAWN.has(type) || NOT_VISUAL.test(type) || shownVolumes.has(path)) continue;
+        types.set(type, (types.get(type) ?? 0) + 1);
+    }
+    return [...types].sort((a, b) => b[1] - a[1]);
 }

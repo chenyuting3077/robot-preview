@@ -6,5 +6,5 @@ references still resolve. Licensed under Apache-2.0 (`LICENSE`); individual file
 their upstream copyright lines.
 
 Used by `tests/mesh-splat/usd-fixtures.test.mjs`. Larger real-world files (Isaac Sim robots,
-NuRec Gaussian scenes) are not committed; `node scripts/fetch-usd-fixtures.mjs` downloads
+NuRec Gaussian scenes) are not committed; `npm run fixtures:usd` downloads
 them into `test-files/usd/`.
