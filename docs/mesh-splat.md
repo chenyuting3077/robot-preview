@@ -13,6 +13,8 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 
 - Files that declare no up axis start at `+Z`, as in ROS; raw COLMAP / 3DGS splats need `-Y` by hand.
 - The camera frames the 2nd–98th percentile of splat centres, so floaters don't shrink the view.
+- Frames are drawn only for 1.5 s after input, camera motion or a load: Spark finishes sorting splats for a camera that stopped within that, and an idle view makes no draw calls (`tests/e2e/mesh-splat.mjs` counts them).
+- Point-cloud PLY keeps up to 16 vertex properties besides position, normal, uv, color and alpha as colorable fields; meshes keep none, so a 181 MB mesh does not grow.
 - `.asc` and `.usda` are optional editors (PGP signatures, hand-edited text). `retainContextWhenHidden` is on: re-reading a 200 MB splat on a tab switch takes seconds.
 
 ## Large point clouds

@@ -13,6 +13,7 @@ import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
 import { flatNormals, percentile, grown } from './geometry.mjs';
 import { createCloudColors } from './cloud-colors.mjs';
+import { turboGradient } from './color.mjs';
 import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
@@ -20,9 +21,9 @@ import { pcdReader, dropNaNPoints } from './pcd.mjs';
 import { createTransport } from './transport.mjs';
 
 const STRINGS = {
-    en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element', screenshot: 'Save screenshot' },
-    'zh-TW': { detailInView: '載入視野內細節', colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element', screenshot: '儲存截圖' },
-    'zh-CN': { detailInView: '加载视野内细节', colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element', screenshot: '保存截图' }
+    en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element', screenshot: 'Save screenshot', grid: 'Grid', axes: 'Axes', bounds: 'Bounds' },
+    'zh-TW': { detailInView: '載入視野內細節', colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element', screenshot: '儲存截圖', grid: '格線', axes: '座標軸', bounds: '包圍盒' },
+    'zh-CN': { detailInView: '加载视野内细节', colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element', screenshot: '保存截图', grid: '网格线', axes: '坐标轴', bounds: '包围盒' }
 };
 const lang = document.documentElement.lang.toLowerCase();
 const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.startsWith('zh') ? 'zh-CN' : 'en'];
@@ -38,6 +39,16 @@ const ext = name.split('.').pop().toLowerCase();
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.prepend(renderer.domElement);
+// Frames are drawn only while the view may change: input, camera motion and loads, each followed by a short
+// settle in which Spark finishes sorting splats for the camera that stopped. A view left open draws nothing.
+const SETTLE_MS = 1500;
+let awakeUntil = 0;
+const wake = () => { awakeUntil = performance.now() + SETTLE_MS; };
+for (const type of ['pointerdown', 'pointerup', 'wheel', 'keydown', 'keyup', 'click', 'dblclick', 'change', 'input']) {
+    window.addEventListener(type, wake, { capture: true, passive: true });
+}
+// Textures (OBJ materials, glTF images) arrive after the model shows.
+THREE.DefaultLoadingManager.onProgress = wake;
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1000);
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -51,12 +62,14 @@ const root = new THREE.Group();
 scene.add(root);
 const UP = { '+Y': [0, 0, 0], '-Y': [Math.PI, 0, 0], '+Z': [-Math.PI / 2, 0, 0], '-Z': [Math.PI / 2, 0, 0], '+X': [0, 0, Math.PI / 2], '-X': [0, 0, -Math.PI / 2] };
 let localBox = null;
-const cloudColors = createCloudColors({ root, upAxis: () => $('up-select').value });
+const fieldLabel = name => (name === 'intensity' ? t('colorIntensity') : name);
+const cloudColors = createCloudColors({ root, upAxis: () => $('up-select').value, label: fieldLabel, onChange: showLegend });
 
 function syncTheme() {
     const theme = /\bvscode-(high-contrast-)?light\b/.test(document.body.className) ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);
     scene.background = new THREE.Color(theme === 'light' ? 0xffffff : 0x505050);
+    wake();
 }
 syncTheme();
 new MutationObserver(syncTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
@@ -65,6 +78,7 @@ new ResizeObserver(() => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
+    wake();
 }).observe(document.body);
 const raycaster = new THREE.Raycaster();
 const visibleInScene = object => !object || (object.visible && visibleInScene(object.parent));
@@ -79,10 +93,11 @@ const cameraKeys = createCameraKeys({
     },
     frame: () => localBox && frame()
 });
+controls.addEventListener('change', wake);
 renderer.setAnimationLoop(() => {
-    cameraKeys();
+    if (cameraKeys()) wake();
     controls.update();
-    renderer.render(scene, camera);
+    if (performance.now() < awakeUntil) renderer.render(scene, camera);
 });
 
 const fetchBytes = async () => new Uint8Array(await (await fetch(src)).arrayBuffer());
@@ -154,8 +169,13 @@ async function loadPly(info) {
         if (patched !== bytes) info.format = t('flat');
         return loadSplat(patched, info);
     }
-    const points = kind === 'points' ? readPlyPoints(bytes, header) : kind === 'mesh' && readPlyMesh(bytes, header);
-    if (points) return (points.indices ? meshOf : pointsOf)(geometryFrom(points));
+    const points = kind === 'points' ? readPlyPoints(bytes, header, { scalars: true }) : kind === 'mesh' && readPlyMesh(bytes, header);
+    if (points?.indices) return meshOf(geometryFrom(points));
+    if (points) {
+        const geometry = geometryFrom(points);
+        geometry.userData.scalars = points.scalars;
+        return pointsOf(geometry);
+    }
     const geometry = new PLYLoader().parse(bytes.buffer);
     return kind === 'mesh' ? meshOf(geometry) : pointsOf(geometry);
 }
@@ -186,7 +206,7 @@ async function loadGltf() {
 const POINT_LIMIT = 10_000_000;
 const cloudOf = points => {
     const geometry = geometryFrom(points);
-    geometry.userData.intensity = points.intensity;
+    geometry.userData.scalars = points.intensity && { intensity: points.intensity };
     return pointsOf(geometry);
 };
 async function loadPcd(info) {
@@ -201,7 +221,8 @@ async function loadPcd(info) {
             const { itemSize, normalized } = geometry.attributes[name];
             geometry.setAttribute(name, new THREE.BufferAttribute(array, itemSize, normalized));
         }
-        geometry.userData.intensity = geometry.attributes.intensity?.array;
+        const intensity = geometry.attributes.intensity?.array;
+        geometry.userData.scalars = intensity && { intensity };
         return pointsOf(geometry);
     }
     info.pointsTotal = points.total;
@@ -258,6 +279,7 @@ async function loadDetail(base, total) {
     } finally {
         $('detail-btn').disabled = false;
         $('loading-indicator').hidden = true;
+        wake();
     }
 }
 const loadTextPoints = async () => pointsOf(geometryFrom(parsePointsText(await fetchText())));
@@ -367,9 +389,57 @@ function frame() {
     controls.update();
 }
 
+// Grid on the ground below the model (in the view's up frame), axes at the file's origin and the model's
+// bounds, from the Display menu. Double-click picking skips them, and framing uses the model's box.
+const helpers = {};
+function gridHelper() {
+    root.updateMatrixWorld(true);
+    const box = localBox.clone().applyMatrix4(root.matrixWorld);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    // Cells of a power of ten, 10-100 of them across 1.5 times the footprint, on round coordinates.
+    const extent = Math.max(size.x, size.z, 1e-6) * 1.5;
+    const cell = 10 ** Math.ceil(Math.log10(extent / 100));
+    const divisions = 2 * Math.ceil(extent / cell / 2);
+    // Mid greys stand out against both the light (white) and the dark (#505050) background.
+    const grid = new THREE.GridHelper(cell * divisions, divisions, 0xa0a0a0, 0x8c8c8c);
+    grid.position.set(Math.round(center.x / cell) * cell, box.min.y, Math.round(center.z / cell) * cell);
+    Object.assign(grid.material, { transparent: true, opacity: 0.85, depthWrite: false });
+    return grid;
+}
+// The grid lives in the scene, already in the view's frame; the axes and bounds turn with the up axis.
+const HELPERS = {
+    grid: () => [scene, gridHelper()],
+    axes: () => [root, new THREE.AxesHelper(localBox.getSize(new THREE.Vector3()).length() * 0.25 || 1)],
+    bounds: () => [root, new THREE.Box3Helper(localBox, 0xffa500)]
+};
+function setHelper(kind, on) {
+    helpers[kind]?.removeFromParent();
+    helpers[kind]?.dispose();
+    helpers[kind] = null;
+    if (on) {
+        const [parent, helper] = HELPERS[kind]();
+        helper.raycast = () => {};
+        parent.add(helpers[kind] = helper);
+    }
+    document.querySelector(`[data-helper="${kind}"]`).classList.toggle('active', on);
+}
+
 function setUp(up) {
     root.rotation.set(...UP[up]);
     frame();
+    if (helpers.grid) setHelper('grid', true);
+}
+
+// The colormap's range for every mode but Original; values past the 2nd-98th percentile take the end colors.
+function showLegend(mode, range) {
+    $('color-legend').hidden = !range;
+    if (!range) return;
+    $('legend-bar').style.background ||= turboGradient();
+    $('legend-name').textContent = mode === 'height' ? t('colorHeight') : fieldLabel(mode.slice('field:'.length));
+    const format = value => (+value.toPrecision(3)).toLocaleString();
+    $('legend-low').textContent = format(range[0]);
+    $('legend-high').textContent = format(range[1]);
 }
 
 function stats(object) {
@@ -449,8 +519,10 @@ function captureScreenshot() {
 }
 
 function setupUi(hasMesh, hasPoints, up) {
-    $('display-menu-btn').closest('.control-bar-section').hidden = !hasMesh && !hasPoints;
+    // Splats have no display modes or point sizes; the grid, axes and bounds apply to everything.
     document.querySelectorAll('[data-mode], #size-separator').forEach(element => { element.hidden = !hasMesh; });
+    document.querySelectorAll('[data-size], #helper-separator').forEach(element => { element.hidden = !hasMesh && !hasPoints; });
+    document.querySelectorAll('[data-helper]').forEach(button => button.addEventListener('click', () => setHelper(button.dataset.helper, !helpers[button.dataset.helper])));
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
     document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => setPointSize(Number(button.dataset.size))));
     for (const [button, panel] of [[$('display-menu-btn'), $('display-menu')], [$('info-btn'), $('info-panel')], [$('help-btn'), $('help-panel')]]) {
@@ -507,6 +579,7 @@ async function main() {
         if (!showError(error)) return;
     }
     $('loading-indicator').hidden = true;
+    wake();
 }
 
 main();

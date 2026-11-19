@@ -11,21 +11,24 @@ export function linearByteTable() {
     return srgbToLinearByte;
 }
 
-// Turbo (Google's polynomial fit) as linear bytes for a normalized color attribute.
+// Turbo (Google's polynomial fit): t in 0..1 to 8-bit sRGB.
+const TURBO = [
+    [0.13572138, 4.6153926, -42.66032258, 132.13108234, -152.94239396, 59.28637943],
+    [0.09140261, 2.19418839, 4.84296658, -14.18503333, 4.27729857, 2.82956604],
+    [0.1066733, 12.64194608, -60.58204836, 110.36276771, -89.90310912, 27.34824973]
+];
+const turboSrgb = t => TURBO.map(c => Math.round(Math.min(1, Math.max(0, c.reduceRight((sum, k) => sum * t + k, 0))) * 255));
+
+// The same colors as a CSS gradient, for the legend.
+export const turboGradient = (stops = 16) => `linear-gradient(to right, ${Array.from({ length: stops + 1 }, (_, i) => `rgb(${turboSrgb(i / stops).join(' ')})`).join(', ')})`;
+
+// Turbo as linear bytes for a normalized color attribute.
 let turboTable;
 function turbo() {
     if (turboTable) return turboTable;
     const srgb = linearByteTable();
-    const poly = (t, c) => c.reduceRight((sum, k) => sum * t + k, 0);
-    const channels = [
-        [0.13572138, 4.6153926, -42.66032258, 132.13108234, -152.94239396, 59.28637943],
-        [0.09140261, 2.19418839, 4.84296658, -14.18503333, 4.27729857, 2.82956604],
-        [0.1066733, 12.64194608, -60.58204836, 110.36276771, -89.90310912, 27.34824973]
-    ];
     turboTable = new Uint8Array(256 * 3);
-    for (let i = 0; i < 256; i++) channels.forEach((c, j) => {
-        turboTable[i * 3 + j] = srgb[Math.round(Math.min(1, Math.max(0, poly(i / 255, c))) * 255)];
-    });
+    for (let i = 0; i < 256; i++) turboSrgb(i / 255).forEach((value, j) => { turboTable[i * 3 + j] = srgb[value]; });
     return turboTable;
 }
 

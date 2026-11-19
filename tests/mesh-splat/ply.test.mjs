@@ -179,6 +179,30 @@ test('readPlyPoints splits ASCII on every whitespace PLYLoader splits on', () =>
     assert.deepEqual(Array.from(readPlyPoints(bytes, readPlyHeader(bytes)).positions), Array.from(expected.attributes.position.array));
 });
 
+for (const format of ['binary_little_endian', 'binary_big_endian', 'ascii']) {
+    test(`readPlyPoints keeps the other properties of a ${format} cloud as scalar fields, only when asked`, () => {
+        const properties = [['float', 'x'], ['float', 'confidence'], ['float', 'y'], ['float', 'z'], ['uchar', 'red'], ['uchar', 'green'], ['uchar', 'blue'], ['uchar', 'alpha'], ['int', 'label'], ['float', 'nx'], ['float', 'ny'], ['float', 'nz']];
+        const rows = [[1, 0.5, 2, 3, 255, 0, 0, 255, 7, 0, 0, 1], [4, 0.25, 5, 6, 0, 255, 0, 128, -2, 0, 1, 0]];
+        const bytes = typedPly(format, properties, rows);
+        const points = readPlyPoints(bytes, readPlyHeader(bytes), { scalars: true });
+        // Not positions, normals, colors or alpha.
+        assert.deepEqual(Object.keys(points.scalars), ['confidence', 'label']);
+        assert.deepEqual(Array.from(points.scalars.confidence), [0.5, 0.25]);
+        assert.deepEqual(Array.from(points.scalars.label), [7, -2]);
+        assert.deepEqual(Array.from(points.positions), [1, 2, 3, 4, 5, 6]);
+        assert.equal(readPlyPoints(bytes, readPlyHeader(bytes)).scalars, null);
+    });
+}
+
+test('readPlyPoints keeps at most MAX_SCALAR_FIELDS fields, and none for a cloud with only xyz', async () => {
+    const { MAX_SCALAR_FIELDS } = await import('../../packages/mesh-splat/webview/ply.mjs');
+    const extra = Array.from({ length: MAX_SCALAR_FIELDS + 4 }, (_, i) => ['float', `f${i}`]);
+    const wide = typedPly('binary_little_endian', [['float', 'x'], ['float', 'y'], ['float', 'z'], ...extra], [[0, 0, 0, ...extra.map((_, i) => i)]]);
+    assert.equal(Object.keys(readPlyPoints(wide, readPlyHeader(wide), { scalars: true }).scalars).length, MAX_SCALAR_FIELDS);
+    const plain = typedPly('binary_little_endian', [['float', 'x'], ['float', 'y'], ['float', 'z']], [[0, 0, 0]]);
+    assert.equal(readPlyPoints(plain, readPlyHeader(plain), { scalars: true }).scalars, null);
+});
+
 const { readPlyMesh } = await import('../../packages/mesh-splat/webview/ply.mjs');
 
 function meshPly(format, faces, { faceProps = '', indexType = 'int' } = {}) {

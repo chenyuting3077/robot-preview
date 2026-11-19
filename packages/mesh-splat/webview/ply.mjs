@@ -111,6 +111,9 @@ const ATTRIBUTES = {
     colors: [['red', 'diffuse_red', 'r', 'diffuse_r'], ['green', 'diffuse_green', 'g', 'diffuse_g'], ['blue', 'diffuse_blue', 'b', 'diffuse_b']]
 };
 
+// Point clouds keep up to this many extra numeric properties (confidence, curvature, ...) to color by.
+export const MAX_SCALAR_FIELDS = 16;
+
 function readAsciiPoints(bytes, vertex, layout, points) {
     // PLYLoader starts the body after the first "end_header" plus whitespace.
     const text = new TextDecoder().decode(bytes);
@@ -139,6 +142,7 @@ function readAsciiPoints(bytes, vertex, layout, points) {
         positions[i * 3 + 2] = values[z];
         if (normals) for (let c = 0; c < 3; c++) normals[i * 3 + c] = values[layout.normals[c]];
         if (uvs) for (let c = 0; c < 2; c++) uvs[i * 2 + c] = values[layout.uvs[c]];
+        for (const [field, target] of layout.scalars) target[i] = values[field];
         if (!colors) continue;
         for (let c = 0; c < 3; c++) {
             // ASCII can hold values outside 0..255; PLYLoader converts them
@@ -150,7 +154,9 @@ function readAsciiPoints(bytes, vertex, layout, points) {
     return points;
 }
 
-export function readPlyPoints(bytes, header) {
+// `scalars` also reads every vertex property that is not a position, normal, uv, color or alpha into
+// `points.scalars` (name to Float32Array), for coloring a point cloud by it.
+export function readPlyPoints(bytes, header, { scalars = false } = {}) {
     const vertex = header.elements[0];
     if (vertex?.name !== 'vertex' || !(vertex.count >= 0) || vertex.properties.some(property => property.list || !TYPES[property.type])) return null;
     const indexOf = names => {
@@ -184,8 +190,15 @@ export function readPlyPoints(bytes, header) {
         positions: new TYPES[vertex.properties[layout.positions[0]].type].ArrayType(vertex.count * 3),
         normals: allocate('normals', 3),
         uvs: allocate('uvs', 2),
-        colors: allocate('colors', 3)
+        colors: allocate('colors', 3),
+        scalars: null
     };
+    const used = new Set(Object.values(layout).flat());
+    const fields = scalars && vertex.count > 0
+        ? vertex.properties.map((_, i) => i).filter(i => !used.has(i) && vertex.properties[i].name !== 'alpha').slice(0, MAX_SCALAR_FIELDS)
+        : [];
+    layout.scalars = fields.map(i => [i, new Float32Array(vertex.count)]);
+    if (fields.length) points.scalars = Object.fromEntries(layout.scalars.map(([i, target]) => [vertex.properties[i].name, target]));
     if (!binary) return readAsciiPoints(bytes, vertex, layout, points);
 
     const little = header.format === 'binary_little_endian';
@@ -215,6 +228,11 @@ export function readPlyPoints(bytes, header) {
             colors[i * 3 + 1] = table[view.getUint8(row + offsets[rgb[1]])];
             colors[i * 3 + 2] = table[view.getUint8(row + offsets[rgb[2]])];
         }
+    }
+    for (const [field, target] of layout.scalars) {
+        const get = getterOf(field);
+        const at = offsets[field];
+        for (let i = 0, row = 0; i < vertex.count; i++, row += stride) target[i] = view[get](row + at, little);
     }
     for (const key of ['normals', 'uvs']) {
         const target = points[key];

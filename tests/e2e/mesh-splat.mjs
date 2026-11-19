@@ -76,6 +76,7 @@ function fixtures(dir) {
         'cube-meshopt.gltf': meshoptCube(),
         'gauss3d.ply': splatPly(['scale_0', 'scale_1', 'scale_2']),
         'gauss2d.ply': splatPly(['scale_0', 'scale_1']),
+        'fields.ply': `ply\nformat ascii 1.0\nelement vertex 2000\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n${Array.from({ length: 2000 }, (_, i) => { const r = Math.sqrt(i / 2000), t = i * 2.399; return `${r * Math.cos(t)} ${r * Math.sin(t)} 0 ${i / 2000}`; }).join('\n')}\n`,
         'scene.usda': `#usda 1.0\n(\n    upAxis = "Z"\n    defaultPrim = "World"\n)\ndef Xform "World"\n{\n    def Mesh "Tri"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh "Hidden"\n    {\n        token visibility = "invisible"\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(50, 0, 0), (51, 0, 0), (50, 1, 0)]\n    }\n    def ParticleField3DGaussianSplat "Gaussians"\n    {\n        point3f[] positions = [(0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)]\n        quatf[] orientations = [(1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0)]\n        float3[] scales = [(0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1)]\n        float[] opacities = [0.9, 0.9, 0.9, 0.9]\n        int radiance:sphericalHarmonicsDegree = 0\n        float3[] radiance:sphericalHarmonicsCoefficients = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)]\n    }\n}\n`,
         'BIG.STL': fs.readFileSync(new URL('../fixtures/ros_ws/src/robot_b/meshes/arm.stl', import.meta.url))
     };
@@ -141,6 +142,19 @@ const send = (method, params = {}) => new Promise(resolve => {
     ws.send(JSON.stringify({ id: nextId, method, params }));
 });
 const evaluate = async expression => (await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })).result.value;
+// The share of a quarter-size screenshot that differs between two of them.
+const pageShot = async () => {
+    const [width, height] = await evaluate('[innerWidth, innerHeight]');
+    return (await send('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width, height, scale: 0.25 } })).data;
+};
+const shotDiff = (a, b) => evaluate(`(async () => {
+    const load = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/jpeg;base64,' + src; });
+    const [x, y] = await Promise.all([load('${a}'), load('${b}')]);
+    const px = img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, c.width, c.height).data; };
+    const p = px(x), q = px(y); let n = 0;
+    for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 40) n++;
+    return n / (p.length / 4);
+})()`);
 await send('Page.enable');
 // Viewer warnings and errors go to stderr, so a failed check shows why.
 ws.addEventListener('message', ({ data }) => {
@@ -149,7 +163,7 @@ ws.addEventListener('message', ({ data }) => {
     if (m.method === 'Runtime.exceptionThrown') console.error('exception:', m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
 });
 await send('Runtime.enable');
-await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ postMessage: message => { if (message.type === 'stepCache') { (window.__cache ||= []).push(message); window.postMessage({ type: 'stepCacheAck', key: message.key, render: message.render, at: message.at }, '*'); } else if (message.type === 'read') window.postMessage({ type: 'readReply', id: message.id, at: message.at, error: 'no extension' }, '*'); else if (message.type !== 'readDone') window.__posted = message; } }); window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
+await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ postMessage: message => { if (message.type === 'stepCache') { (window.__cache ||= []).push(message); window.postMessage({ type: 'stepCacheAck', key: message.key, render: message.render, at: message.at }, '*'); } else if (message.type === 'read') window.postMessage({ type: 'readReply', id: message.id, at: message.at, error: 'no extension' }, '*'); else if (message.type !== 'readDone') window.__posted = message; } }); window.__draws = 0; for (const proto of [WebGLRenderingContext.prototype, WebGL2RenderingContext.prototype]) for (const name of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced']) { const draw = proto[name]; if (draw) proto[name] = function (...args) { window.__draws++; return draw.apply(this, args); }; } window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
 const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];
@@ -243,7 +257,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
         })()`);
         const usdKind = ui.modes ? 'mesh' : 'splat';
         const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|\.gl(tf|b)$|\.dae$|\.(ste?p|ige?s)$/i, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
-        const expected = { mesh: [true, true, true], points: [true, false, true], splat: [false, false, false] }[kind];
+        const expected = { mesh: [true, true, true], points: [true, false, true], splat: [true, false, false] }[kind];
         state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gl(tf|b)$|\.(ste?p|ige?s)$/i.test(name) ? '+Y' : '+Z') && ui.shot;
         camera += ` ui ${JSON.stringify(ui)}`;
         // The saved picture shows the model, not a blank or black frame: some pixels differ from the corner.
@@ -287,6 +301,38 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             state.treeOk = tree === 'World:Xform:true,Tri:Mesh:true,Hidden:Mesh:false,Gaussians:ParticleField3DGaussianSplat:true' && changed > 0.05 && parentOff;
             camera += ` tree ${tree} hide ${(changed * 100).toFixed(1)}% parentOff ${parentOff}`;
         }
+        if (/^(cube\.stl|cloud\.ply|gauss3d\.ply)$/.test(name)) {
+            // Past the settle after the last input, the view draws nothing; a click on the grid draws it.
+            await sleep(2000);
+            const idle = await evaluate('new Promise(resolve => { const before = window.__draws; setTimeout(() => resolve(window.__draws - before), 1000); })');
+            const before = await pageShot();
+            const toggled = {};
+            for (const helper of ['grid', 'axes', 'bounds']) {
+                await evaluate(`document.querySelector('[data-helper="${helper}"]').click()`);
+                await sleep(400);
+                toggled[helper] = await shotDiff(before, await pageShot());
+                await evaluate(`document.querySelector('[data-helper="${helper}"]').click()`);
+                await sleep(400);
+            }
+            const restored = await shotDiff(before, await pageShot());
+            // cube.stl's faces lie on the axis planes and cover its axes and grid, so only its bounds must show.
+            const shown = name === 'cube.stl' ? [toggled.bounds] : Object.values(toggled);
+            state.helpersOk = idle === 0 && shown.every(share => share > 0.002) && restored < 0.002;
+            camera += ` idle draws ${idle} helpers ${Object.entries(toggled).map(([k, v]) => `${k} ${(v * 100).toFixed(1)}%`).join(', ')} off ${(restored * 100).toFixed(1)}%`;
+        }
+        if (name === 'fields.ply') {
+            const legend = await evaluate(`(() => {
+                const button = document.querySelector('[data-color="field:confidence"]');
+                if (!button || button.hidden) return 'no confidence button';
+                button.click();
+                const shown = !document.getElementById('color-legend').hidden;
+                const text = document.getElementById('color-legend').innerText.replace(/\\s+/g, ' ').trim();
+                document.querySelector('[data-color="rgb"]').click();
+                return shown && document.getElementById('color-legend').hidden ? text : 'legend did not follow the mode: ' + text;
+            })()`);
+            state.fieldsOk = /^confidence 0\.0\d+ 0\.9\d+$/.test(legend);
+            camera += ` legend "${legend}"`;
+        }
         if (name === 'rgb.xyz') {
             const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 400, height: 400, scale: 0.25 } })).data;
             state.redOk = await evaluate(`(async () => {
@@ -315,7 +361,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
         })`);
         camera += ` perf ${JSON.stringify(perf)}`;
     }
-    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false && state.uiOk !== false && state.redOk !== false && state.treeOk !== false && state.cacheOk !== false;
+    const ok = !state.loading && !state.error && state.csp.length === 0 && state.cameraOk !== false && state.uiOk !== false && state.redOk !== false && state.treeOk !== false && state.cacheOk !== false && state.helpersOk !== false && state.fieldsOk !== false;
     results.push(ok);
     console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${Math.round((Date.now() - started) / 100) / 10}s ${state.error || ''} ${state.csp.join(', ')}${camera}\n  ${String(state.info).replace(/\n/g, ' | ')}`);
     if (shots) {
