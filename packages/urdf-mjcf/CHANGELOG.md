@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.6
+
+- Orbiting the camera no longer stutters on large models: the hover check is skipped while a mouse button is held. In VS Code a 1.24M-triangle AMR URDF orbits at 57-59 fps against 43-49 fps with 0.4.5.
+
 ## 0.4.5
 
 - Large DAE meshes load faster: their geometry is parsed in WebAssembly. In VS Code the RealSense camera preview (16 MB `d435.dae`) opens in 1.98-2.07 s against 2.14-2.38 s with 0.4.4.
