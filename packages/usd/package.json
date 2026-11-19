@@ -58,7 +58,7 @@
     ]
   },
   "scripts": {
-    "build": "../mesh-splat/node_modules/.bin/vite build && cp ../mesh-splat/extension.js ../mesh-splat/io.js dist/",
+    "build": "node ../mesh-splat/node_modules/vite/bin/vite.js build && node -e \"for (const file of ['extension.js', 'io.js']) require('fs').copyFileSync('../mesh-splat/' + file, 'dist/' + file)\"",
     "package": "npm run build && npx --yes -p node@20 -p @vscode/vsce@3 vsce package --no-dependencies --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/usd"
   },
   "keywords": [
