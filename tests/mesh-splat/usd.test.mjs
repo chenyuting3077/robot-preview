@@ -110,6 +110,61 @@ test('applyVariants keeps only the selected variant under its prim', () => {
     assert.equal(specs['/R/Other'], undefined);
 });
 
+test('composeUsd reads USDA variantSet blocks with payloads, child prims and overs', async () => {
+    const files = {
+        'http://x/robot.usda': `#usda 1.0
+(
+    defaultPrim = "Robot"
+)
+
+def Xform "Robot" (
+    variants = {
+        string Physics = "physics"
+    }
+    prepend variantSets = "Physics"
+)
+{
+    variantSet "Physics" = {
+        "none" {
+            def Mesh "Wrong"
+            {
+            }
+        }
+        "physics" (
+            prepend payload = @./physics.usda@
+        ) {
+            def Xform "Added"
+            {
+            }
+        }
+    }
+}
+
+over "Ghost" (
+    variants = {
+        string v = "a"
+    }
+    prepend variantSets = "v"
+)
+{
+    variantSet "v" = {
+        "a" {
+            double radius = 3
+        }
+    }
+}
+`,
+        'http://x/physics.usda': '#usda 1.0\n(\n    defaultPrim = "Robot"\n)\n\ndef Xform "Robot"\n{\n    def Mesh "Link"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n}\n'
+    };
+    const read = async url => new TextEncoder().encode(files[url]);
+    const { group, missing } = await composeUsd(await read('http://x/robot.usda'), 'http://x/', read);
+    assert.deepEqual(missing, []);
+    assert.ok(group.getObjectByName('Link')?.isMesh);
+    assert.ok(group.getObjectByName('Added'));
+    assert.equal(group.getObjectByName('Wrong'), undefined);
+    assert.equal(group.getObjectByName('Ghost'), undefined);
+});
+
 test('expandArcs copies internal and external reference targets', async () => {
     const external = {
         '/': { specType: 1, fields: { defaultPrim: 'Lib' } },

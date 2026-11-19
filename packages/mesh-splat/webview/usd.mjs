@@ -2,8 +2,9 @@ import { USDAParser } from 'three/examples/jsm/loaders/usd/USDAParser.js';
 import { USDCParser } from 'three/examples/jsm/loaders/usd/USDCParser.js';
 import { USDComposer } from 'three/examples/jsm/loaders/usd/USDComposer.js';
 import { unzipSync } from 'three/examples/jsm/libs/fflate.module.js';
-import { Euler, LoaderUtils, Matrix4, Quaternion } from 'three';
+import { Color, Euler, LinearSRGBColorSpace, LoaderUtils, Matrix4, Quaternion, SRGBColorSpace } from 'three';
 import { writeFace } from './geometry.mjs';
+import { nurecPly, readNurec } from './nurec.mjs';
 
 const SH_C0 = 0.28209479177387814;
 const MAX_DEPTH = 16;
@@ -13,25 +14,56 @@ const USD_FILE = /\.usd[ac]?$/i;
 const arrayBufferOf = bytes => (bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.slice().buffer);
 const isCrate = bytes => new TextDecoder().decode(bytes.subarray(0, 8)) === 'PXR-USDC';
 
+const VARIANT_SET = /^variantSet\s+"([^"]+)"$/;
+const PRIM = /^def\s+(?:(\w+)\s+)?"([^"]+)"$/;
+
 class ListOpUSDAParser extends USDAParser {
-    _extractPrimData(data, ...rest) {
-        for (const key of Object.keys(data ?? {})) {
+    _extractPrimData(data, path, primFields, specsByPath, SpecType) {
+        for (let key of Object.keys(data ?? {})) {
+            // three reads `custom bool x` as an attribute named "bool x" of type "custom".
+            if (key.startsWith('custom ')) {
+                const plain = key.slice('custom '.length);
+                data[plain] ??= data[key];
+                delete data[key];
+                key = plain;
+            }
             const field = key.match(/^(?:(?:add|prepend|append|reorder)\s+)?(references|payload)$/)?.[1];
             const known = field === 'references' ? 'prepend references' : field;
             if (field && key !== known) {
                 data[known] ??= data[key];
                 delete data[key];
             }
+            const set = key.match(VARIANT_SET)?.[1];
+            if (set) {
+                // Written as /Prim{set=name} specs, the form crate files use and applyVariants composes.
+                for (const [name, body] of Object.entries(data[key])) this._extractVariant(body, `${path}{${set}=${name.replace(/"/g, '')}}`, '', specsByPath, SpecType);
+                delete data[key];
+            }
         }
-        return super._extractPrimData(data, ...rest);
+        if (data?.active !== undefined) primFields.active = String(data.active).trim() !== 'false';
+        return super._extractPrimData(data, path, primFields, specsByPath, SpecType);
+    }
+
+    _extractVariant(data, path, typeName, specsByPath, SpecType) {
+        const fields = typeName ? { typeName } : {};
+        this._extractPrimData(data, path, fields, specsByPath, SpecType);
+        specsByPath[path] = { specType: SpecType.Prim, fields };
+        for (const [key, child] of Object.entries(data ?? {})) {
+            const [, type = '', name] = key.match(PRIM) ?? [];
+            if (name) this._extractVariant(child, `${path}/${name}`, type, specsByPath, SpecType);
+        }
     }
 }
 
 class LayerUSDAParser extends ListOpUSDAParser {
     parseData(text) {
-        const data = super.parseData(text.replace(/^(\s*)(over|class)(\s+)(?:\w+\s+)?"/gm, (_, indent, specifier, space) => `${indent}def${space}${SPECIFIER_TYPE[specifier]} "`));
+        const data = super.parseData(text
+            .replace(/^(\s*)(over|class)(\s+)(?:\w+\s+)?"/gm, (_, indent, specifier, space) => `${indent}def${space}${SPECIFIER_TYPE[specifier]} "`)
+            // usdcat writes a variant's metadata as `"name" (` ... `) {`; three only reads `)` and `{` on lines of their own.
+            .replace(/^(\s*)\)\s*\{\s*$/gm, '$1)\n$1{'));
         for (const [path, spec] of Object.entries(data.specsByPath)) {
-            if (path === '/' || path.includes('.')) continue;
+            // A variant's own spec only adds opinions; it must not turn an over into a def.
+            if (path === '/' || path.includes('.') || path.endsWith('}')) continue;
             const specifier = Object.keys(SPECIFIER_TYPE).find(name => SPECIFIER_TYPE[name] === spec.fields.typeName);
             Object.assign(spec.fields, specifier ? { typeName: '', specifier: SPECIFIER[specifier] } : { specifier: SPECIFIER.def });
         }
@@ -128,7 +160,9 @@ export class ArcUSDCParser extends USDCParser {
 export const parseLayer = bytes => (isCrate(bytes) ? new ArcUSDCParser().parseData(arrayBufferOf(bytes)) : new LayerUSDAParser().parseData(new TextDecoder().decode(bytes)));
 const assetPath = ref => (typeof ref === 'string' ? ref : ref?.assetPath ?? '');
 const directory = url => url.slice(0, url.lastIndexOf('/') + 1);
-const resolve = (path, base) => LoaderUtils.resolveURL(path.replace(/^\.\//, ''), base.endsWith('/') ? base : `${base}/`);
+// a.usdz[b/c.usd] names a file inside a package; it is read as a.usdz/b/c.usd so its own relative paths resolve inside the package.
+const packaged = path => path.replace(/\.usdz\[([^\]]+)\]/i, '.usdz/$1');
+const resolve = (path, base) => LoaderUtils.resolveURL(packaged(path).replace(/^\.\//, ''), base.endsWith('/') ? base : `${base}/`);
 const ARCS = ['references', 'payload'];
 const RELATIONSHIPS = ['targetPaths', 'connectionPaths'];
 const within = (path, root) => path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}.`);
@@ -195,8 +229,10 @@ export function dropUndefined(specs) {
     for (const path of prims.filter(path => specs[path].fields.typeName)) {
         for (let prim = path; prim && !typed.has(prim); prim = prim.slice(0, prim.lastIndexOf('/'))) typed.add(prim);
     }
+    // Overs and classes nothing defines, and deactivated prims, are not on the stage.
     const undefinedPrims = new Set(prims.filter(path => {
-        const { specifier } = specs[path].fields;
+        const { specifier, active } = specs[path].fields;
+        if (active === false) return true;
         return specifier === undefined ? !typed.has(path) : specifier !== SPECIFIER.def;
     }));
     if (!undefinedPrims.size) return specs;
@@ -323,6 +359,7 @@ export function gaussianPly(specs, path) {
 }
 
 const DEGREES = Math.PI / 180;
+const WHITE = new Color(1, 1, 1);
 
 function xformOpMatrix(kind, value) {
     const matrix = new Matrix4();
@@ -374,7 +411,44 @@ export function triangulateTrisQuads(indices, counts) {
     return { indices: triangulated, pattern };
 }
 
+// Isaac Sim materials are MDL OmniPBR shaders with no UsdPreviewSurface; their constants map onto three's
+// physical material well enough for a preview. Other MDL shaders keep three's default material.
+function applyOmniPBR(material, attrs, loadTexture) {
+    const input = name => attrs[`inputs:${name}`];
+    const color = input('diffuse_color_constant');
+    const texture = input('diffuse_texture') && loadTexture(input('diffuse_texture'));
+    if (texture) {
+        texture.colorSpace = SRGBColorSpace;
+        material.map = texture;
+    } else if (color?.length >= 3) material.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
+    const normal = input('normalmap_texture') && loadTexture(input('normalmap_texture'));
+    if (normal) material.normalMap = normal;
+    material.metalness = input('metallic_constant') ?? 0;
+    material.roughness = input('reflection_roughness_constant') ?? 0.5;
+    const emissive = input('emissive_color');
+    if (input('enable_emission') && emissive?.length >= 3) material.emissive.setRGB(emissive[0], emissive[1], emissive[2], LinearSRGBColorSpace);
+    const opacity = input('opacity_constant');
+    if (input('enable_opacity') && opacity < 1) Object.assign(material, { opacity, transparent: true });
+}
+
 class XformUSDComposer extends USDComposer {
+    // three colours Mesh prims from displayColor but not Cube, Sphere and the other primitives.
+    _buildGeomPrimitive(path, spec, typeName) {
+        const mesh = super._buildGeomPrimitive(path, spec, typeName);
+        const color = this._getAttributes(path)['primvars:displayColor'];
+        const material = mesh?.material;
+        if (color?.length >= 3 && material?.color?.equals(WHITE) && !material.map) material.color.setRGB(color[0], color[1], color[2], LinearSRGBColorSpace);
+        return mesh;
+    }
+
+    _applyMaterial(material, materialPath) {
+        super._applyMaterial(material, materialPath);
+        const shaders = (this.shadersByMaterialPath.get(materialPath) ?? []).map(path => this._getAttributes(path));
+        if (shaders.some(attrs => attrs['info:id'])) return;
+        const omniPBR = shaders.find(attrs => attrs['info:mdl:sourceAsset:subIdentifier'] === 'OmniPBR' || /(^|\/)OmniPBR\.mdl$/.test(attrs['info:mdl:sourceAsset'] ?? ''));
+        if (omniPBR) applyOmniPBR(material, omniPBR, path => this._loadTextureFromPath(path));
+    }
+
     _triangulateIndicesWithPattern(indices, counts, points, holeMap) {
         return (!holeMap?.parentToHoles?.size && triangulateTrisQuads(indices, counts)) || super._triangulateIndicesWithPattern(indices, counts, points, holeMap);
     }
@@ -399,6 +473,11 @@ class XformUSDComposer extends USDComposer {
     }
 }
 
+// Prim types the composer draws or that only organise others; anything else on the stage is listed as not shown.
+const DRAWN = new Set(['Xform', 'Scope', 'Mesh', 'Cube', 'Sphere', 'Cylinder', 'Cone', 'Capsule', 'Material', 'Shader', 'NodeGraph', 'GeomSubset',
+    'Camera', 'DistantLight', 'SphereLight', 'RectLight', 'DiskLight', 'SkelRoot', 'Skeleton', 'SkelAnimation', 'ParticleField3DGaussianSplat', 'OmniNuRecFieldAsset']);
+const NOT_VISUAL = /^(Render|PhysicsScene$)/;
+
 const USDZ_ROOT = 'https://usdz.invalid/';
 const noFile = async url => {
     throw new Error(`not found: ${url}`);
@@ -416,6 +495,20 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
         basePath = directory(USDZ_ROOT + first);
         bytes = files[first];
     }
+    const packages = new Map();
+    const readFile = read;
+    read = async url => {
+        const [, usdz, inner] = url.match(/^(.*?\.usdz)\/(.+)$/i) ?? [];
+        if (!usdz) return readFile(url);
+        if (!packages.has(usdz)) {
+            packages.set(usdz, readFile(usdz).then(zip => {
+                const files = unzipSync(zip);
+                for (const [name, data] of Object.entries(files)) if (!USD_FILE.test(name)) assets[`${usdz}/${name}`] = data;
+                return files;
+            }));
+        }
+        return (await packages.get(usdz))[decodeURIComponent(inner)] ?? noFile(url);
+    };
     const data = await loadLayer(bytes, basePath, { read, missing, layers: new Map() });
     const specs = hideGuides(dropUndefined(data.specsByPath));
     const composer = new XformUSDComposer();
@@ -424,19 +517,46 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
     group.rotation.set(0, 0, 0);
     await Promise.all(composer.texturePromises);
     const gaussians = [];
+    const nurecVolumes = [];
     const walk = (object, path) => {
         for (const child of [...object.children]) {
             const childPath = `${path}/${child.name}`;
             child.userData.usdType = specs[childPath]?.fields.typeName ?? '';
             if (specs[`${childPath}.visibility`]?.fields.default === 'invisible') child.visible = false;
-            if (specs[childPath]?.fields.typeName === 'ParticleField3DGaussianSplat') gaussians.push({ object: child, path: childPath });
+            if (specs[childPath]?.fields.typeName === 'ParticleField3DGaussianSplat') gaussians.push({ object: child, ply: gaussianPly(specs, childPath) });
+            if (specs[childPath]?.fields.typeName === 'Volume' && specs[`${childPath}.omni:nurec:isNuRecVolume`]?.fields.default) nurecVolumes.push({ object: child, path: childPath });
             walk(child, childPath);
         }
     };
     walk(group, '');
+    // Legacy NuRec: a Volume whose field assets all name one .nurec file holding the Gaussians.
+    for (const { object, path } of nurecVolumes) {
+        const url = Object.keys(specs).find(key => key.startsWith(`${path}/`) && key.endsWith('.filePath') && specs[key].fields.default);
+        if (!url) continue;
+        const file = specs[url].fields.default;
+        try {
+            gaussians.push({ object, ply: nurecPly(readNurec(await read(new URL(file).href))) });
+        } catch {
+            missing.push(file);
+        }
+    }
+    const types = new Map();
+    for (const [path, spec] of Object.entries(specs)) {
+        const type = spec.fields.typeName;
+        if (path.includes('.') || path === '/' || !type || DRAWN.has(type) || NOT_VISUAL.test(type)) continue;
+        if (type === 'Volume' && nurecVolumes.some(volume => volume.path === path)) continue;
+        types.set(type, (types.get(type) ?? 0) + 1);
+    }
     const displayPath = url => {
         const href = new URL(url).href;
         return decodeURIComponent(href.startsWith(basePath) ? href.slice(basePath.length) : href.split('/').slice(-2).join('/'));
     };
-    return { group, upAxis: data.specsByPath['/']?.fields.upAxis, missing: missing.map(displayPath), gaussians: gaussians.map(({ object, path }) => ({ object, ply: gaussianPly(specs, path) })).filter(({ ply }) => ply) };
+    return {
+        group,
+        upAxis: data.specsByPath['/']?.fields.upAxis,
+        metersPerUnit: data.specsByPath['/']?.fields.metersPerUnit,
+        missing: missing.map(displayPath),
+        notShown: [...types].sort((a, b) => b[1] - a[1]),
+        gaussians: gaussians.filter(({ ply }) => ply)
+    };
 }

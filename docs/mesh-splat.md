@@ -25,7 +25,11 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 
 - three 0.187's `USDLoader` reads USDA / USDC / USDZ. `@needle-tools/usd` is non-commercial; TinyUSDZ 0.9.1 failed all five test files.
 - Composition (references, payloads, sublayers, variants) is done here, not by three: three stacked a whole H1 humanoid on every link (10.6 M faces instead of 0.39 M). Its crate-reader fixes override private methods, so three is pinned to an exact version.
-- Not supported: USDA `variantSet` blocks, MaterialX / MDL materials, PointInstancer, `specializes`, `inherits`, time-sampled visibility, `!resetXformStack!`.
+- MDL is not run: OmniPBR shaders (every sampled Isaac Sim robot) map their diffuse colour / texture, metallic, roughness, emission and opacity onto three's physical material.
+- Legacy NuRec volumes (`omni:nurec:isNuRecVolume`, a gzipped MessagePack `.nurec` of float16 3DGUT tensors) are copied into a 3DGS PLY as stored: their logit density, log scale, w-first rotation and SH are already PLY's parameters.
+- Prim types that are not drawn (physics joints, unknown schemas) are listed under *Not shown* in the info popover; `metersPerUnit` is shown as *Unit*.
+- Real-file tests: `tests/fixtures/usd/usd-wg` (committed) and `npm run fixtures:usd` (Isaac Sim robots and NuRec scenes into `test-files/usd/`, `HF_TOKEN` for NuRec), both read by `tests/mesh-splat/usd-fixtures.test.mjs`.
+- Not supported: MaterialX and MDL shaders other than OmniPBR, PointInstancer, `specializes`, `inherits`, time-sampled visibility, `!resetXformStack!`, `omniverse://` paths.
 
 ## STEP
 
