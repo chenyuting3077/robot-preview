@@ -3,22 +3,25 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const extensionPath = new URL('../../packages/urdf-mjcf/extension.js', import.meta.url).pathname;
-export const fixtureWorkspace = new URL('../fixtures/ros_ws', import.meta.url).pathname;
+const extensionPath = fileURLToPath(new URL('../../packages/urdf-mjcf/extension.js', import.meta.url));
+export const fixtureWorkspace = fileURLToPath(new URL('../fixtures/ros_ws', import.meta.url));
+// The e2e servers serve a file at its URL path, which on Windows is /C:/...
+const webviewPath = uri => pathToFileURL(uri.fsPath).pathname;
 export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // A custom editor's panel; it keeps the message listener and dispose callback the extension registers.
 export function fakePanel(postMessage = () => {}) {
     const panel = {
-        webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: uri => uri.fsPath, html: '', postMessage, onDidReceiveMessage: listener => { panel.listener = listener; } },
+        webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: webviewPath, html: '', postMessage, onDidReceiveMessage: listener => { panel.listener = listener; } },
         onDidDispose: callback => { panel.dispose = callback; }
     };
     return panel;
 }
 
-const meshSplatPath = new URL('../../packages/mesh-splat/extension.js', import.meta.url).pathname;
+const meshSplatPath = fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url));
 
 // Activates the mesh-splat extension (or a copy of it at `extension`) and opens `file` in its viewer.
 export async function openMeshSplat(root, file, { postMessage, storage = path.join(root, 'storage'), extension = meshSplatPath } = {}) {
@@ -106,7 +109,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
                 html: '',
                 options: {},
                 cspSource: 'vscode-webview:',
-                asWebviewUri: uri => uri.fsPath,
+                asWebviewUri: webviewPath,
                 onDidReceiveMessage: callback => {
                     panel.receive = callback;
                     return { dispose() {} };
@@ -196,7 +199,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
                 }
             }),
             openTextDocument: async fsPath => openDocument(fsPath),
-            asRelativePath: fsPath => path.relative(workspace, fsPath),
+            asRelativePath: fsPath => path.relative(workspace, fsPath).split(path.sep).join('/'),
             applyEdit: async edit => {
                 for (const { uri, range, text } of edit.edits) {
                     const doc = openDocument(uri.fsPath);

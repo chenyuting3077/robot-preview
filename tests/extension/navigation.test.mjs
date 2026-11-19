@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadExtension } from './vscode-mock.mjs';
 import { write } from './path-fixture.mjs';
+import { fileURLToPath } from 'node:url';
 
 const MAIN = `<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro">
   <xacro:include filename="$(find pkg)/urdf/parts.xacro"/>
@@ -127,7 +128,7 @@ test('paths are links to their files', async () => {
 
 test('a macro used in ur.urdf.xacro jumps into ur_macro.xacro', async () => {
     const ws = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-nav-ur-')));
-    fs.cpSync(new URL('../fixtures/xacro/ur_description', import.meta.url).pathname, path.join(ws, 'ur_description'), { recursive: true });
+    fs.cpSync(fileURLToPath(new URL('../fixtures/xacro/ur_description', import.meta.url)), path.join(ws, 'ur_description'), { recursive: true });
     const env = loadExtension({ workspace: ws, config: { autoOpen: false } });
     env.activate();
     const main = path.join(ws, 'ur_description/urdf/ur.urdf.xacro');

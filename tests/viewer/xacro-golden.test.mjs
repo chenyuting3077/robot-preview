@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DOMParser } from 'linkedom';
+import { fileURLToPath } from 'node:url';
 
 globalThis.DOMParser ??= DOMParser;
 globalThis.XMLSerializer ??= class {
@@ -15,7 +16,7 @@ globalThis.XMLSerializer ??= class {
 };
 
 const { XacroAdapter } = await import('../../src/adapters/XacroAdapter.js');
-const fixtures = new URL('../fixtures/xacro/', import.meta.url).pathname;
+const fixtures = fileURLToPath(new URL('../fixtures/xacro/', import.meta.url));
 
 function packageFiles(name) {
     const dir = path.join(fixtures, name);

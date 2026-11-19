@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { openMeshSplat } from './vscode-mock.mjs';
+import { fileURLToPath } from 'node:url';
 
 test('STEP cache drops the oldest entries past 1 GB and keeps the new one', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-cache-'));
@@ -123,7 +124,7 @@ test('a save that renames a new file over the old one re-renders with a new cach
 
 test('a rebuilt tessellator changes the cache key, and an extension without one still renders', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-build-'));
-    const pkg = new URL('../../packages/mesh-splat/', import.meta.url).pathname;
+    const pkg = fileURLToPath(new URL('../../packages/mesh-splat/', import.meta.url));
     fs.mkdirSync(path.join(root, 'dist'));
     for (const file of ['extension.js', 'io.js', 'package.json']) fs.copyFileSync(path.join(pkg, file), path.join(root, file));
     fs.copyFileSync(path.join(pkg, 'dist/index.html'), path.join(root, 'dist/index.html'));
