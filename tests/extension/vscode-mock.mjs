@@ -12,7 +12,6 @@ export const fixtureWorkspace = fileURLToPath(new URL('../fixtures/ros_ws', impo
 const webviewPath = uri => pathToFileURL(uri.fsPath).pathname;
 export const webviewFile = urlPath => fileURLToPath(new URL(urlPath, 'file:'));
 
-// $CHROME, else Chrome where its installer puts it.
 export function chromePath() {
     if (process.env.CHROME) return process.env.CHROME;
     if (process.platform !== 'win32') return 'google-chrome';
@@ -261,7 +260,8 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
     Module._load = function (request, ...rest) {
         return request === 'vscode' ? vscode : originalLoad.call(this, request, ...rest);
     };
-    delete require.cache[extensionFile];
+    // require caches by real path: os.tmpdir() is a symlink on macOS, so the path as given would miss a reload.
+    delete require.cache[require.resolve(extensionFile)];
     const extension = require(extensionFile);
     Module._load = originalLoad;
 
