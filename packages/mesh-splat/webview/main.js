@@ -379,8 +379,7 @@ function boxOf(object) {
 }
 
 function frame() {
-    root.updateMatrixWorld(true);
-    const box = localBox.clone().applyMatrix4(root.matrixWorld);
+    const box = viewBox();
     const center = box.getCenter(new THREE.Vector3());
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
     const distance = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
@@ -393,21 +392,33 @@ function frame() {
 }
 
 // Grid on the ground below the model (in the view's up frame), axes at the file's origin and the model's
-// bounds, from the Display menu. Double-click picking skips them, and framing uses the model's box.
+// bounds, from the Display menu. Double-click picking skips them, and framing uses viewBox().
 // A point cloud is a scan or map whose frame puts the ground at up = 0 (z = 0 for Z-up), and stray points
 // below the ground would drag a grid on the lowest point down, so its grid sits on that plane and starts shown.
-// Where the framed view does not see that plane from above under the cloud (altitude or UTM heights, a cloud
-// below 0 that the camera frames from the side), the grid keeps the lowest point instead.
+// Its origin is the sensor's or the map's, so the axes start shown too; bounds only repeat the size in Info and
+// what the grid already shows, so a cloud's menu leaves them out.
+// Within twice its largest side of that plane, the view and the grid take the plane in, so a cloud below 0 shows
+// the plane above it and a small object on a table its floor; farther (altitude or UTM heights) the plane would
+// shrink the cloud to a speck, so the grid keeps the lowest point instead.
 const helpers = {};
 let isCloud = false;
 let cloudGround = null;
-function gridHelper() {
+// The model's box in the view's frame, with a point cloud's up = 0 plane under it when the grid sits there.
+function viewBox() {
     root.updateMatrixWorld(true);
     const box = localBox.clone().applyMatrix4(root.matrixWorld);
+    // root only rotates about the origin, so the file's up = 0 is the scene's y = 0.
+    if (cloudGround === 0) box.expandByPoint(box.getCenter(new THREE.Vector3()).setY(0));
+    return box;
+}
+
+function gridHelper() {
+    const box = viewBox();
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
-    // Cells of a power of ten, 10-100 of them across 1.5 times the footprint, on round coordinates.
-    const extent = Math.max(size.x, size.z, 1e-6) * 1.5;
+    // Cells of a power of ten, 10-100 of them across 1.5 times the model's largest side, on round coordinates:
+    // by the footprint alone a standing robot (0.5 m wide, 1.3 m tall) got a 0.75 m grid of 1 cm cells.
+    const extent = Math.max(size.x, size.y, size.z, 1e-6) * 1.5;
     const cell = 10 ** Math.ceil(Math.log10(extent / 100));
     const divisions = 2 * Math.ceil(extent / cell / 2);
     // Mid greys stand out against both the light (white) and the dark (#505050) background.
@@ -434,18 +445,17 @@ function setHelper(kind, on) {
     document.querySelector(`[data-helper="${kind}"]`).classList.toggle('active', on);
 }
 
-// root only rotates about the origin, so the file's up = 0 is the scene's y = 0.
-function zeroPlaneInView() {
+function nearZeroPlane() {
     root.updateMatrixWorld(true);
-    camera.updateMatrixWorld();
-    const under = localBox.clone().applyMatrix4(root.matrixWorld).getCenter(new THREE.Vector3()).setY(0).project(camera);
-    return camera.position.y > 0 && Math.abs(under.x) <= 1 && Math.abs(under.y) <= 1 && under.z < 1;
+    const box = localBox.clone().applyMatrix4(root.matrixWorld);
+    const size = box.getSize(new THREE.Vector3());
+    return Math.max(box.min.y, -box.max.y, 0) <= 2 * Math.max(size.x, size.y, size.z);
 }
 
 function setUp(up) {
     root.rotation.set(...UP[up]);
+    cloudGround = isCloud && nearZeroPlane() ? 0 : null;
     frame();
-    cloudGround = isCloud && zeroPlaneInView() ? 0 : null;
     if (helpers.grid) setHelper('grid', true);
 }
 
@@ -543,6 +553,7 @@ function setupUi(hasMesh, hasPoints, up) {
     // Splats have no display modes or point sizes; the grid, axes and bounds apply to everything.
     document.querySelectorAll('[data-mode], #size-separator').forEach(element => { element.hidden = !hasMesh; });
     document.querySelectorAll('#size-row, #helper-separator').forEach(element => { element.hidden = !hasMesh && !hasPoints; });
+    document.querySelector('[data-helper="bounds"]').hidden = isCloud;
     document.querySelectorAll('[data-helper]').forEach(button => button.addEventListener('click', () => setHelper(button.dataset.helper, !helpers[button.dataset.helper])));
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
     document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => setPointSize(Number(button.dataset.size))));
@@ -597,7 +608,7 @@ async function main() {
         isCloud = counted.points > 0 && !counted.faces;
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
-        if (isCloud) setHelper('grid', true);
+        if (isCloud) for (const helper of ['grid', 'axes']) setHelper(helper, true);
     } catch (error) {
         // A page whose file changed keeps showing that it loads.
         if (!showError(error)) return;

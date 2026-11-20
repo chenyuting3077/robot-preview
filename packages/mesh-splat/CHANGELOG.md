@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-- Point clouds open with the grid shown on their z = 0 plane (the up axis's zero), not under their lowest point; a cloud whose framed view does not show that plane keeps it under its lowest point.
+- Point clouds open with the grid shown on their z = 0 plane (the up axis's zero), not under their lowest point; a cloud farther from it than twice its largest side keeps the grid under its lowest point.
+- Point clouds also open with the axes shown, and their Display menu leaves out Bounds.
+- Point sizes take one row of dots in the Display menu instead of three rows.
+- The grid spans the model's largest side, not its footprint: a standing robot got 1 cm cells.
 
 ## 0.4.0
 
