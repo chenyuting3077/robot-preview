@@ -4,6 +4,7 @@ import { Matrix4 } from '../../packages/mesh-splat/node_modules/three/build/thre
 import { readPlyHeader } from '../../packages/mesh-splat/webview/ply.mjs';
 import { USDCParser } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/usd/USDCParser.js';
 import { USDComposer } from '../../packages/mesh-splat/node_modules/three/examples/jsm/loaders/usd/USDComposer.js';
+import { nurecPly, unpack } from '../../packages/mesh-splat/webview/nurec.mjs';
 import { gaussianPly, composeUsd, applyVariants, expandArcs, hideGuides, dropUndefined, expandFloat32, triangulateTrisQuads, ArcUSDCParser } from '../../packages/mesh-splat/webview/usd.mjs';
 
 function rows(ply) {
@@ -108,6 +109,269 @@ test('applyVariants keeps only the selected variant under its prim', () => {
     assert.equal(specs['/R'].fields.typeName, 'Xform');
     assert.equal(specs['/R/Link'].fields.typeName, 'Mesh');
     assert.equal(specs['/R/Other'], undefined);
+});
+
+test('composeUsd reports a binding to a material that is not on the stage and keeps the default material', async () => {
+    const usda = `#usda 1.0
+def Xform "World"
+{
+    def Mesh "Tri" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </World/Looks/Gone>
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+}
+`;
+    const { group, missingMaterials } = await composeUsd(new TextEncoder().encode(usda));
+    assert.deepEqual(missingMaterials, ['/World/Looks/Gone']);
+    assert.equal(group.getObjectByName('Tri').material.color.getHexString(), 'ffffff');
+    // A primitive bound to a missing material falls back to its displayColor.
+    const cube = await composeUsd(new TextEncoder().encode(`#usda 1.0
+def Cube "Box" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+)
+{
+    rel material:binding = </Looks/Gone>
+    color3f[] primvars:displayColor = [(0, 0.5, 0)]
+}
+`));
+    assert.deepEqual(cube.group.getObjectByName('Box').material.color.toArray(), [0, 0.5, 0]);
+});
+
+test('composeUsd reads USDA variantSet blocks with payloads, child prims and overs', async () => {
+    const files = {
+        'http://x/robot.usda': `#usda 1.0
+(
+    defaultPrim = "Robot"
+)
+
+def Xform "Robot" (
+    variants = {
+        string Physics = "physics"
+    }
+    prepend variantSets = "Physics"
+)
+{
+    variantSet "Physics" = {
+        "none" {
+            def Mesh "Wrong"
+            {
+            }
+        }
+        "physics" (
+            prepend payload = @./physics.usda@
+        ) {
+            def Xform "Added"
+            {
+            }
+        }
+    }
+}
+
+over "Ghost" (
+    variants = {
+        string v = "a"
+    }
+    prepend variantSets = "v"
+)
+{
+    variantSet "v" = {
+        "a" {
+            double radius = 3
+        }
+    }
+}
+`,
+        'http://x/physics.usda': '#usda 1.0\n(\n    defaultPrim = "Robot"\n)\n\ndef Xform "Robot"\n{\n    def Mesh "Link"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n}\n'
+    };
+    const read = async url => new TextEncoder().encode(files[url]);
+    const { group, missing } = await composeUsd(await read('http://x/robot.usda'), 'http://x/', read);
+    assert.deepEqual(missing, []);
+    assert.ok(group.getObjectByName('Link')?.isMesh);
+    assert.ok(group.getObjectByName('Added'));
+    assert.equal(group.getObjectByName('Wrong'), undefined);
+    assert.equal(group.getObjectByName('Ghost'), undefined);
+});
+
+test('USDA variants in a referenced layer follow the selection, which the referencing prim can override', async () => {
+    const tri = 'int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]';
+    const files = {
+        'http://x/robot.usda': `#usda 1.0
+(
+    defaultPrim = "Robot"
+)
+def Xform "Robot" (
+    variants = {
+        string v = "a"
+    }
+    prepend variantSets = "v"
+)
+{
+    variantSet "v" = {
+        "a" {
+            def Mesh "A"
+            {
+                ${tri}
+            }
+        }
+        "b" {
+            def Mesh "B"
+            {
+                ${tri}
+            }
+        }
+    }
+}
+`,
+        'http://x/scene.usda': '#usda 1.0\ndef Xform "World"\n{\n    def "Kept" (\n        prepend references = @./robot.usda@\n    )\n    {\n    }\n    def "Switched" (\n        prepend references = @./robot.usda@\n        variants = {\n            string v = "b"\n        }\n    )\n    {\n    }\n}\n'
+    };
+    const read = async url => new TextEncoder().encode(files[url]);
+    const { group } = await composeUsd(await read('http://x/scene.usda'), 'http://x/', read);
+    const kept = group.getObjectByName('Kept');
+    const switched = group.getObjectByName('Switched');
+    assert.ok(kept.getObjectByName('A')?.isMesh);
+    assert.equal(kept.getObjectByName('B'), undefined);
+    assert.ok(switched.getObjectByName('B')?.isMesh);
+    assert.equal(switched.getObjectByName('A'), undefined);
+});
+
+test('a referenced layer keeps its variant above what that layer itself references', async () => {
+    const mesh = x => `def Mesh "Child"\n    {\n        double3 xformOp:translate = (${x}, 0, 0)\n        uniform token[] xformOpOrder = ["xformOp:translate"]\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }`;
+    const files = {
+        'http://x/part.usda': `#usda 1.0\n(\n    defaultPrim = "P"\n)\ndef Xform "P"\n{\n    ${mesh(1)}\n}\n`,
+        'http://x/robot.usda': '#usda 1.0\n(\n    defaultPrim = "R"\n)\ndef Xform "R" (\n    prepend references = @./part.usda@\n    variants = {\n        string v = "x"\n    }\n    prepend variantSets = "v"\n)\n{\n    variantSet "v" = {\n        "x" {\n            over "Child"\n            {\n                double3 xformOp:translate = (5, 0, 0)\n            }\n        }\n    }\n}\n',
+        'http://x/scene.usda': '#usda 1.0\ndef Xform "World"\n{\n    def "Robot" (\n        prepend references = @./robot.usda@\n    )\n    {\n    }\n}\n'
+    };
+    const read = async url => new TextEncoder().encode(files[url]);
+    for (const root of ['robot.usda', 'scene.usda']) {
+        const { group } = await composeUsd(await read(`http://x/${root}`), 'http://x/', read);
+        assert.equal(group.getObjectByName('Child').position.x, 5, root);
+    }
+});
+
+test('layers that reference each other are composed once around the cycle', async () => {
+    const layer = (name, other) => `#usda 1.0\n(\n    defaultPrim = "${name}"\n)\ndef Xform "${name}"\n{\n    def Mesh "M${name}"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def "Next" (\n        prepend references = @./${other}.usda@\n    )\n    {\n    }\n}\n`;
+    const files = { 'http://x/a.usda': layer('A', 'b'), 'http://x/b.usda': layer('B', 'a') };
+    const read = async url => new TextEncoder().encode(files[url]);
+    const { group } = await composeUsd(await read('http://x/a.usda'), 'http://x/', read);
+    const meshes = [];
+    group.traverse(object => object.isMesh && meshes.push(object.name));
+    assert.deepEqual(meshes, ['MA', 'MB', 'MA']);
+});
+
+test('a referenced layer\'s own references keep its paths mapped onto the stage and stop at cycles', async () => {
+    const tri = '        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n';
+    const self = name => `#usda 1.0\n(\n    defaultPrim = "${name}"\n)\ndef Xform "${name}"\n{\n    def Mesh "M${name}"\n    {\n${tri}    }\n    def "Again" (\n        prepend references = @./${name.toLowerCase()}.usda@\n    )\n    {\n    }\n}\n`;
+    const files = {
+        'http://x/robot.usda': `#usda 1.0\n(\n    defaultPrim = "R"\n)\ndef Xform "R"\n{\n    def "Inst" (\n        prepend references = </Lib/Part>\n    )\n    {\n    }\n    def Scope "Looks"\n    {\n        def Material "M"\n        {\n        }\n    }\n}\ndef Scope "Lib"\n{\n    def Xform "Part" (\n        prepend references = [@./b.usda@, @./c.usda@]\n    )\n    {\n        def Mesh "Bound" (\n            prepend apiSchemas = ["MaterialBindingAPI"]\n        )\n        {\n            rel material:binding = </R/Looks/M>\n${tri}        }\n    }\n}\n`,
+        'http://x/b.usda': self('B'),
+        'http://x/c.usda': self('C'),
+        'http://x/scene.usda': '#usda 1.0\ndef Xform "World"\n{\n    def "One" (\n        prepend references = @./robot.usda@\n    )\n    {\n    }\n    def "Two" (\n        prepend references = @./robot.usda@\n    )\n    {\n    }\n}\n'
+    };
+    const read = async url => new TextEncoder().encode(files[url]);
+    const { group, missingMaterials } = await composeUsd(await read('http://x/scene.usda'), 'http://x/', read);
+    assert.deepEqual(missingMaterials, []);
+    for (const name of ['One', 'Two']) {
+        const meshes = [];
+        group.getObjectByName(name).traverse(object => object.isMesh && meshes.push(object.name));
+        assert.deepEqual(meshes.sort(), ['Bound', 'MB', 'MC'], name);
+    }
+});
+
+test('arcs authored in the selected variant are stronger than the arcs authored on its prim', async () => {
+    const part = x => `#usda 1.0\n(\n    defaultPrim = "P"\n)\ndef Xform "P"\n{\n    def Mesh "C"\n    {\n        double3 xformOp:translate = (${x}, 0, 0)\n        uniform token[] xformOpOrder = ["xformOp:translate"]\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n}\n`;
+    const robot = (local, variant) => `#usda 1.0\n(\n    defaultPrim = "R"\n)\ndef Xform "R" (\n    prepend ${local} = @./a.usda@\n    variants = {\n        string v = "x"\n    }\n    prepend variantSets = "v"\n)\n{\n    variantSet "v" = {\n        "x" (\n            prepend ${variant} = @./b.usda@\n        ) {\n        }\n    }\n}\n`;
+    for (const [local, variant] of [['references', 'references'], ['payload', 'references'], ['references', 'payload']]) {
+        const files = { 'http://x/a.usda': part(1), 'http://x/b.usda': part(2), 'http://x/robot.usda': robot(local, variant), 'http://x/scene.usda': '#usda 1.0\ndef Xform "World"\n{\n    def "R" (\n        prepend references = @./robot.usda@\n    )\n    {\n    }\n}\n' };
+        const read = async url => new TextEncoder().encode(files[url]);
+        for (const root of ['robot.usda', 'scene.usda']) {
+            const { group } = await composeUsd(await read(`http://x/${root}`), 'http://x/', read);
+            assert.equal(group.getObjectByName('C').position.x, 2, `${variant} over ${local} in ${root}`);
+        }
+    }
+});
+
+test('references within the stage stop at their own prim, an ancestor or a descendant, as usdcat does', async () => {
+    const mesh = name => `    def Mesh "${name}"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n`;
+    const stage = `#usda 1.0\ndef Xform "A" (\n    prepend references = </B>\n)\n{\n${mesh('MA')}}\ndef Xform "B"\n{\n${mesh('MB')}    def "C" (\n        prepend references = </A>\n    )\n    {\n    }\n    def "D" (\n        prepend references = </B>\n    )\n    {\n    }\n}\n`;
+    const paths = async usda => {
+        const { group } = await composeUsd(new TextEncoder().encode(usda), 'http://x/');
+        const found = [];
+        group.traverse(object => object.isMesh && found.push(`${object.parent.name}/${object.name}`));
+        return found.sort();
+    };
+    const prim = (name, arc, body = '') => `def Xform "${name}"${arc ? ` (\n    prepend references = <${arc}>\n)` : ''}\n{\n${body}}\n`;
+    assert.deepEqual(await paths(stage), ['A/MA', 'A/MB', 'B/MB', 'C/MA']);
+    // A descendant of the referencing prim; an ancestor of where the arc lands once composed; a chain that comes
+    // back to a prim it passed through.
+    assert.deepEqual(await paths(`#usda 1.0\n${prim('A', '/A/C', prim('C', '', mesh('MC')))}`), ['C/MC']);
+    assert.deepEqual(await paths(`#usda 1.0\n${prim('C', '/X')}${prim('X', '', prim('Y', '', prim('Z', '/C/Y') + mesh('MY')))}`), ['Y/MY', 'Y/MY']);
+    assert.deepEqual(await paths(`#usda 1.0\n${prim('A', '/B/C')}${prim('B', '', prim('C', '/D', mesh('MC')) + mesh('MB'))}${prim('D', '', mesh('MD') + prim('E', '/B/C'))}`),
+        ['A/MC', 'A/MD', 'B/MB', 'C/MC', 'C/MD', 'D/MD', 'E/MC']);
+});
+
+test('a binding to a path outside the referenced prim is dropped, as usdcat does', async () => {
+    const files = {
+        'http://x/robot.usda': '#usda 1.0\n(\n    defaultPrim = "R"\n)\ndef Xform "R"\n{\n    def Mesh "Body" (\n        prepend apiSchemas = ["MaterialBindingAPI"]\n    )\n    {\n        rel material:binding = </Lib/M>\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n}\n',
+        'http://x/scene.usda': '#usda 1.0\ndef Xform "World"\n{\n    def "R" (\n        prepend references = @./robot.usda@\n    )\n    {\n    }\n}\ndef Scope "Lib"\n{\n    def Material "M"\n    {\n        token outputs:surface.connect = </Lib/M/S.outputs:surface>\n        def Shader "S"\n        {\n            uniform token info:id = "UsdPreviewSurface"\n            color3f inputs:diffuseColor = (0, 1, 0)\n            token outputs:surface\n        }\n    }\n}\n'
+    };
+    const read = async url => new TextEncoder().encode(files[url]);
+    const { group } = await composeUsd(await read('http://x/scene.usda'), 'http://x/', read);
+    assert.notDeepEqual(group.getObjectByName('Body').material.color.toArray(), [0, 1, 0]);
+});
+
+test('USDA bools authored as 0 or false switch OmniPBR emission and opacity, and NuRec volumes, off', async () => {
+    const stage = on => `#usda 1.0
+def Xform "World"
+{
+    def Mesh "Tri" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </World/Looks/M>
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+    def Scope "Looks"
+    {
+        def Material "M"
+        {
+            token outputs:mdl:surface.connect = </World/Looks/M/Shader.outputs:out>
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                bool inputs:enable_emission = ${on}
+                color3f inputs:emissive_color = (1, 0, 0)
+                bool inputs:enable_opacity = ${on}
+                float inputs:opacity_constant = 0.5
+                token outputs:out
+            }
+        }
+    }
+    def Volume "Gauss"
+    {
+        custom bool omni:nurec:isNuRecVolume = ${on}
+        def OmniNuRecFieldAsset "density"
+        {
+            asset filePath = @./scene.nurec@
+        }
+    }
+}
+`;
+    for (const [on, enabled] of [['0', false], ['false', false], ['1', true], ['true', true]]) {
+        const { group, missing } = await composeUsd(new TextEncoder().encode(stage(on)), 'http://x/');
+        const { material } = group.getObjectByName('Tri');
+        assert.deepEqual(material.emissive.toArray(), enabled ? [1, 0, 0] : [0, 0, 0], on);
+        assert.equal(material.transparent, enabled, on);
+        assert.deepEqual(missing, enabled ? ['scene.nurec'] : [], on);
+    }
 });
 
 test('expandArcs copies internal and external reference targets', async () => {
@@ -260,4 +524,32 @@ test('triangulateTrisQuads matches three for triangles and quads, and leaves the
     assert.equal(triangulateTrisQuads([0, 1, 2, 3, 4], [5]), null);
     assert.equal(triangulateTrisQuads([0, 1, 2], [4]), null);
     assert.equal(triangulateTrisQuads([0, -1, 2], [3]), null);
+});
+
+test('unpack reads the MessagePack NuRec uses', () => {
+    const bytes = Uint8Array.from([0x83, 0xa1, 0x61, 0x93, 0x01, 0xff, 0xa1, 0x78, 0xa1, 0x62, 0xc4, 0x02, 0x05, 0x06, 0xa1, 0x63, 0xcb, 0x3f, 0xf8, 0, 0, 0, 0, 0, 0]);
+    const value = unpack(bytes);
+    assert.deepEqual(value.a, [1, -1, 'x']);
+    assert.deepEqual([...value.b], [5, 6]);
+    assert.equal(value.c, 1.5);
+});
+
+test('nurecPly copies raw 3DGUT parameters and regroups SH by channel', () => {
+    const half = values => new Uint8Array(Uint16Array.from(values, v => ({ 0: 0, 1: 0x3c00, 2: 0x4000, 3: 0x4200, 4: 0x4400, 5: 0x4500, 6: 0x4600, [-1]: 0xbc00 })[v]).buffer);
+    const tensor = (name, values, shape) => ({ [`.gaussians_nodes.gaussians.${name}`]: half(values), [`.gaussians_nodes.gaussians.${name}.shape`]: shape });
+    const ply = nurecPly({ nre_data: { state_dict: {
+        ...tensor('positions', [1, 2, 3], [1, 3]),
+        ...tensor('rotations', [0, 0, 0, 2], [1, 4]),
+        ...tensor('scales', [-1, -1, -1], [1, 3]),
+        ...tensor('densities', [2], [1, 1]),
+        ...tensor('features_albedo', [4, 5, 6], [1, 3]),
+        ...tensor('features_specular', [1, 2, 3, 4, 5, 6], [1, 6])
+    } } });
+    const header = readPlyHeader(ply);
+    assert.equal(header.headerLength % 4, 0);
+    const [row] = rows(ply);
+    assert.deepEqual([row.x, row.y, row.z, row.f_dc_0, row.f_dc_2], [1, 2, 3, 4, 6]);
+    assert.deepEqual([0, 1, 2, 3, 4, 5].map(i => row[`f_rest_${i}`]), [1, 4, 2, 5, 3, 6]);
+    assert.deepEqual([row.opacity, row.scale_0], [2, -1]);
+    assert.deepEqual([row.rot_0, row.rot_1, row.rot_2, row.rot_3], [0, 0, 0, 1]);
 });

@@ -27,7 +27,12 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 
 - three 0.187's `USDLoader` reads USDA / USDC / USDZ. `@needle-tools/usd` is non-commercial; TinyUSDZ 0.9.1 failed all five test files.
 - Composition (references, payloads, sublayers, variants) is done here, not by three: three stacked a whole H1 humanoid on every link (10.6 M faces instead of 0.39 M). Its crate-reader fixes override private methods, so three is pinned to an exact version.
-- Not supported: USDA `variantSet` blocks, MaterialX / MDL materials, PointInstancer, `specializes`, `inherits`, time-sampled visibility, `!resetXformStack!`.
+- MDL is not run: OmniPBR shaders (every sampled Isaac Sim robot) are mapped onto three's physical material by their constants and textures.
+- Legacy NuRec volumes (`omni:nurec:isNuRecVolume`, a gzipped MessagePack `.nurec` of float16 3DGUT tensors) are copied into a 3DGS PLY as stored, without converting their parameters (see `nurec.mjs`).
+- NuRec `zh_lounge` (1M Gaussians, SH degree 3, 118 MB `.nurec`) takes 37 s in headless Chrome on SwiftShader, but opens acceptably in VS Code on real hardware, and looks right once framed. Isaac's metallic (`metallic_constant = 1`) parts look dark without an environment map; accepted for now.
+- Composition matches `usdcat --flatten` on 50 hand-made and 391 random stages except: a cycle through a variant composes one level more, a variant selection authored only on a weaker reference is not applied, and a relationship to the referencing prim through an internal reference is kept where pxr drops it.
+- Variant fallbacks from plugin metadata are not known here: a variant set with no selection applies no variant; a selection authored inside another variant is not read.
+- Not supported: MaterialX and MDL shaders other than OmniPBR, PointInstancer, `specializes`, `inherits`, time-sampled visibility, `!resetXformStack!`, `omniverse://` paths.
 
 ## STEP
 
