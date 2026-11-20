@@ -394,7 +394,13 @@ function frame() {
 
 // Grid on the ground below the model (in the view's up frame), axes at the file's origin and the model's
 // bounds, from the Display menu. Double-click picking skips them, and framing uses the model's box.
+// A point cloud is a scan or map whose frame puts the ground at up = 0 (z = 0 for Z-up), and stray points
+// below the ground would drag a grid on the lowest point down, so its grid sits on that plane and starts shown.
+// Where the framed view does not see that plane from above under the cloud (altitude or UTM heights, a cloud
+// below 0 that the camera frames from the side), the grid keeps the lowest point instead.
 const helpers = {};
+let isCloud = false;
+let cloudGround = null;
 function gridHelper() {
     root.updateMatrixWorld(true);
     const box = localBox.clone().applyMatrix4(root.matrixWorld);
@@ -406,7 +412,7 @@ function gridHelper() {
     const divisions = 2 * Math.ceil(extent / cell / 2);
     // Mid greys stand out against both the light (white) and the dark (#505050) background.
     const grid = new THREE.GridHelper(cell * divisions, divisions, 0xa0a0a0, 0x8c8c8c);
-    grid.position.set(Math.round(center.x / cell) * cell, box.min.y, Math.round(center.z / cell) * cell);
+    grid.position.set(Math.round(center.x / cell) * cell, cloudGround ?? box.min.y, Math.round(center.z / cell) * cell);
     Object.assign(grid.material, { transparent: true, opacity: 0.85, depthWrite: false });
     return grid;
 }
@@ -428,9 +434,18 @@ function setHelper(kind, on) {
     document.querySelector(`[data-helper="${kind}"]`).classList.toggle('active', on);
 }
 
+// root only rotates about the origin, so the file's up = 0 is the scene's y = 0.
+function zeroPlaneInView() {
+    root.updateMatrixWorld(true);
+    camera.updateMatrixWorld();
+    const under = localBox.clone().applyMatrix4(root.matrixWorld).getCenter(new THREE.Vector3()).setY(0).project(camera);
+    return camera.position.y > 0 && Math.abs(under.x) <= 1 && Math.abs(under.y) <= 1 && under.z < 1;
+}
+
 function setUp(up) {
     root.rotation.set(...UP[up]);
     frame();
+    cloudGround = isCloud && zeroPlaneInView() ? 0 : null;
     if (helpers.grid) setHelper('grid', true);
 }
 
@@ -578,8 +593,10 @@ async function main() {
         const object = await load(info);
         const counted = show(object, info);
         const up = object.userData.up ?? '+Z';
+        isCloud = counted.points > 0 && !counted.faces;
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
+        if (isCloud) setHelper('grid', true);
     } catch (error) {
         // A page whose file changed keeps showing that it loads.
         if (!showError(error)) return;

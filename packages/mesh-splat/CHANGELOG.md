@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Point clouds open with the grid shown on their z = 0 plane (the up axis's zero), not under their lowest point; a cloud whose framed view does not show that plane keeps it under its lowest point.
+
 ## 0.4.0
 
 - Now listed as "Robot Preview: Gaussian Splat, Point Cloud, STEP & STL Viewer".

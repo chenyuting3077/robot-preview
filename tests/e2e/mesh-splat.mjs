@@ -252,6 +252,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 modes: visible(document.querySelector('[data-mode]')),
                 sizes: visible(document.querySelector('[data-size]')),
                 up: document.getElementById('up-select').value,
+                grid: document.querySelector('[data-helper="grid"]').classList.contains('active'),
                 shot: (() => {
                     const button = document.getElementById('screenshot-btn');
                     if (!visible(button)) return false;
@@ -264,7 +265,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
         const usdKind = ui.modes ? 'mesh' : 'splat';
         const kind = [[/\.usd/, usdKind], [/gauss/, 'splat'], [/BIG|cube|quad|square|mesh\.ply|\.gl(tf|b)$|\.dae$|\.(ste?p|ige?s)$/i, 'mesh']].find(([pattern]) => pattern.test(name))?.[1] ?? 'points';
         const expected = { mesh: [true, true, true], points: [true, false, true], splat: [true, false, false] }[kind];
-        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gl(tf|b)$|\.(ste?p|ige?s)$/i.test(name) ? '+Y' : '+Z') && ui.shot;
+        state.uiOk = ui.help && [ui.display, ui.modes, ui.sizes].every((v, i) => v === expected[i]) && ui.up === (/\.gl(tf|b)$|\.(ste?p|ige?s)$/i.test(name) ? '+Y' : '+Z') && ui.grid === (kind === 'points') && ui.shot;
         camera += ` ui ${JSON.stringify(ui)}`;
         // The saved picture shows the model, not a blank or black frame: some pixels differ from the corner.
         if (ui.shot) {
