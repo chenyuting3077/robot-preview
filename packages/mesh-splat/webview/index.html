@@ -63,6 +63,12 @@ canvas { display: block; }
 #help-panel td:first-child { color: var(--text-tertiary); }
 #help-panel td:last-child { color: var(--text-primary); }
 .display-menu-separator { height: 1px; margin: 2px 4px; background: var(--glass-border); }
+.size-row { display: flex; gap: 4px; }
+.size-row .control-button { flex: 1; justify-content: center; height: 24px; padding: 0; }
+.size-row i { border-radius: 50%; background: currentColor; }
+.size-row [data-size="1"] i { width: 3px; height: 3px; }
+.size-row [data-size="2"] i { width: 5px; height: 5px; }
+.size-row [data-size="4"] i { width: 8px; height: 8px; }
 #up-select { padding: 5px 24px 5px 12px; background-color: rgba(255, 255, 255, 0.08); border: none; border-radius: 12px; color: var(--text-primary); font: 11px inherit; font-family: inherit; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23aaaaaa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 7px center; }
 #up-select:hover, #up-select:focus { outline: none; background-color: rgba(255, 255, 255, 0.12); }
 [data-theme="dark"] #up-select option { background-color: #2a2a2a; color: var(--text-primary); }
@@ -91,9 +97,11 @@ canvas { display: block; }
       <button class="control-button" data-mode="wireframe" data-t="wireframe"></button>
       <button class="control-button" data-mode="points" data-t="points"></button>
       <div class="display-menu-separator" id="size-separator"></div>
-      <button class="control-button" data-size="1" data-t="pointSmall"></button>
-      <button class="control-button active" data-size="2" data-t="pointMedium"></button>
-      <button class="control-button" data-size="4" data-t="pointLarge"></button>
+      <div class="size-row" id="size-row">
+        <button class="control-button" data-size="1" data-title="pointSmall"><i></i></button>
+        <button class="control-button active" data-size="2" data-title="pointMedium"><i></i></button>
+        <button class="control-button" data-size="4" data-title="pointLarge"><i></i></button>
+      </div>
       <div class="display-menu-separator" id="color-separator"></div>
       <button class="control-button" data-color="rgb" data-t="colorRgb"></button>
       <button class="control-button" data-color="height" id="color-height" data-t="colorHeight"></button>

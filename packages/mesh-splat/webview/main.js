@@ -542,7 +542,7 @@ function captureScreenshot() {
 function setupUi(hasMesh, hasPoints, up) {
     // Splats have no display modes or point sizes; the grid, axes and bounds apply to everything.
     document.querySelectorAll('[data-mode], #size-separator').forEach(element => { element.hidden = !hasMesh; });
-    document.querySelectorAll('[data-size], #helper-separator').forEach(element => { element.hidden = !hasMesh && !hasPoints; });
+    document.querySelectorAll('#size-row, #helper-separator').forEach(element => { element.hidden = !hasMesh && !hasPoints; });
     document.querySelectorAll('[data-helper]').forEach(button => button.addEventListener('click', () => setHelper(button.dataset.helper, !helpers[button.dataset.helper])));
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
     document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => setPointSize(Number(button.dataset.size))));
@@ -586,6 +586,7 @@ async function main() {
     document.querySelectorAll('[data-t]').forEach(element => {
         (element.querySelector('span') ?? element).textContent = t(element.dataset.t);
     });
+    document.querySelectorAll('[data-title]').forEach(element => { element.title = element.ariaLabel = t(element.dataset.title); });
     const info = {};
     try {
         const load = LOADERS[ext];
