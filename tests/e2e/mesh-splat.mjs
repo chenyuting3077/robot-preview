@@ -174,7 +174,6 @@ await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsC
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
 const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];
-// STEP files open twice: tessellated first, then from the cache the first open handed to the extension.
 // CAD files (STEP, IGES) open twice: tessellated first, then from the cache the first open handed to the extension.
 const CAD = /\.(ste?p|ige?s)$/i;
 for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
