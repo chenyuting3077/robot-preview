@@ -3,11 +3,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { copyFixture, loadExtension, sleep } from '../extension/vscode-mock.mjs';
+import { fileURLToPath } from 'node:url';
+import { copyFixture, loadExtension, sleep, chromePath } from '../extension/vscode-mock.mjs';
 import { createPathMatrix } from '../extension/path-fixture.mjs';
 
-const dist = new URL('../../packages/urdf-mjcf/dist/', import.meta.url).pathname;
-const chromeBinary = process.env.CHROME || 'google-chrome';
+const dist = fileURLToPath(new URL('../../packages/urdf-mjcf/dist/', import.meta.url));
+const chromeBinary = chromePath();
 const results = [];
 const check = (name, ok, detail = '') => {
     results.push(ok);
@@ -33,7 +34,7 @@ async function captureMessages() {
 // ur_description has no meshes in the fixture; the check is that load_yaml and
 // the patched xacro-parser work in the bundled webview, not only in Node.
 function urFixture() {
-    const dir = new URL('../fixtures/xacro/ur_description/', import.meta.url).pathname;
+    const dir = fileURLToPath(new URL('../fixtures/xacro/ur_description/', import.meta.url));
     const files = fs.readdirSync(dir, { recursive: true })
         .filter(rel => fs.statSync(path.join(dir, rel)).isFile())
         .map(rel => ({ path: `/ur_description/${rel.split(path.sep).join('/')}`, data: fs.readFileSync(path.join(dir, rel)) }));

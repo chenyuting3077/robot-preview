@@ -6,9 +6,10 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadExtension, fakePanel } from '../extension/vscode-mock.mjs';
+import { fileURLToPath } from 'node:url';
+import { loadExtension, fakePanel, webviewFile } from '../extension/vscode-mock.mjs';
 
-const packages = new URL('../../packages/', import.meta.url).pathname;
+const packages = fileURLToPath(new URL('../../packages/', import.meta.url));
 const required = { 'mesh-splat': ['dist/foxtrot_bg.wasm', 'dist/occt-import-js.wasm', 'dist/step-load.js', 'dist/spark.module.js'], usd: ['dist/usd.js', 'dist/stage.js', 'dist/spark.module.js'], 'urdf-mjcf': [] };
 // Strings found only in code that main.js must import lazily: Spark (2.4 MB) and the STEP loader.
 // ponytail: a renamed class or reworded error message makes its check pass silently; pick a new marker then.
@@ -21,7 +22,7 @@ const check = (ok, what) => {
 
 for (const name of Object.keys(required)) {
     const source = path.join(packages, name);
-    const files = execFileSync('npx', ['--yes', '-p', 'node@20', '-p', '@vscode/vsce@3', 'vsce', 'ls', '--no-dependencies'], { cwd: source, encoding: 'utf8' })
+    const files = execFileSync('npx', ['--yes', '-p', 'node@20', '-p', '@vscode/vsce@3', 'vsce', 'ls', '--no-dependencies'], { cwd: source, encoding: 'utf8', shell: process.platform === 'win32' })
         .split('\n').filter(Boolean);
     const root = fs.mkdtempSync(path.join(os.tmpdir(), `packaged-${name}-`));
     for (const file of files) {
@@ -53,7 +54,8 @@ for (const name of Object.keys(required)) {
             check(false, `${name} ${viewType} renders: ${error.message}`);
             continue;
         }
-        const base = panel.webview.html.match(/<base href="([^"]+)"/)?.[1];
+        const href = panel.webview.html.match(/<base href="([^"]+)"/)?.[1];
+        const base = href && webviewFile(href);
         const scripts = [...panel.webview.html.matchAll(/<script[^>]* src="([^"]+)"/g)].map(match => path.join(base, match[1]));
         check(scripts.length > 0 && scripts.every(file => fs.existsSync(file)), `${name} ${viewType} renders with its scripts`);
     }

@@ -33,7 +33,9 @@ before(async () => {
 });
 
 const sent = key => load.files.some(file => file.path === key);
-const abs = rel => path.join(root, rel);
+// The extension keys a file outside every package by its absolute path, written /C:/... on Windows.
+const fileKey = fsPath => '/' + fsPath.split(path.sep).join('/').replace(/^\/+/, '');
+const abs = rel => fileKey(path.join(root, rel));
 
 const ROWS = [
     ['package:// inside the opened package', () => '/pkg/meshes/a.stl'],
@@ -240,7 +242,7 @@ test('a relative mesh in an included file resolves from the opened file, as the 
     const primary = path.join(ws, 'src/pkg/urdf/robot.urdf.xacro');
     write(primary, '<robot name="r" xmlns:xacro="http://www.ros.org/wiki/xacro"><xacro:include filename="inc/arm.xacro"/></robot>');
     const { env, load } = await startIn(ws, primary, {});
-    assert.ok(load.files.some(file => file.path === path.join(ws, 'src/assets/a.stl')), load.files.map(file => file.path).join(', '));
+    assert.ok(load.files.some(file => file.path === fileKey(path.join(ws, 'src/assets/a.stl'))), load.files.map(file => file.path).join(', '));
     env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: ['/pkg/urdf/../../assets/gone.stl'], guessedMeshes: [] });
     const [diagnostic] = await waitFor(() => env.state.diagnostics.get(arm)?.length && env.state.diagnostics.get(arm));
     assert.equal(diagnostic.range.start.line, 2);
@@ -312,15 +314,19 @@ test('packages setting paths accept ${workspaceFolder:name} and ~', async () => 
     const { ws, primary } = packageSettingWorkspace();
     const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-home-')));
     write(path.join(home, 'robots/env_pkg/meshes/e.stl'));
-    const savedHome = process.env.HOME;
-    process.env.HOME = home;
+    // os.homedir() reads USERPROFILE on Windows.
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    Object.assign(process.env, { HOME: home, USERPROFILE: home });
     try {
         const { load } = await startIn(ws, primary, { packages: { dup: `\${workspaceFolder:${path.basename(ws)}}/vendor/dup`, env_pkg: '~/robots/env_pkg' } });
         const keys = load.files.map(file => file.path);
         assert.ok(keys.includes('/dup/meshes/from_setting.stl'), keys.join(', '));
         assert.ok(keys.includes('/env_pkg/meshes/e.stl'), keys.join(', '));
     } finally {
-        process.env.HOME = savedHome;
+        for (const [name, value] of Object.entries(saved)) {
+            if (value === undefined) delete process.env[name];
+            else process.env[name] = value;
+        }
     }
 });
 
