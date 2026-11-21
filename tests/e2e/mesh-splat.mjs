@@ -926,22 +926,20 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(slowDir, { recursive: true, force: true });
 }
 
-// A 200 m cloud added to a 10 cm one: the view kept over the add (its far plane set for 10 cm) still shows it.
+// A 200 m cloud added to a 10 cm one: the view kept over the add (its far plane set for 10 cm) still shows it, and
+// still does once hidden, framed without it (F) and shown again. A cloud 12 km off must not clip the part either.
 {
     const farDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-far-'));
-    const disk = (radius, z, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = radius * Math.sqrt(i / 3000), a = i * 2.399; return `${r * Math.cos(a)} ${r * Math.sin(a)} ${z} ${rgb}`; }).join('\n');
+    const disk = (radius, x, z, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = radius * Math.sqrt(i / 3000), a = i * 2.399; return `${x + r * Math.cos(a)} ${r * Math.sin(a)} ${z} ${rgb}`; }).join('\n');
     const small = path.join(farDir, 'small.xyz');
     const big = path.join(farDir, 'big.xyz');
-    fs.writeFileSync(small, disk(0.05, 0, '255 0 0'));
-    fs.writeFileSync(big, disk(100, -30, '255 0 255'));
+    const distant = path.join(farDir, 'distant.xyz');
+    fs.writeFileSync(small, disk(0.05, 0, 0, '255 0 0'));
+    fs.writeFileSync(big, disk(100, 0, -30, '255 0 255'));
+    fs.writeFileSync(distant, disk(100, 12000, 0, '255 0 255'));
     await htmlFor(small);
     const panel = panels.get('small.xyz');
-    const look = async key => {
-        pages.set(`/page/${key}`, panel.webview.html.replaceAll('vscode-webview:', "'self'"));
-        await send('Page.navigate', { url: `${origin}/page/${key}` });
-        for (let i = 0; i < 150 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
-        await evaluate("document.querySelectorAll('#top-control-bar, #stage-bar, #stage-panel, #color-legend').forEach(e => { e.style.visibility = 'hidden'; })");
-        await sleep(800);
+    const shoot = async () => {
         const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 900, height: 600, scale: 0.5 } })).data;
         return evaluate(`(async () => {
             const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
@@ -955,13 +953,39 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             return { red, magenta };
         })()`);
     };
+    const look = async (key, html = panel.webview.html) => {
+        pages.set(`/page/${key}`, html.replaceAll('vscode-webview:', "'self'"));
+        await send('Page.navigate', { url: `${origin}/page/${key}` });
+        for (let i = 0; i < 150 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+        await evaluate("document.querySelectorAll('#top-control-bar, #stage-bar, #stage-panel, #color-legend').forEach(e => { e.style.visibility = 'hidden'; })");
+        await sleep(800);
+        return shoot();
+    };
+    const eye = row => evaluate(`document.querySelectorAll('#stage-panel .prim-row')[${row}].querySelector('.prim-eye').click()`);
     await evaluate('sessionStorage.clear()');
     const alone = await look('far-alone');
     await panel.listener({ type: 'addPaths', uris: [pathToFileURL(big).href] });
     const added = await look('far-added');
-    const ok = alone.red > 50 && added.red > 50 && added.magenta > 50;
+    await eye(1);
+    await sleep(300);
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'f', code: 'KeyF', text: 'f' });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'f', code: 'KeyF' });
+    await sleep(500);
+    await eye(1);
+    await sleep(800);
+    const reshown = await shoot();
+    const ok = alone.red > 50 && added.red > 50 && added.magenta > 50 && reshown.magenta > 50;
     results.push(ok);
-    console.log(`${ok ? 'PASS' : 'FAIL'} small.xyz + big.xyz, far plane after the add: alone red ${alone.red}, added red ${added.red} magenta ${added.magenta}`);
+    console.log(`${ok ? 'PASS' : 'FAIL'} small.xyz + big.xyz, far plane after the add: alone red ${alone.red}, added red ${added.red} magenta ${added.magenta}; hidden, F, shown magenta ${reshown.magenta}`);
+    await htmlFor(small);
+    const second = panels.get('small.xyz');
+    await evaluate('sessionStorage.clear()');
+    const alone2 = await look('far-alone2', second.webview.html);
+    await second.listener({ type: 'addPaths', uris: [pathToFileURL(distant).href] });
+    const far = await look('far-distant', second.webview.html);
+    const okFar = far.red > alone2.red * 0.95;
+    results.push(okFar);
+    console.log(`${okFar ? 'PASS' : 'FAIL'} small.xyz + distant.xyz 12 km off: part red ${alone2.red} alone, ${far.red} after the add`);
     fs.rmSync(farDir, { recursive: true, force: true });
 }
 

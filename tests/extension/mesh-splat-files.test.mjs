@@ -528,6 +528,22 @@ test('a deleted added file re-renders the view with that file shown missing', as
     assert.match(panel.webview.html, /data-keep="1"/);
 });
 
+test('an added file deleted and later written again comes back with the view kept', async () => {
+    const { env, panel, at, url } = await open({ 'map.pgm': 'P5', 'scan.pcd': 'scan' });
+    await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
+    const watcher = env.state.watchers.find(({ pattern }) => pattern.pattern === 'scan.pcd');
+    fs.rmSync(at('scan.pcd'));
+    await watcher.delete({ fsPath: at('scan.pcd') });
+    fs.writeFileSync(at('scan.pcd'), 'new scan');
+    await watcher.create({ fsPath: at('scan.pcd') });
+    assert.deepEqual(listed(panel).map(file => [file.name, !!file.missing]), [['map.pgm', false], ['scan.pcd', false]]);
+    assert.match(panel.webview.html, /data-keep="1"/, 'the page shown missing is replaced, not the view reset');
+    // A change to the file once back resets the view as before.
+    fs.writeFileSync(at('scan.pcd'), 'changed scan');
+    await watcher.change({ fsPath: at('scan.pcd') });
+    assert.match(panel.webview.html, /data-keep=""/);
+});
+
 test('a delete event for an added file that is already back (a rename-style save) does not re-render', async () => {
     const { env, panel, at, url } = await open({ 'map.pgm': 'P5', 'scan.pcd': 'scan' });
     await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });

@@ -196,6 +196,7 @@ function activate(context) {
                 // The old page goes without saying its reads are done; their handles would stay open until the tab
                 // closes. Its read ids restart at 1 on the new page, so a reply to it must not reach the new one: each
                 // page gets fresh readers, and reads naming another render are dropped.
+                files.forEach((file, i) => { file.shownMissing = !stats[i]; });
                 for (const file of files) startReader(file);
                 pageRender = String(turn);
                 // Roots and page change together: roots changed first might reload the old page before the new
@@ -226,13 +227,17 @@ function activate(context) {
             const add = uri => {
                 const id = String(nextId++);
                 const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.joinPath(uri, '..'), globSafe(path.basename(uri.path))));
-                const changed = event => event && samePath(event.fsPath, uri.fsPath) && render();
+                const file = { id, uri, watcher, reader: null };
+                // A file shown missing that is written again comes back like an added one, the view kept: a tool that
+                // deletes a scan and writes it later would otherwise reset the view it kept over the delete.
+                const changed = event => event && samePath(event.fsPath, uri.fsPath) && render(Boolean(file.shownMissing));
                 // Editors that save by writing a new file and renaming it over the old one fire create, not change.
                 watcher.onDidChange(changed);
                 watcher.onDidCreate(changed);
-                // An added file that is deleted shows as missing, the view kept as for a removed one.
+                // An added file that is deleted shows as missing, the view kept as for a removed one. That page is
+                // rendered by the extension, so it takes the view the page last saved, up to 300 ms old while the
+                // camera moves (saveSoon in webview/main.js); an add or remove from the page saves first.
                 const opened = !files.length;
-                const file = { id, uri, watcher, reader: null };
                 watcher.onDidDelete(event => event && samePath(event.fsPath, uri.fsPath) && (opened ? openedDeleted() : addedDeleted(file)));
                 startReader(file);
                 files.push(file);

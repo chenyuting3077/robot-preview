@@ -35,7 +35,9 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 
 ## Several files in one view
 
+- Each file is a Stage row that shows, hides, colors (one solid color per file among the modes) or removes it.
 - Adding or removing a file re-renders the page: the list must outlive a reload, and a page can fetch only from the roots the extension sets. The view a page leaves reaches the next through the webview state; that this state outlives `webview.html` being set again is how VS Code's webview host is written, not yet checked in a real window (the e2e harness keeps it in `sessionStorage`). A changed file still resets the view (reloading one file in place is the follow-up if that gets annoying). The roots change in the same step as the page, in case VS Code reloads the old page when they change (not checked in a real window either); reads and image requests from an old page are dropped either way.
+- A file deleted on disk stays listed as not found, the view kept; written again, it comes back the same way. That page is rendered by the extension, not asked for by the page, so it takes the view the page last saved, up to 300 ms old while the camera moves.
 - A drag from the Explorer does not reach the view on macOS, Shift or not. VS Code (1.147) turns a webview's pointer events off when a workbench drag starts and back on only while its `drag` / `dragover` events report Shift held; on macOS they report it up, so a test page logged `dragenter` with Shift and `dragleave` in the same millisecond, and the drop opened the file in a tab. Windows and Linux are not checked. *Add file…* and the Explorer's *Add to Point Cloud View* (several files at once) are the ways in; the page's drop handler stays for where a drop does arrive. The Explorer entry goes to the view used last; with none open, its first file opens one.
 - Height and field ranges count hidden files too, so hiding a file does not recolor the others. The legend shows the Display menu's last mode while a cloud uses it, else the first ranged mode in file order.
 - Solid colors are Tableau 10, reordered so the first two files (a map and a scan) are orange and blue: apart from each other, from turbo's middle and from both backgrounds.
@@ -79,6 +81,7 @@ foxtrot (Rust, patched) tessellates; OpenCascade (`occt-import-js`, rebuilt at `
 
 ## Occupancy grid maps
 
+- A `.pgm` opens as a map with the same-named `.yaml` beside it, else as a greyscale image. A `.yaml` / `.yml` opens through *Reopen Editor With…* and may name a PGM or PNG image.
 - Cells follow Nav2 Jazzy's `map_io.cpp` (8-bit grey, float32 thresholds, any alpha below 255 unknown in `trinary` and `scale`, `raw` ignoring `negate`). Humble and ROS 1 differ at the edges: strict threshold comparisons, `rint` in `scale`, and in `trinary` alpha averaged into the grey instead of making the cell unknown.
 - `occupied_thresh` / `free_thresh` missing from the YAML (Nav2 requires them) default to 0.65 / 0.196, the values most maps carry: with Nav2 map_saver's own default free 0.25, map_saver's unknown grey 205 (occ 0.19608) reads as free.
 - Colors are RViz's Map display `map` scheme (`palette_builder.cpp`), opaque; RViz draws the map at alpha 0.7 by default.

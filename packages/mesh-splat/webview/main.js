@@ -790,6 +790,24 @@ function frame() {
     controls.update();
 }
 
+// A camera kept over an added file, or one framed while a file was hidden, has planes set for other files: a
+// 200 m map added to a 10 cm part lay past a far of 15 m. Far takes in every loaded file, hidden ones too, so
+// showing one again cannot leave it past far. Near rises with far toward frame()'s 1:1e5 (a map's faces z-fight
+// past that), but never past a tenth of the way to the target: a cloud 12 km off pushed near to 13 cm and cut
+// the part being looked at. Past 1:1e6 one depth range cannot hold both, and the view is framed afresh.
+function coverFiles() {
+    const box = viewBox();
+    for (const file of files) if (file.box) box.union(file.box.clone().applyMatrix4(root.matrixWorld));
+    if (box.isEmpty()) return;
+    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
+    const far = Math.max(camera.far, ...corners.map(corner => corner.distanceTo(camera.position) * 1.1));
+    if (far === camera.far) return;
+    const near = Math.max(camera.near, Math.min(far / 1e5, camera.position.distanceTo(controls.target) / 10));
+    if (far / near > 1e6) return frame();
+    Object.assign(camera, { near, far });
+    camera.updateProjectionMatrix();
+}
+
 // A point cloud is a scan or map whose frame puts the ground at up = 0 (z = 0 for Z-up); stray points below the
 // ground would drag a grid on the lowest point down. Its origin is the sensor's or the map's, worth showing even a
 // few metres off the cloud (a wall scanned from 10 m); only past camera.far (UTM coordinates) can the axes not be
@@ -1150,6 +1168,7 @@ function updateBox() {
 function refit() {
     updateBox();
     cloudGround = isCloud && nearZeroPlane() ? 0 : null;
+    coverFiles();
     for (const kind of Object.keys(helpers)) if (helpers[kind]) setHelper(kind, true);
     wake();
 }
@@ -1292,17 +1311,12 @@ async function setupView(shown) {
     setUp(up);
     if (kept?.camera) {
         const [x, y, z, tx, ty, tz, near, far] = kept.camera;
+        Object.assign(camera, { near, far });
         camera.position.set(x, y, z);
-        // The kept planes were set for the files before: a 200 m map added to a 10 cm part lay past a far of 15 m.
-        // Near follows at frame()'s 1:1e5, the depth range frame() gives any file: wider, a map's faces z-fight.
-        const box = viewBox();
-        const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
-        const farthest = box.isEmpty() ? 0 : Math.max(...corners.map(corner => corner.distanceTo(camera.position)));
-        const wide = Math.max(far, farthest * 1.1);
-        Object.assign(camera, { near: Math.max(near, wide / 1e5), far: wide });
         camera.updateProjectionMatrix();
         controls.target.set(tx, ty, tz);
         controls.update();
+        coverFiles();
     }
     // The view kept over an added or removed file wins over the helpers last left for this kind of model.
     // A cloud's axes are held back (still kept as on) while its origin is past camera.far.
