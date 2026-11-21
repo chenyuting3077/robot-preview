@@ -142,10 +142,12 @@ export class PanelManager {
         this.render(state, false);
     }
 
+    // Shown place, intended size: a panel shrunk to fit a small view keeps the
+    // size to grow back to when it is only moved.
     startRect(state) {
         if (hasRect(state.layout)) {
             this.render(state, false);
-            return placement(state.layout);
+            return { ...placement(state.layout), width: state.layout.width, height: state.layout.height };
         }
         return this.still(state, () => {
             const style = getComputedStyle(state.panel);
@@ -153,8 +155,10 @@ export class PanelManager {
         });
     }
 
-    changed(state) {
-        this.onLayoutChange?.(state.id, { ...state.layout });
+    // A maximize toggle sends only the flag: this window's rect may be older than
+    // one another window saved since, and only a real move or resize replaces it.
+    changed(state, layout = state.layout) {
+        this.onLayoutChange?.(state.id, { ...layout });
     }
 
     // Two levels only, so panels never climb over the toolbar (100) and menus.
@@ -221,7 +225,9 @@ export class PanelManager {
             e.stopPropagation();
             this.startGesture(state);
             this.adopt(state);
-            resizing = { edge, x: e.clientX, y: e.clientY, ...this.startRect(state), last: e };
+            this.startRect(state);
+            // A resize starts from what is shown, even if the view shrank the panel.
+            resizing = { edge, x: e.clientX, y: e.clientY, ...placement(state.layout), last: e };
             showCursor(edge);
             document.documentElement.style.cursor = CURSORS[edge];
             document.addEventListener('mousemove', resize);
@@ -281,10 +287,7 @@ export class PanelManager {
             this.render(state, false);
             document.removeEventListener('mousemove', resize);
             document.removeEventListener('mouseup', stopResize);
-            // The click that follows a resize ending on the panel is not a click on the graph.
-            const swallow = event => event.stopPropagation();
-            window.addEventListener('click', swallow, true);
-            setTimeout(() => window.removeEventListener('click', swallow, true));
+            this.modelGraphView?.ignoreNextClick();
             this.changed(state);
         };
 
@@ -340,9 +343,10 @@ export class PanelManager {
             header.style.cursor = '';
             if (this.preview) this.preview.style.display = 'none';
             const size = { width: Math.round(width), height: Math.round(height) };
+            const shown = placement({ left, top, ...size });
             state.layout = zone
                 ? { left, top, ...size, dock: zone, undocked: size, maximized: false }
-                : { ...placement({ left, top, ...size }), dock: null, maximized: false };
+                : { left: shown.left, top: shown.top, ...size, dock: null, maximized: false };
             this.render(state);
             this.changed(state);
         };
@@ -363,7 +367,7 @@ export class PanelManager {
                 const maximize = !state.panel.classList.contains('maximized');
                 state.layout = { ...state.layout, maximized: maximize };
                 this.showMaximized(state);
-                this.changed(state);
+                this.changed(state, { maximized: maximize });
 
                 // After the panel's 0.4 s transition, so the graph fits the final size.
                 // While a fit or restore is pending the view is in between, not the user's.

@@ -287,6 +287,9 @@ async function floatingPanels() {
     g = await graph();
     check('maximize then restore gives back the panel and its view', max.width > r.width && ['left', 'top', 'width', 'height'].every(k => near(after[k], r[k])) && near(g.k, beforeMax.k, 1e-3) && near(g.centre[0], beforeMax.centre[0], 1), JSON.stringify({ r, max, after, beforeMax, g }));
 
+    const toggled = await ev(`return window.__out.filter(m => m.type === 'panelLayout' && m.id === '${TREE}').slice(-2).map(m => m.layout)`);
+    check('maximize and restore save only the flag, never this window\'s copy of the rect', JSON.stringify(toggled) === '[{"maximized":true},{"maximized":false}]', JSON.stringify(toggled));
+
     // Maximized again while the graph animates back to its view (450 ms + 600 ms after restore).
     await ev(maximizeButton(TREE));
     await sleep(1300);
@@ -464,7 +467,11 @@ async function floatingPanels() {
     v = await view();
     after = await rectOf(TREE);
     check('a panel saved in a bigger view opens inside a smaller one, shrunk to fit', after.left >= 0 && after.top >= 0 && after.right <= v.width && after.bottom <= v.height && near(after.width, tree.width) && near(after.height, v.height - v.toolbar - 2 * MARGIN), JSON.stringify({ after, v }));
+    await drag(header(after), { x: header(after).x - 60, y: header(after).y + 10 });
     await send('Emulation.clearDeviceMetricsOverride');
+    await sleep(500);
+    after = await rectOf(TREE);
+    check('a panel moved while shrunk to fit grows back when the view does', near(after.height, tree.height) && near(after.width, tree.width), JSON.stringify({ tree, after }));
 }
 
 try {

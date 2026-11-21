@@ -66,6 +66,8 @@ Pitfalls of building and publishing it: issues #1 and #5.
 
 - The CSP keeps `'unsafe-eval'`: mujoco-js builds its bindings with `new Function`.
 - USD stays in its own extension: the removed USD viewer needed `SharedArrayBuffer`, which VS Code webviews cannot isolate for.
+- Resizing the kinematic tree panel within about 1 s of restoring it from maximized (0.45 s wait, then a 0.6 s graph animation) can leave the graph view part-way to the restored one.
+- A model update that redraws the tree graph during one of its animations keeps the mid-animation zoom.
 
 ## Tests
 

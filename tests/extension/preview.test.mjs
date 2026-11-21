@@ -185,7 +185,11 @@ test('the floating panels open where the last previews left them, each panel fro
     // A second window: another extension host on the same global state.
     const other = await start();
     other.state.globalState = env.state.globalState;
+    const stale = { left: 900, top: 200, width: 300, height: 300, dock: null, maximized: false };
     const tree = { left: 20, top: 98, width: 360, height: 695, dock: 'left', undocked: { width: 360, height: 440 }, maximized: false };
+    // The other window loaded `stale`; this one then docks the tree panel.
+    other.panel.receive({ type: 'panelLayout', id: 'floating-model-tree', layout: stale });
+    await sleep(20);
     const joints = { left: 600, top: 300, width: 420, height: 380, dock: null, maximized: true };
     env.panel.receive({ type: 'panelLayout', id: 'floating-model-tree', layout: tree });
     await sleep(20);

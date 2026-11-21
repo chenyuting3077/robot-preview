@@ -162,6 +162,7 @@ export class ModelGraphView {
 
         // Add click handler for container (handle blank area clicks within container)
         container.on('click', (event) => {
+            if (this.ignoringClick) return;
             const target = event.target;
             const tagName = target.tagName.toLowerCase();
 
@@ -684,7 +685,7 @@ export class ModelGraphView {
             }
 
             // Check if click is within panel
-            if (!floatingPanel.contains(event.target)) {
+            if (!floatingPanel.contains(event.target) || this.ignoringClick) {
                 return; // Click outside panel, don't process
             }
 
@@ -813,6 +814,12 @@ export class ModelGraphView {
         } catch (error) {
             console.error('fitToView failed:', error);
         }
+    }
+
+    // The click that follows a resize ending over the panel is not a click on the graph.
+    ignoreNextClick() {
+        this.ignoringClick = true;
+        setTimeout(() => { this.ignoringClick = false; });
     }
 
     panBy(dx, dy) {
