@@ -165,6 +165,172 @@ const server = await serve(messages);
 const page = await connect(server.address().port);
 const { send, ev, waitFor, finalDiagnostics } = page;
 
+// Real pointer events through CDP, so the panel's own hit testing and d3-zoom's
+// listeners on the graph both see them, as with a mouse.
+async function floatingPanels() {
+    const TREE = 'floating-model-tree', JOINTS = 'floating-joints-panel', MARGIN = 20;
+    const mouse = (type, x, y, pressed) => send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' && !pressed ? 'none' : 'left', buttons: pressed ? 1 : 0, clickCount: 1 });
+    const drag = async (from, to, { release = true, steps = 6 } = {}) => {
+        if (from) {
+            await mouse('mouseMoved', from.x, from.y);
+            await mouse('mousePressed', from.x, from.y, true);
+            drag.last = from;
+        }
+        for (let i = 1; i <= steps; i++) {
+            await mouse('mouseMoved', drag.last.x + (to.x - drag.last.x) * i / steps, drag.last.y + (to.y - drag.last.y) * i / steps, true);
+            await sleep(30);
+        }
+        drag.last = to;
+        if (release) {
+            await mouse('mouseReleased', to.x, to.y);
+            await sleep(600);
+        }
+    };
+    const rectOf = id => ev(`const r = document.getElementById('${id}').getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }`);
+    const near = (a, b, tolerance = 1.5) => Math.abs(a - b) <= tolerance;
+    const view = () => ev(`return { width: innerWidth, height: innerHeight, toolbar: document.getElementById('top-control-bar').getBoundingClientRect().bottom }`);
+    const header = r => ({ x: r.left + 50, y: r.top + 20 });
+    const midLeft = r => ({ x: r.left + 4, y: (r.top + r.bottom) / 2 });
+    const midRight = r => ({ x: r.right - 4, y: (r.top + r.bottom) / 2 });
+    const midTop = r => ({ x: (r.left + r.right) / 2, y: r.top + 3 });
+    const midBottom = r => ({ x: (r.left + r.right) / 2, y: r.bottom - 4 });
+    const graph = () => ev(`const svg = document.getElementById('model-graph-svg'), s = svg.getBoundingClientRect(), g = svg.querySelector('.zoom-container').getBoundingClientRect(), t = d3.zoomTransform(svg);
+        return { dx: (g.left + g.right - s.left - s.right) / 2, dy: (g.top + g.bottom - s.top - s.bottom) / 2, inside: g.left >= s.left - 1 && g.right <= s.right + 1 && g.top >= s.top - 1 && g.bottom <= s.bottom + 1, k: t.k, centre: t.invert([s.width / 2, s.height / 2]) }`);
+    const centred = g => near(g.dx, 0, 3) && near(g.dy, 0, 3) && g.inside;
+    const preview = () => ev(`const p = document.querySelector('.panel-snap-preview'); if (!p || getComputedStyle(p).display === 'none') return null; const r = p.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }`);
+    const cursorAt = ({ x, y }) => ev(`return getComputedStyle(document.elementFromPoint(${x}, ${y})).cursor`);
+
+    await ev(`await window.__send('load')`);
+    await waitFor(`window.app.currentModel?.links?.has('left_arm')`, 10000);
+    await ev(`if (!document.getElementById('toggle-model-tree').classList.contains('active')) document.getElementById('toggle-model-tree').click()`);
+    await sleep(800);
+
+    let r = await rectOf(TREE);
+    await drag(midRight(r), { x: r.right - 64, y: midRight(r).y });
+    let after = await rectOf(TREE);
+    check('the tree panel resizes from its right border, also beside the graph', near(after.width, r.width - 60) && near(after.left, r.left), JSON.stringify({ r, after }));
+
+    r = after;
+    await drag(midLeft(r), { x: r.left - 146, y: midLeft(r).y });
+    after = await rectOf(TREE);
+    let g = await graph();
+    check('an untouched graph refits as the panel grows', near(after.width, r.width + 150) && centred(g), JSON.stringify({ r, after, g }));
+
+    r = after;
+    await drag(midBottom(r), { x: midBottom(r).x, y: r.bottom + 76 });
+    after = await rectOf(TREE);
+    check('the tree panel resizes from its bottom border', near(after.height, r.height + 80) && near(after.top, r.top), JSON.stringify({ r, after }));
+
+    r = after;
+    await drag(midLeft(r), { x: r.right - 100, y: midLeft(r).y });
+    after = await rectOf(TREE);
+    check('shrinking from the left border stops at the minimum width with the right edge fixed', near(after.width, 280) && near(after.right, r.right), JSON.stringify({ r, after }));
+    g = await graph();
+    check('an untouched graph refits as the panel shrinks', centred(g), JSON.stringify(g));
+
+    r = after;
+    await mouse('mouseMoved', midTop(r).x, midTop(r).y);
+    const topCursor = await cursorAt(midTop(r));
+    await drag(midTop(r), { x: midTop(r).x, y: r.top - 57 });
+    after = await rectOf(TREE);
+    check('the top border shows the resize cursor and resizes, also over the header', topCursor === 'ns-resize' && near(after.top, r.top - 60) && near(after.bottom, r.bottom), JSON.stringify({ topCursor, r, after }));
+
+    r = after;
+    await mouse('mouseMoved', (r.left + r.right) / 2, (r.top + r.bottom) / 2 + 20);
+    await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2 + 20, deltaX: 0, deltaY: -300 });
+    await sleep(300);
+    const zoomed = await graph();
+    await drag(midLeft(r), { x: r.left - 96, y: midLeft(r).y });
+    g = await graph();
+    check('a zoomed graph keeps its scale and the point at its centre as the panel resizes', near(g.k, zoomed.k, 1e-6) && near(g.centre[0], zoomed.centre[0], 1) && near(g.centre[1], zoomed.centre[1], 1) && !centred(zoomed), JSON.stringify({ zoomed, g }));
+
+    r = await rectOf(TREE);
+    const beforeMax = await graph();
+    await ev(`document.querySelector('.panel-maximize-btn[data-panel-id=${TREE}]').click()`);
+    await sleep(1300);
+    const max = await rectOf(TREE);
+    await ev(`document.querySelector('.panel-maximize-btn[data-panel-id=${TREE}]').click()`);
+    await sleep(1300);
+    after = await rectOf(TREE);
+    g = await graph();
+    check('maximize then restore gives back the panel and its view', max.width > r.width && ['left', 'top', 'width', 'height'].every(k => near(after[k], r[k])) && near(g.k, beforeMax.k, 1e-3) && near(g.centre[0], beforeMax.centre[0], 1), JSON.stringify({ r, max, after, beforeMax, g }));
+
+    r = await rectOf(JOINTS);
+    await drag(midLeft(r), { x: r.right - 100, y: midLeft(r).y });
+    after = await rectOf(JOINTS);
+    check('the joints panel shrinks from the left border to the minimum with the right edge fixed', near(after.width, 280) && near(after.right, r.right), JSON.stringify({ r, after }));
+    r = after;
+    await drag(midTop(r), { x: midTop(r).x, y: r.top - 57 });
+    after = await rectOf(JOINTS);
+    check('the joints panel resizes from its top border', near(after.top, r.top - 60) && near(after.bottom, r.bottom), JSON.stringify({ r, after }));
+
+    // Snapping by dragging the header.
+    let v = await view();
+    r = await rectOf(TREE);
+    await drag(header(r), { x: 6, y: 420 }, { release: false });
+    const dockPreview = await preview();
+    await drag(null, { x: 5, y: 420 });
+    after = await rectOf(TREE);
+    check('dragging to the left edge previews the dock', dockPreview && near(dockPreview.left, MARGIN) && near(dockPreview.top, v.toolbar + MARGIN) && near(dockPreview.height, v.height - v.toolbar - 2 * MARGIN), JSON.stringify(dockPreview));
+    check('releasing at the left edge docks the panel at full height, width kept', near(after.left, MARGIN) && near(after.top, v.toolbar + MARGIN) && near(after.height, v.height - v.toolbar - 2 * MARGIN) && near(after.width, r.width), JSON.stringify({ r, after, v }));
+
+    const docked = after;
+    await drag(header(docked), { x: v.width - 4, y: 400 }, { release: false });
+    const rightPreview = await preview();
+    await drag(null, { x: 700, y: 300 }, { release: false });
+    const leftZone = await preview();
+    await drag(null, { x: 700, y: 302 });
+    after = await rectOf(TREE);
+    check('the preview follows the snap zone and hides outside it', !!rightPreview && near(rightPreview.right, v.width - MARGIN) && leftZone === null, JSON.stringify({ rightPreview, leftZone }));
+    check('a docked panel dragged away gets its size from before docking', near(docked.height, v.height - v.toolbar - 2 * MARGIN) && near(after.width, r.width) && near(after.height, r.height), JSON.stringify({ r, docked, after }));
+
+    r = after;
+    await drag(header(r), { x: v.width - 5, y: v.height - 5 });
+    after = await rectOf(TREE);
+    check('releasing in a corner snaps the panel flush to it, size kept', near(after.right, v.width - MARGIN) && near(after.bottom, v.height - MARGIN) && near(after.width, r.width) && near(after.height, r.height), JSON.stringify({ r, after, v }));
+
+    r = after;
+    await drag(header(r), { x: v.width - 5, y: 400 });
+    await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 640, deviceScaleFactor: 1, mobile: false });
+    await sleep(500);
+    const small = await view();
+    after = await rectOf(TREE);
+    check('a right-docked panel stays docked at full height when the view shrinks', near(after.right, small.width - MARGIN) && near(after.top, small.toolbar + MARGIN) && near(after.height, small.height - small.toolbar - 2 * MARGIN), JSON.stringify({ after, small }));
+    await send('Emulation.clearDeviceMetricsOverride');
+    await sleep(500);
+
+    // Layout survives a new page: free tree panel, maximized joints panel.
+    r = await rectOf(TREE);
+    await drag(header(r), { x: 600, y: 300 });
+    r = await rectOf(TREE);
+    await drag(midBottom(r), { x: midBottom(r).x, y: r.bottom + 96 });
+    await ev(`document.querySelector('.panel-maximize-btn[data-panel-id=${JOINTS}]').click()`);
+    await sleep(1000);
+    const tree = await rectOf(TREE);
+    const saved = await ev(`return window.__out.filter(m => m.type === 'settings').at(-1)?.settings`);
+    const savedTree = saved?.panels?.[TREE];
+    check('a moved panel and the maximized state are saved', !!savedTree && near(savedTree.left, tree.left) && near(savedTree.height, tree.height) && saved.panels[JOINTS]?.maximized === true, JSON.stringify(saved?.panels));
+
+    const reopen = async () => {
+        await send('Page.reload');
+        await sleep(300);
+        await waitFor(`window.__out?.some(m => m.type === 'ready')`);
+        await ev(`await window.__send('load', m => { m.settings = ${JSON.stringify(saved)}; })`);
+        await waitFor(`window.app.currentModel?.links?.has('left_arm')`, 10000);
+        await sleep(800);
+    };
+    await reopen();
+    after = await rectOf(TREE);
+    check('a new page opens the panels where they were left', ['left', 'top', 'width', 'height'].every(k => near(after[k], tree[k])) && await ev(`return document.getElementById('${JOINTS}').classList.contains('maximized')`), JSON.stringify({ tree, after }));
+
+    await send('Emulation.setDeviceMetricsOverride', { width: 640, height: 420, deviceScaleFactor: 1, mobile: false });
+    await reopen();
+    v = await view();
+    after = await rectOf(TREE);
+    check('a panel saved in a bigger view opens inside a smaller one, shrunk to fit', after.left >= 0 && after.top >= 0 && after.right <= v.width && after.bottom <= v.height && near(after.width, tree.width) && near(after.height, v.height - 2 * MARGIN), JSON.stringify({ after, v }));
+    await send('Emulation.clearDeviceMetricsOverride');
+}
+
 try {
     const panelsHidden = `['floating-joints-panel','floating-model-tree'].every(id => getComputedStyle(document.getElementById(id)).display === 'none')`;
     check('ready posted', await waitFor(`window.__out?.some(m => m.type === 'ready')`));
@@ -507,6 +673,8 @@ try {
 
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));
+
+    await floatingPanels();
 } finally {
     await page.close();
     server.close();

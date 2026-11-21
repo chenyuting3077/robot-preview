@@ -180,6 +180,25 @@ test('settings, xacro arguments and the open preview survive a reload', async ()
     assert.deepEqual(load.xacroArgs, { side: 'right' });
 });
 
+test('the floating panels open where the last preview left them', async () => {
+    const env = await start();
+    const panels = {
+        'floating-model-tree': { left: 600, top: 300, width: 420, height: 380, dock: null, maximized: false },
+        'floating-joints-panel': { left: 20, top: 98, width: 360, height: 695, dock: 'left', undocked: { width: 360, height: 440 }, maximized: true }
+    };
+    env.panel.receive({ type: 'settings', settings: { 'toggle-model-tree': true, panels } });
+    await sleep(20);
+
+    env.panel.dispose();
+    const next = env.vscode.window.createWebviewPanel();
+    await env.state.serializer.deserializeWebviewPanel(next, { sourcePath: env.primary });
+    await waitFor(() => next.webview.html);
+    const before = env.allOf('load').length;
+    next.receive({ type: 'ready' });
+    await waitFor(() => env.allOf('load').length > before);
+    assert.deepEqual(env.lastOf('load').settings.panels, panels);
+});
+
 test('export writes the expanded URDF with $(find) paths mapped back to the package directories', async () => {
     const env = await start();
     const exporting = env.state.commands['robotPreviewUrdf.exportUrdf']();

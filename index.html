@@ -504,6 +504,22 @@
             height: calc(100vh - 100px) !important;
         }
 
+        /* Over the resize border, children such as the header (move) and the graph (grab) show the resize cursor too. */
+        .floating-panel[data-edge],
+        .floating-panel[data-edge] * {
+            cursor: var(--edge-cursor) !important;
+        }
+
+        .panel-snap-preview {
+            position: fixed;
+            display: none;
+            border: 2px dashed var(--accent);
+            border-radius: 16px;
+            background: rgba(10, 132, 255, 0.12);
+            pointer-events: none;
+            transition: left 0.12s ease, top 0.12s ease, width 0.12s ease, height 0.12s ease;
+        }
+
         .floating-panel-header {
             padding: 16px;
             border-bottom: 0.5px solid var(--glass-border);

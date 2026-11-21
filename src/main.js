@@ -193,10 +193,13 @@ class App {
         }
         settings.up = document.getElementById('up-select')?.value;
         settings.unit = this.angleUnit;
+        const panels = this.panelManager?.getLayouts() || {};
+        if (Object.keys(panels).length) settings.panels = panels;
         return settings;
     }
 
     applyPanelSettings(settings) {
+        this.panelManager?.setLayouts(settings.panels);
         for (const [buttonId, panelId] of Object.entries(PANEL_BUTTONS)) {
             if (!(buttonId in settings)) continue;
             document.getElementById(panelId).style.display = settings[buttonId] ? 'flex' : 'none';
@@ -232,6 +235,7 @@ class App {
             if (event.target.closest('#top-control-bar, .floating-panel-header')) setTimeout(save, 300);
         });
         document.getElementById('up-select')?.addEventListener('change', () => setTimeout(save, 0));
+        if (this.panelManager) this.panelManager.onLayoutChange = save;
     }
 
     showError(message) {

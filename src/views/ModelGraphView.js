@@ -13,13 +13,20 @@ export class ModelGraphView {
         this.currentSvg = null; // Save current SVG selector
         this.currentContainer = null; // Save current container
 
+        // Until the user zooms or pans, the graph is refitted whenever the panel
+        // changes size; after that it keeps its scale and the point at its centre.
+        this.autoFit = true;
+
         const svgNode = document.getElementById('model-graph-svg');
         if (svgNode) {
-            let wasVisible = false;
+            let size = null;
             new ResizeObserver(([entry]) => {
-                const visible = entry.contentRect.width > 0 && entry.contentRect.height > 0;
-                if (visible && !wasVisible) this.fitToView(false);
-                wasVisible = visible;
+                const { width, height } = entry.contentRect;
+                const previous = size;
+                size = width > 0 && height > 0 ? { width, height } : null;
+                if (!size) return;
+                if (!previous || this.autoFit) this.fitToView(false);
+                else this.panBy((width - previous.width) / 2, (height - previous.height) / 2);
             }).observe(svgNode);
         }
     }
@@ -93,6 +100,7 @@ export class ModelGraphView {
             .scaleExtent([0.1, 4])
             .on('zoom', (event) => {
                 container.attr('transform', event.transform);
+                if (event.sourceEvent) this.autoFit = false;
             });
 
         svg.call(zoom);
@@ -786,7 +794,7 @@ export class ModelGraphView {
                 .translate(translateX, translateY)
                 .scale(scale);
 
-            // Apply transform
+            this.autoFit = true;
             if (animated && duration > 0) {
                 this.currentSvg.transition()
                     .duration(duration)
@@ -797,6 +805,29 @@ export class ModelGraphView {
         } catch (error) {
             console.error('fitToView failed:', error);
         }
+    }
+
+    panBy(dx, dy) {
+        if (!this.currentSvg || !this.currentZoom) return;
+        const t = d3.zoomTransform(this.currentSvg.node());
+        this.currentSvg.call(this.currentZoom.transform, d3.zoomIdentity.translate(t.x + dx, t.y + dy).scale(t.k));
+    }
+
+    saveView() {
+        if (!this.currentSvg) return null;
+        const { x, y, k } = d3.zoomTransform(this.currentSvg.node());
+        return { x, y, k, autoFit: this.autoFit };
+    }
+
+    restoreView(view, duration = 0) {
+        if (!view || !this.currentSvg || !this.currentZoom) {
+            this.fitToView(duration > 0, duration);
+            return;
+        }
+        this.autoFit = view.autoFit;
+        this.currentSvg.transition()
+            .duration(duration)
+            .call(this.currentZoom.transform, d3.zoomIdentity.translate(view.x, view.y).scale(view.k));
     }
 }
 
