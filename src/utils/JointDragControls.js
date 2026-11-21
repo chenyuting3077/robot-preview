@@ -93,6 +93,8 @@ const plane = new THREE.Plane();
 export class JointDragControls {
     constructor(scene, camera, domElement, model) {
         this.enabled = true;
+        // The toolbar's picking switch; `enabled` is the simulation's to flip.
+        this.picking = true;
         this.scene = scene;
         this.camera = camera;
         this.domElement = domElement;
@@ -109,7 +111,7 @@ export class JointDragControls {
         const { raycaster, hovered, manipulating } = this;
         const model = this.model;
 
-        if (manipulating || !this.enabled || !model || !model.threeObject) {
+        if (manipulating || !this.enabled || !this.picking || !model || !model.threeObject) {
             return;
         }
 
@@ -365,7 +367,7 @@ export class PointerJointDragControls extends JointDragControls {
         };
 
         this._mouseDown = e => {
-            if (e.button !== 0) return;
+            if (e.button !== 0 || !this.picking) return;
             updateMouse(e);
             raycaster.setFromCamera(mouse, this.camera);
 

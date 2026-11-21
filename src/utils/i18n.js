@@ -9,7 +9,7 @@ export const translations = {
     'zh-CN': {
         'help': '操作说明',
         'screenshot': '保存截图',
-        'hoverInfo': '鼠标停留时显示 link 信息',
+        'pickParts': '在画面上点选零件',
         'helpKeyOrbit': '左键拖曳',
         'helpOrbit': '旋转',
         'helpKeyPan': '右键／中键拖曳',
@@ -227,7 +227,7 @@ export const translations = {
     'zh-TW': {
         'help': '操作說明',
         'screenshot': '儲存截圖',
-        'hoverInfo': '滑鼠停留時顯示 link 資訊',
+        'pickParts': '在畫面上點選零件',
         'helpKeyOrbit': '左鍵拖曳',
         'helpOrbit': '旋轉',
         'helpKeyPan': '右鍵／中鍵拖曳',
@@ -431,7 +431,7 @@ export const translations = {
     'en-US': {
         'help': 'Controls',
         'screenshot': 'Save screenshot',
-        'hoverInfo': 'Show link info on hover',
+        'pickParts': 'Pick parts in the view',
         'helpKeyOrbit': 'Left drag',
         'helpOrbit': 'Rotate',
         'helpKeyPan': 'Right / middle drag',

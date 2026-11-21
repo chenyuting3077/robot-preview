@@ -174,6 +174,30 @@ test('a hovered collision mesh keeps its see-through look, a little more opaque'
     assert.equal(r.collisionMesh.material, original);
 });
 
+test('a hovered floor keeps its colour and texture with a faint glow, not the white highlight', () => {
+    const r = robot();
+    const map = new THREE.Texture();
+    const original = new THREE.MeshPhongMaterial({ color: 0x336699, map });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), original);
+    floor.userData.isGroundPlane = true;
+    r.arm.add(floor);
+    const highlight = new HighlightManager({ redraw() {} });
+    highlight.highlightLink({ name: 'arm', threeObject: r.arm }, r.model, { showInfo: false });
+    assert.equal(r.visualMesh.material, highlight.highlightMaterial, 'other visuals still turn white');
+    const lit = floor.material;
+    assert.ok(lit !== highlight.highlightMaterial && lit !== original);
+    assert.equal(lit.map, map);
+    assert.equal(lit.color.getHex(), 0x336699);
+    assert.ok(lit.emissiveIntensity > 0 && lit.emissiveIntensity < highlight.highlightMaterial.emissiveIntensity);
+    globalThis.document = { getElementById: () => null };
+    try {
+        highlight.unhighlightLink({ name: 'arm', threeObject: r.arm }, r.model);
+    } finally {
+        delete globalThis.document;
+    }
+    assert.equal(floor.material, original);
+});
+
 test('picking skips a face with no material, and objects off the raycaster layers', () => {
     const geometry = new THREE.PlaneGeometry(1, 1);
     const ray = new THREE.Raycaster(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1));

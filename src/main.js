@@ -28,7 +28,7 @@ const vscode = acquireVsCodeApi();
 const SETTING_BUTTONS = [
     'show-visual', 'show-collision', 'show-inertia', 'show-com', 'toggle-axes-btn', 'toggle-joint-axes-btn',
     'toggle-shadow', 'toggle-lighting', 'toggle-grid', 'toggle-joints-panel', 'toggle-model-tree', 'ignore-limits',
-    'hover-info-btn'
+    'pick-btn'
 ];
 const PANEL_BUTTONS = { 'toggle-joints-panel': 'floating-joints-panel', 'toggle-model-tree': 'floating-model-tree' };
 const MODEL_FILE_RE = /\.(urdf|xacro|xml|sdf|world)$/i;
@@ -134,13 +134,15 @@ class App {
             const screenshotButton = document.getElementById('screenshot-btn');
             screenshotButton.title = screenshotButton.ariaLabel = window.i18n.t('screenshot');
             screenshotButton.addEventListener('click', () => this.captureScreenshot());
-            const hoverInfoButton = document.getElementById('hover-info-btn');
-            hoverInfoButton.title = hoverInfoButton.ariaLabel = window.i18n.t('hoverInfo');
-            hoverInfoButton.addEventListener('click', () => {
-                const on = !hoverInfoButton.classList.contains('active');
-                hoverInfoButton.classList.toggle('active', on);
-                hoverInfoButton.setAttribute('aria-pressed', String(on));
-                this.sceneManager.highlightManager.setInfoEnabled(on);
+            const pickButton = document.getElementById('pick-btn');
+            pickButton.title = pickButton.ariaLabel = window.i18n.t('pickParts');
+            pickButton.addEventListener('click', () => {
+                const on = !pickButton.classList.contains('active');
+                pickButton.classList.toggle('active', on);
+                pickButton.setAttribute('aria-pressed', String(on));
+                this.sceneManager.setPicking(on);
+                const simulationDrag = this.mujocoSimulationManager?.dragStateManager;
+                if (simulationDrag) simulationDrag.picking = on;
             });
             for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['help-btn', 'help-panel']]) {
                 const button = document.getElementById(buttonId);
@@ -489,7 +491,8 @@ class App {
             mouseDownPos = null;
             if (distance >= 5 || duration >= 300) return;
 
-            const hit = this.pickMesh(pointerNdc(canvas, event));
+            // With picking off a click picks nothing, but still clears what was selected.
+            const hit = this.sceneManager.picking ? this.pickMesh(pointerNdc(canvas, event)) : null;
 
             if (!hit) {
                 this.sceneManager.highlightManager.clearHighlight();
@@ -560,9 +563,7 @@ class App {
             }
         }
 
-        const isSimulating = this.mujocoSimulationManager.toggleSimulation();
-        if (this.currentModel?.threeObject) this.currentModel.threeObject.visible = !isSimulating;
-        return isSimulating;
+        return this.mujocoSimulationManager.toggleSimulation();
     }
 
     animate() {

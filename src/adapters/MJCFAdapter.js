@@ -2299,6 +2299,7 @@ export class MJCFAdapter {
         material.userData.originalShininess = 30;
         material.userData.originalSpecular = null; // New material, no original specular
         const mesh = new THREE.Mesh(threeGeometry, material);
+        if (geometry.type === 'plane') mesh.userData.isGroundPlane = true;
         if (geometry.infinite) {
             // The finite display stand-in for an infinite MJCF plane must not
             // dominate model bounds used for auto-fit and axes sizing.

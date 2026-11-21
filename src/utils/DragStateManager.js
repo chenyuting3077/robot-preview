@@ -43,6 +43,7 @@ export class DragStateManager {
 
         // Event listeners
         this.enabled = false; // Disabled by default, enabled during simulation
+        this.picking = true; // the toolbar's picking switch
         this.container = container;
         this.boundOnPointer = this.onPointer.bind(this);
         this.mouseDown = false;
@@ -195,7 +196,7 @@ export class DragStateManager {
     }
 
     onPointer(evt) {
-        if (!this.enabled) return;
+        if (!this.enabled || !this.picking) return;
 
         if (evt.type === 'pointerdown') {
             this.start(evt.clientX, evt.clientY);

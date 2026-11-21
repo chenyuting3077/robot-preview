@@ -151,7 +151,7 @@ export class SDFAdapter {
         model.userData = { ...model.userData, format: 'sdf' };
         model.missingIncludes = missingIncludes;
         model.threeObject?.traverse(object => {
-            if (object.urdfNode?.getAttribute?.('sdf_plane')) object.userData.excludeFromBounds = true;
+            if (object.urdfNode?.getAttribute?.('sdf_plane')) Object.assign(object.userData, { excludeFromBounds: true, isGroundPlane: true });
         });
         model.meshesReady = Promise.resolve(model.meshesReady).then(() => {
             this.colorGenerated(model.threeObject);

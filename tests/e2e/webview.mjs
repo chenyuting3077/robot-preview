@@ -432,7 +432,8 @@ try {
     check('with visual and collision hidden, nothing is hovered or dragged', none.hover === null && none.drag === 0, JSON.stringify(none));
     await display('show-visual', true);
 
-    // The info card sits beside the pointer, flipped near the window's edges; the arrow button turns it off and is kept.
+    // The info card sits beside the pointer, flipped near the window's edges. The arrow button turns picking off
+    // altogether, as in the USD viewer, and is kept.
     const card = () => ev(`const el = document.getElementById('hover-info'), r = el.getBoundingClientRect();
         return { visible: el.classList.contains('visible'), left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) };`);
     await hover(middle);
@@ -442,13 +443,63 @@ try {
         hm.pointer = { x: innerWidth - 10, y: innerHeight - 10 }; hm.placeHoverInfo(el);
         const r = el.getBoundingClientRect(); return { right: Math.round(r.right), bottom: Math.round(r.bottom), x: innerWidth - 10, y: innerHeight - 10 };`);
     check('near the bottom-right corner it flips above-left of the pointer', flipped.right === flipped.x - 16 && flipped.bottom === flipped.y - 16, JSON.stringify(flipped));
-    await ev(`window.__out.length = 0; document.getElementById('hover-info-btn').click()`);
-    const off = { hover: await hover(middle), card: (await card()).visible, drag: await drag(middle) };
-    check('with the hover info off, the link still highlights and drags but no card shows', off.hover === 'arm' && !off.card && Math.abs(off.drag) > 0.05, JSON.stringify(off));
+    await ev(`window.__out.length = 0; document.getElementById('pick-btn').click()`);
+    const cleared = await ev(`return window.app.sceneManager.highlightManager.currentHighlightedLink === null && !document.getElementById('hover-info').classList.contains('visible')`);
+    const off = { cleared, hover: await hover(middle), card: (await card()).visible, drag: await drag(middle) };
+    await mouse('mousePressed', middle.x, middle.y, 1);
+    await mouse('mouseReleased', middle.x, middle.y);
+    await sleep(100);
+    off.revealed = await ev(`return window.__out.some(m => m.type === 'reveal')`);
+    check('with picking off, nothing is hovered, dragged or revealed by a click', off.cleared && off.hover === null && !off.card && off.drag === 0 && !off.revealed, JSON.stringify(off));
     await sleep(400);
-    check('the hover info choice is saved', await ev(`return window.__out.findLast(m => m.type === 'settings')?.settings['hover-info-btn'] === false`));
-    await ev(`document.getElementById('hover-info-btn').click()`);
-    check('turned back on, the card shows again', await hover(middle) === 'arm' && (await card()).visible);
+    check('the picking choice is saved', await ev(`return window.__out.findLast(m => m.type === 'settings')?.settings['pick-btn'] === false`));
+    await ev(`document.getElementById('pick-btn').click()`);
+    check('turned back on, hovering shows the card again', await hover(middle) === 'arm' && (await card()).visible);
+
+    // A MuJoCo checker floor under the pointer keeps its texture: the white highlight used to blank the whole view.
+    const floorScene = '<mujoco model="fl"><asset><texture name="grid" type="2d" builtin="checker" rgb1=".1 .2 .3" rgb2=".2 .3 .4" width="64" height="64"/><material name="grid" texture="grid" texrepeat="4 4"/></asset><worldbody><light pos="0 0 3"/><geom name="floor" type="plane" size="2 2 .1" material="grid"/><body name="arm" pos="0 0 .5"><joint name="hinge" type="hinge" axis="0 1 0"/><geom type="box" pos=".3 0 0" size=".1 .1 .1"/></body></worldbody></mujoco>';
+    await ev(`window.postMessage({ type: 'load', files: [{ path: '/fl/fl.xml', data: new TextEncoder().encode(${JSON.stringify(floorScene)}) }], primary: '/fl/fl.xml' }, '*')`);
+    await waitFor(`window.app.currentModel?.joints?.has('hinge')`, 15000);
+    await sleep(500);
+    // The view is Y-up; the floor's own frame gives a point on it, seen from above.
+    const floorAt = await ev(`const sm = window.app.sceneManager, r = sm.renderer.domElement.getBoundingClientRect();
+        let floor; window.app.currentModel.threeObject.traverse(o => { if (o.userData.isGroundPlane) floor = o; });
+        sm.camera.position.set(0, 2.5, 3); sm.controls.target.set(0, 0, 0); sm.controls.update(); sm.camera.updateMatrixWorld();
+        window.app.currentModel.threeObject.updateMatrixWorld(true);
+        const v = floor.localToWorld(new sm.camera.position.constructor(1.2, -0.8, 0)).project(sm.camera);
+        return { x: Math.round(r.left + (v.x + 1) / 2 * r.width), y: Math.round(r.top + (1 - v.y) / 2 * r.height) };`);
+    await mouse('mouseMoved', 5, 5);
+    await mouse('mouseMoved', floorAt.x, floorAt.y);
+    await sleep(100);
+    const floorLit = await ev(`let floor; window.app.currentModel.threeObject.traverse(o => { if (o.userData.isGroundPlane) floor = o; });
+        const m = floor.material, hm = window.app.sceneManager.highlightManager;
+        const r = window.app.sceneManager.renderer.domElement.getBoundingClientRect();
+        const hit = window.app.pickMesh({ x: (${floorAt.x} - r.left) / r.width * 2 - 1, y: 1 - (${floorAt.y} - r.top) / r.height * 2 });
+        return { link: hm.currentHighlightedLink?.name, hitGround: Boolean(hit?.object.userData.isGroundPlane), at: ${JSON.stringify(floorAt)}, white: m === hm.highlightMaterial, map: Boolean(m.map), glow: m.emissiveIntensity };`);
+    check('a hovered MJCF floor keeps its texture with a faint glow', floorLit.link && !floorLit.white && floorLit.map && floorLit.glow > 0 && floorLit.glow < 0.25, JSON.stringify(floorLit));
+
+    // Simulating draws the floor with its texture, Pause keeps the simulated pose, Reset returns to the model.
+    await mouse('mouseMoved', 5, 5);
+    await ev(`document.getElementById('mujoco-simulate-btn-bar').click()`);
+    await waitFor(`window.app.mujocoSimulationManager.isSimulationRunning()`, 30000);
+    await sleep(800);
+    const simulated = await ev(`const sim = window.app.mujocoSimulationManager, planes = [];
+        sim.mujocoRoot.traverse(o => { if (o.isMesh && o.geometry.type === 'PlaneGeometry') planes.push(o); });
+        const p = planes[0], box = p && new p.geometry.boundingBox.constructor().setFromObject(p);
+        return { planes: planes.length, map: Boolean(p?.material.map), flat: box ? +(box.max.y - box.min.y).toFixed(3) : null, width: box ? +(box.max.x - box.min.x).toFixed(2) : null };`);
+    check('a simulated MJCF floor is a flat plane with its texture', simulated.planes === 1 && simulated.map && simulated.flat === 0 && simulated.width === 4, JSON.stringify(simulated));
+    const simPose = () => ev(`const q = window.app.mujocoSimulationManager.bodies[1].quaternion; return [q.x, q.y, q.z, q.w].map(v => +v.toFixed(4)).join(',')`);
+    await ev(`document.getElementById('mujoco-simulate-btn-bar').click()`);
+    const paused = await ev(`const sim = window.app.mujocoSimulationManager; return { root: sim.mujocoRoot.visible, model: window.app.currentModel.threeObject.visible, running: sim.isSimulationRunning() }`);
+    const frozen = [await simPose()];
+    await sleep(300);
+    frozen.push(await simPose());
+    // The arm starts level (identity) and swings down under gravity, so a frozen pose has turned away from identity.
+    const swung = Math.abs(Number(frozen[0].split(',')[3])) < 0.999;
+    check('Pause keeps the simulated pose on screen, frozen', paused.root && !paused.model && !paused.running && frozen[0] === frozen[1] && swung, JSON.stringify({ paused, frozen }));
+    await ev(`document.getElementById('mujoco-reset-btn-bar').click()`);
+    const reset = await ev(`const sim = window.app.mujocoSimulationManager; return { root: sim.mujocoRoot.visible, model: window.app.currentModel.threeObject.visible, time: sim.isOldAPI ? sim.data.time : sim.simulation.time }`);
+    check('Reset while paused shows the model again and rewinds the physics', !reset.root && reset.model && reset.time === 0, JSON.stringify(reset));
 
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));

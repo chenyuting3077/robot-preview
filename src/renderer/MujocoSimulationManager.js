@@ -168,6 +168,7 @@ export class MujocoSimulationManager {
                     this.sceneManager.controls
                 );
             }
+            this.dragStateManager.picking = this.sceneManager.picking;
 
             return null;
         } catch (error) {
@@ -364,6 +365,12 @@ export class MujocoSimulationManager {
         // Check collision display toggle state
         const showCollision = this.sceneManager.visualizationManager.showCollision;
 
+        // MJCF planes in the order they were drawn before simulating; a geom loop plane takes the next one.
+        const originalPlanes = [];
+        this.originalModel?.threeObject?.traverse(object => {
+            if (object.isMesh && object.userData.isGroundPlane) originalPlanes.push(object);
+        });
+
         for (let g = 0; g < model.ngeom; g++) {
             const group = model.geom_group[g];
 
@@ -395,6 +402,7 @@ export class MujocoSimulationManager {
 
             // Create geometry
             let geometry = new THREE.SphereGeometry(size[0]);
+            let planeSource = null;
 
             if (type == this.mujoco.mjtGeom.mjGEOM_SPHERE.value) {
                 geometry = new THREE.SphereGeometry(size[0], 32, 32);
@@ -406,6 +414,14 @@ export class MujocoSimulationManager {
                 geometry = new THREE.BoxGeometry(size[0] * 2.0, size[2] * 2.0, size[1] * 2.0);
             } else if (type == this.mujoco.mjtGeom.mjGEOM_ELLIPSOID.value) {
                 geometry = new THREE.SphereGeometry(1, 32, 32);
+            } else if (type == this.mujoco.mjtGeom.mjGEOM_PLANE.value) {
+                // A plane fell through to a sphere of radius size[0], 0 for a MuJoCo floor, so the floor and its
+                // texture vanished on Simulate. The drawn floor's geometry and material carry the MJCF texture by
+                // their UVs; laid from MuJoCo's XY into this Y-up frame they show it unchanged.
+                planeSource = originalPlanes.shift() ?? null;
+                geometry = (planeSource?.geometry.clone()
+                    ?? new THREE.PlaneGeometry(size[0] > 0 ? size[0] * 2 : 100, size[1] > 0 ? size[1] * 2 : 100))
+                    .rotateX(-Math.PI / 2);
             } else if (type == this.mujoco.mjtGeom.mjGEOM_MESH.value) {
                 const meshID = model.geom_dataid[g];
                 if (!(meshID in meshes)) {
@@ -718,7 +734,7 @@ export class MujocoSimulationManager {
             }
 
             // Create mesh
-            let finalMaterial = material;
+            let finalMaterial = planeSource ? (planeSource.__origMaterial ?? planeSource.material).clone() : material;
 
             // Use special material for collision geometry (semi-transparent yellow)
             if (group === 3) {
@@ -1098,6 +1114,9 @@ export class MujocoSimulationManager {
      * Reset simulation
      */
     reset() {
+        // Paused, Reset also leaves the simulation: the model is shown again for editing, and the next Simulate
+        // starts from MuJoCo's initial state.
+        if (this.params.paused) this.showOriginalModel();
         if (this.model) {
             // Save current simulation state (don't pause simulation)
             const wasSimulating = this.isSimulating;
@@ -1155,6 +1174,8 @@ export class MujocoSimulationManager {
     /**
      * Pause simulation
      */
+    // Pause freezes the simulated pose on screen, as MuJoCo's viewer does. It used to swap back to the model's
+    // starting pose while the physics kept its state, so the next Simulate jumped to where it had been.
     pauseSimulation() {
         this.params.paused = true;
         this.isSimulating = false;
@@ -1164,16 +1185,19 @@ export class MujocoSimulationManager {
             this.dragStateManager.disable();
         }
 
-        // Hide MuJoCo model
+        this.sceneManager.redraw();
+    }
+
+    showOriginalModel() {
         if (this.mujocoRoot) {
             this.mujocoRoot.visible = false;
         }
-
-        // Restore original model drag controls
+        if (this.sceneManager.currentModel?.threeObject) {
+            this.sceneManager.currentModel.threeObject.visible = true;
+        }
         if (this.sceneManager.dragControls) {
             this.sceneManager.dragControls.enabled = true;
         }
-
         this.sceneManager.redraw();
     }
 

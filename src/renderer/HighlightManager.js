@@ -3,6 +3,25 @@ import * as THREE from 'three';
 /**
  * HighlightManager - Handles link highlighting and hover information display
  */
+// An MJCF plane marks its mesh; an SDF plane marks the visual its generated mesh loads under.
+function isGround(obj, linkObject) {
+    for (let level = obj; level && level !== linkObject.parent; level = level.parent) {
+        if (level.userData?.isGroundPlane) return true;
+    }
+    return false;
+}
+
+function glowing(material) {
+    const glow = one => {
+        if (!one?.emissive) return one;
+        const copy = one.clone();
+        copy.emissive = new THREE.Color(0xffffff);
+        copy.emissiveIntensity = 0.12;
+        return copy;
+    };
+    return Array.isArray(material) ? material.map(glow) : glow(material);
+}
+
 export class HighlightManager {
     constructor(sceneManager) {
         this.sceneManager = sceneManager;
@@ -16,19 +35,12 @@ export class HighlightManager {
             emissiveIntensity: 0.25
         });
 
-        // The toolbar's arrow button turns the info card off; the link still highlights so a joint can be dragged.
-        this.infoEnabled = true;
         this.pointer = null;
         globalThis.document?.addEventListener('pointermove', event => {
             this.pointer = { x: event.clientX, y: event.clientY };
             const hoverInfo = document.getElementById('hover-info');
             if (hoverInfo?.classList.contains('visible')) this.placeHoverInfo(hoverInfo);
         }, { capture: true, passive: true });
-    }
-
-    setInfoEnabled(on) {
-        this.infoEnabled = on;
-        if (!on) this.hideHoverInfo();
     }
 
     // Below-right of the pointer, flipped to the other side near the window's right or bottom edge.
@@ -178,6 +190,10 @@ export class HighlightManager {
                         obj.material.color.getHSL(hsl);
                         obj.material.color.setHSL(hsl.h, hsl.s, Math.min(hsl.l + 0.3, 1.0));
                     }
+                } else if (isGround(obj, linkObject)) {
+                    // A floor keeps its colour and texture with a faint glow: the white highlight turned a whole
+                    // MuJoCo checker floor plain white.
+                    obj.material = glowing(obj.__origMaterial);
                 } else {
                     // For regular visual meshes, use white highlight
                     obj.material = this.highlightMaterial;
@@ -232,6 +248,10 @@ export class HighlightManager {
             if (obj.type === 'Mesh' || obj.isMesh) {
                 // Restore material for all meshes (including COM and inertia)
                 if (obj.__origMaterial) {
+                    // Collision and floor highlights are per-mesh copies; their textures stay with the original.
+                    for (const copy of [obj.material].flat()) {
+                        if (copy && copy !== this.highlightMaterial && ![obj.__origMaterial].flat().includes(copy)) copy.dispose();
+                    }
                     obj.material = obj.__origMaterial;
                     delete obj.__origMaterial;
                 }
@@ -264,7 +284,6 @@ export class HighlightManager {
      * Show hover information (Link name, parent Joint name, mass, pose)
      */
     showHoverInfo(link, currentModel) {
-        if (!this.infoEnabled) return;
         const hoverInfo = document.getElementById('hover-info');
         const jointNameEl = document.getElementById('hover-joint-name');
         const linkNameEl = document.getElementById('hover-link-name');

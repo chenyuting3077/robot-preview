@@ -104,6 +104,8 @@ export class SceneManager {
 
         // Drag controls
         this.dragControls = null;
+        // Off, the view answers no pointer: no hover, no joint drag, no click selection. Joints move from the panel.
+        this.picking = true;
 
         // Window resize - use ResizeObserver to listen for canvas container size changes
         this.setupResizeObserver();
@@ -593,6 +595,18 @@ export class SceneManager {
         this.poseController = poseController;
     }
 
+    setPicking(on) {
+        this.picking = on;
+        if (this.dragControls) {
+            this.dragControls.picking = on;
+            if (!on && this.dragControls.hovered) {
+                this.dragControls.onUnhover(this.dragControls.hovered);
+                this.dragControls.hovered = null;
+            }
+        }
+        if (!on) this.highlightManager.clearHighlight();
+    }
+
     initDragControls(model) {
         if (this.dragControls) {
             this.dragControls.dispose();
@@ -607,6 +621,7 @@ export class SceneManager {
 
         // Pass renderer reference for rendering during drag
         this.dragControls.renderer = this.renderer;
+        this.dragControls.picking = this.picking;
 
         // Pass ignoreLimits flag to model's userData (need to set in two locations)
         if (model) {
