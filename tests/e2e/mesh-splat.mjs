@@ -556,6 +556,17 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 await evaluate(`document.getElementById('pick-btn').click()`);
                 await click(...onTri);
                 const backOn = await selectedName();
+                // A click with the Stage panel closed leaves it closed; opening it then shows the picked prim's row.
+                await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
+                await evaluate(`document.getElementById('stage-btn').click()`);
+                await click(...onTri);
+                const staysClosed = await evaluate(`document.getElementById('stage-panel').hidden`);
+                await evaluate(`document.getElementById('stage-btn').click()`);
+                await sleep(100);
+                const reopened = await evaluate(`(() => {
+                    const row = document.querySelector('#stage-panel .prim-row.selected'), list = document.getElementById('stage-rows').getBoundingClientRect(), r = row?.getBoundingClientRect();
+                    return { name: row?.querySelector('.prim-name span').textContent ?? '', shown: !!r && r.height > 0 && r.top >= list.top - 1 && r.bottom <= list.bottom + 1 };
+                })()`);
                 await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
                 // Hiding the selected part hides its box: the view then matches the same part hidden and unselected.
                 const viewShot = async () => (await send('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width: Math.round(size[0] * 0.55), height: size[1], scale: 0.25 } })).data;
@@ -569,9 +580,9 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 const hiddenBox = await shotChange(hiddenSelected, await viewShot());
                 await evaluate(`${triRow}.querySelector('.prim-eye').click()`);
                 await sleep(300);
-                const toggleOk = hiddenBox < 0.001 && offClears && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri';
+                const toggleOk = hiddenBox < 0.001 && offClears && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri' && staysClosed && reopened.name === 'Tri' && reopened.shown;
                 const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '' && toggleOk;
-                camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}" toggle ${toggleOk} hidden-box ${(hiddenBox * 100).toFixed(2)}%`;
+                camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}" toggle ${toggleOk} closed-pick ${staysClosed} reopened ${JSON.stringify(reopened)} hidden-box ${(hiddenBox * 100).toFixed(2)}%`;
                 // Hiding a prim leaves the grid, axes and F framing as they were; only a file's eye refits them.
                 const frameKey = async () => {
                     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'f', code: 'KeyF', text: 'f' });

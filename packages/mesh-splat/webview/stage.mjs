@@ -79,9 +79,11 @@ export function buildStage(rows, { files = false, removeLabel = '', onToggle = (
     });
     expand(rows(), files ? -1 : 0);
     render();
+    const reveal = () => document.querySelector('#stage-rows .prim-row.selected')?.scrollIntoView({ block: 'nearest' });
     const show = open => {
         $('stage-panel').hidden = !open;
         $('stage-btn').classList.toggle('active', open);
+        if (open) reveal();
     };
     if (rows().length) {
         $('stage-bar').hidden = false;
@@ -90,14 +92,15 @@ export function buildStage(rows, { files = false, removeLabel = '', onToggle = (
     }
     return {
         render,
+        // A pick leaves a closed panel closed, as the view is often orbited with it shut; the panel opened later
+        // shows the picked row, its parents already expanded.
         select(prim) {
             selected = prim;
             if (prim) {
                 for (let parent = prim.parent; parent; parent = parent.parent) expanded.add(parent);
-                show(true);
             }
             render();
-            document.querySelector('#stage-rows .prim-row.selected')?.scrollIntoView({ block: 'nearest' });
+            reveal();
         }
     };
 }
