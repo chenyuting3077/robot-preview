@@ -36,17 +36,18 @@ export class HighlightManager {
         });
 
         this.pointer = null;
+        this.hoverInfoLink = null;
         globalThis.document?.addEventListener('pointermove', event => {
             this.pointer = { x: event.clientX, y: event.clientY };
-            const hoverInfo = document.getElementById('hover-info');
-            if (hoverInfo?.classList.contains('visible')) this.placeHoverInfo(hoverInfo);
         }, { capture: true, passive: true });
     }
 
-    // Below-right of the pointer, flipped to the other side near the window's right or bottom edge.
+    // Opened at the pointer as a right-click menu is on Windows and macOS: below-right, flipped near the window's
+    // right or bottom edge, and left where it opened until another link is hovered. Following the pointer kept it
+    // over whatever the pointer moved toward.
     placeHoverInfo(hoverInfo) {
         if (!this.pointer) return;
-        const OFFSET = 16, MARGIN = 8;
+        const OFFSET = 4, MARGIN = 8;
         const { offsetWidth: width, offsetHeight: height } = hoverInfo;
         let x = this.pointer.x + OFFSET;
         let y = this.pointer.y + OFFSET;
@@ -451,7 +452,8 @@ export class HighlightManager {
             linkPoseEl.style.display = 'block';
         }
 
-        this.placeHoverInfo(hoverInfo);
+        if (!hoverInfo.classList.contains('visible') || this.hoverInfoLink !== link.name) this.placeHoverInfo(hoverInfo);
+        this.hoverInfoLink = link.name;
         hoverInfo.classList.add('visible');
     }
 
@@ -463,6 +465,7 @@ export class HighlightManager {
         if (hoverInfo) {
             hoverInfo.classList.remove('visible');
         }
+        this.hoverInfoLink = null;
     }
 
     /**

@@ -438,11 +438,15 @@ try {
         return { visible: el.classList.contains('visible'), left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) };`);
     await hover(middle);
     const beside = await card();
-    check('the hover info opens below-right of the pointer', beside.visible && beside.left === middle.x + 16 && beside.top === middle.y + 16, JSON.stringify({ beside, middle }));
+    check('the hover info opens below-right of the pointer, as a right-click menu does', beside.visible && beside.left === middle.x + 4 && beside.top === middle.y + 4, JSON.stringify({ beside, middle }));
+    await mouse('mouseMoved', middle.x + 8, middle.y + 3);
+    await sleep(100);
+    const stayed = await card();
+    check('moving on the same link leaves the card where it opened', stayed.visible && stayed.left === beside.left && stayed.top === beside.top, JSON.stringify({ beside, stayed }));
     const flipped = await ev(`const hm = window.app.sceneManager.highlightManager, el = document.getElementById('hover-info');
         hm.pointer = { x: innerWidth - 10, y: innerHeight - 10 }; hm.placeHoverInfo(el);
         const r = el.getBoundingClientRect(); return { right: Math.round(r.right), bottom: Math.round(r.bottom), x: innerWidth - 10, y: innerHeight - 10 };`);
-    check('near the bottom-right corner it flips above-left of the pointer', flipped.right === flipped.x - 16 && flipped.bottom === flipped.y - 16, JSON.stringify(flipped));
+    check('near the bottom-right corner it flips above-left of the pointer', flipped.right === flipped.x - 4 && flipped.bottom === flipped.y - 4, JSON.stringify(flipped));
     await ev(`window.__out.length = 0; document.getElementById('pick-btn').click()`);
     const cleared = await ev(`return window.app.sceneManager.highlightManager.currentHighlightedLink === null && !document.getElementById('hover-info').classList.contains('visible')`);
     const off = { cleared, hover: await hover(middle), card: (await card()).visible, drag: await drag(middle) };

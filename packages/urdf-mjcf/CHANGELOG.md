@@ -11,7 +11,7 @@
 - MJCF geoms directly in `<worldbody>` (a scene floor) take their material's color; a geom's `rgba` overrides its material unless it is MuJoCo's default `0.5 0.5 0.5 1`.
 - The preview button and menu entries also show for upper-case extensions (`.URDF`, `.XML`, `.Xacro`, `.SDF`).
 - Hidden parts no longer react to the pointer: with visuals off the empty space is not highlighted or dragged, and with only collision shown, hovering a collision shape highlights its link and dragging it moves the joint. With both shown, the visual seen through a collision shape is the one picked.
-- The link info shown on hover opens beside the pointer and follows it, flipping near the view's edges, instead of covering the bottom of the model.
+- The link info shown on hover opens at the pointer as a right-click menu does, below-right and flipped near the view's edges, and stays there until another link is hovered, instead of covering the bottom of the model.
 - The arrow button in the toolbar turns picking off, as in the USD viewer: the view then answers no hover, drag or click (joints move from the Joints panel, a click still clears the selection), also while simulating. The choice is kept.
 - A hovered floor (MJCF or SDF plane) keeps its color and texture with a faint glow instead of turning plain white.
 - MJCF planes are drawn while simulating, with their texture; the floor used to disappear on Simulate.
