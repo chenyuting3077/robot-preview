@@ -209,6 +209,58 @@ test('the USD extension, which ships this file, takes no added files', async () 
     assert.deepEqual(names(panel), ['scene.usda']);
 });
 
+test('Open as points reopens a .bin in the point editor, from the title button or the active editor', async () => {
+    const root = workspace({ '000000.bin': 'scan' });
+    const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), globalStorage: path.join(root, 'storage') });
+    env.activate();
+    const scan = env.vscode.Uri.file(path.join(root, '000000.bin'));
+    await env.state.commands['robotPreviewMeshSplat.openAsPoints'](scan);
+    assert.deepEqual(env.state.executed.at(-1), ['vscode.openWith', scan, 'robotPreviewMeshSplat.textPoints']);
+});
+
+test('Add to Point Cloud View adds the Explorer selection to the open view, which comes to the front', async () => {
+    const { env, panel, at } = await open({ 'map.pcd': 'map', 'a.pcd': 'a', 'b.ply': 'b', 'notes.txt': 'x' });
+    const uri = name => env.vscode.Uri.file(at(name));
+    await env.state.commands['robotPreviewMeshSplat.addToView'](uri('a.pcd'), [uri('a.pcd'), uri('b.ply'), uri('notes.txt')]);
+    assert.deepEqual(names(panel), ['map.pcd', 'a.pcd', 'b.ply']);
+    assert.equal(panel.revealed, 1);
+});
+
+test('Add to Point Cloud View goes to the view used last, and opens a new one when none is open', async () => {
+    const root = workspace({ 'one.pcd': '1', 'two.pcd': '2', 'scan.bin': 's', 'x.pcd': 'x' });
+    const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), globalStorage: path.join(root, 'storage') });
+    env.activate();
+    const uri = name => env.vscode.Uri.file(path.join(root, name));
+    const panels = [];
+    env.state.onExecute = async (command, target, viewType) => {
+        if (command !== 'vscode.openWith') return;
+        const panel = fakePanel();
+        panels.push({ panel, viewType });
+        await env.state.customEditors[viewType].resolveCustomEditor({ uri: target }, panel);
+    };
+    const add = (...names) => env.state.commands['robotPreviewMeshSplat.addToView'](uri(names[0]), names.map(uri));
+    await add('scan.bin', 'one.pcd');
+    assert.equal(panels.length, 1);
+    assert.equal(panels[0].viewType, 'robotPreviewMeshSplat.textPoints', 'a .bin opens in the editor that reads it');
+    assert.deepEqual(names(panels[0].panel), ['scan.bin', 'one.pcd']);
+    await env.vscode.commands.executeCommand('vscode.openWith', uri('two.pcd'), 'robotPreviewMeshSplat.viewer');
+    panels[1].panel.viewState({ webviewPanel: { active: true } });
+    await add('x.pcd');
+    assert.deepEqual(names(panels[1].panel), ['two.pcd', 'x.pcd'], 'the view focused last takes it');
+    panels[1].panel.dispose();
+    await add('two.pcd');
+    assert.deepEqual(names(panels[0].panel), ['scan.bin', 'one.pcd', 'two.pcd'], 'a closed view is forgotten');
+});
+
+test('the USD extension, which ships this file, registers no Open as points command', () => {
+    const usd = fileURLToPath(new URL('../../packages/usd', import.meta.url));
+    const root = workspace({ 'scene.usda': '#usda 1.0' });
+    const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), root: usd, globalStorage: path.join(root, 'storage') });
+    env.activate();
+    assert.equal(env.state.commands?.['robotPreviewMeshSplat.openAsPoints'], undefined);
+    assert.equal(env.state.commands?.['robotPreviewMeshSplat.addToView'], undefined);
+});
+
 test('a drop adds only URIs of the opened file\'s scheme, not bare paths or other schemes', async () => {
     const { panel, at, url } = await open({ 'map.pcd': 'map', 'a.pcd': 'a', 'b.pcd': 'b', 'c.pcd': 'c' });
     await panel.listener({ type: 'addPaths', uris: [at('a.pcd'), `untitled:${at('b.pcd')}`, `https://example.com${pathToFileURL(at('c.pcd')).pathname}`] });

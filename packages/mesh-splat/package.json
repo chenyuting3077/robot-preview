@@ -98,6 +98,9 @@
           },
           {
             "filenamePattern": "*.pgm"
+          },
+          {
+            "filenamePattern": "*.pcd.bin"
           }
         ],
         "priority": "default"
@@ -121,7 +124,53 @@
         ],
         "priority": "option"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "robotPreviewMeshSplat.openAsPoints",
+        "title": "Open as Point Cloud",
+        "category": "Robot Preview",
+        "icon": {
+          "light": "images/preview-light.svg",
+          "dark": "images/preview-dark.svg"
+        }
+      },
+      {
+        "command": "robotPreviewMeshSplat.addToView",
+        "title": "Add to Point Cloud View",
+        "category": "Robot Preview"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "robotPreviewMeshSplat.openAsPoints",
+          "when": "resourceExtname =~ /^\\.(bin|asc)$/i && activeCustomEditorId != robotPreviewMeshSplat.textPoints && activeCustomEditorId != robotPreviewMeshSplat.viewer",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "robotPreviewMeshSplat.openAsPoints",
+          "when": "resourceExtname =~ /^\\.(bin|asc)$/i"
+        },
+        {
+          "command": "robotPreviewMeshSplat.addToView",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(stl|ply|obj|off|dae|gltf|glb|3mf|wrl|3ds|pcd|xyz|pts|splat|ksplat|spz|sog|pgm|asc|bin)$/i",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "robotPreviewMeshSplat.openAsPoints",
+          "when": "resourceExtname =~ /^\\.(bin|asc)$/i"
+        },
+        {
+          "command": "robotPreviewMeshSplat.addToView",
+          "when": "false"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "vite build",

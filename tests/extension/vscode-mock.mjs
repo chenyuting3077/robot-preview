@@ -26,7 +26,9 @@ export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 export function fakePanel(postMessage = () => {}) {
     const panel = {
         webview: { options: {}, cspSource: 'vscode-webview:', asWebviewUri: webviewPath, html: '', postMessage, onDidReceiveMessage: listener => { panel.listener = listener; } },
-        onDidDispose: callback => { panel.dispose = callback; }
+        onDidDispose: callback => { panel.dispose = callback; },
+        onDidChangeViewState: callback => { panel.viewState = callback; },
+        reveal() { panel.revealed = (panel.revealed ?? 0) + 1; }
     };
     return panel;
 }
@@ -288,6 +290,10 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             registerCommand: (id, callback) => {
                 (state.commands ||= {})[id] = callback;
                 return { dispose() {} };
+            },
+            executeCommand: async (...args) => {
+                (state.executed ||= []).push(args);
+                return state.onExecute?.(...args);
             }
         }
     };

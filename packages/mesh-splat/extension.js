@@ -134,6 +134,9 @@ function activate(context) {
         .filter(ext => ext && !CAD.test(`.${ext}`)))];
     // The USD extension ships this file too; its views take no added files until its docs say they do.
     const addsFiles = customEditors.some(({ viewType }) => viewType.startsWith('robotPreviewMeshSplat.'));
+    // Open views, the one used last first, for Add to Point Cloud View.
+    const views = [];
+    const viewWaiters = new Set();
     const provider = {
         openCustomDocument: uri => ({ uri, dispose() {} }),
         async resolveCustomEditor(document, panel) {
@@ -273,7 +276,16 @@ function activate(context) {
             };
             const writer = cacheWriter(cacheDir?.fsPath, keys, post);
             panel.webview.onDidReceiveMessage(message => Object.hasOwn(handlers, message?.type) && handlers[message.type](message));
+            const view = { uri: document.uri, panel, takesFiles, addUris };
+            views.unshift(view);
+            viewWaiters.forEach(waiter => waiter(view));
+            panel.onDidChangeViewState(({ webviewPanel }) => {
+                if (!webviewPanel.active) return;
+                views.splice(views.indexOf(view), 1);
+                views.unshift(view);
+            });
             panel.onDidDispose(() => {
+                views.splice(views.indexOf(view), 1);
                 [...files].forEach(drop);
                 writer.dispose();
             });
@@ -282,6 +294,46 @@ function activate(context) {
     };
     const options = { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true };
     context.subscriptions.push(...customEditors.map(({ viewType }) => vscode.window.registerCustomEditorProvider(viewType, provider, options)));
+    // .bin is too common a binary extension to open by default (firmware, weights); a scan opens from the title
+    // button instead. Only this package contributes the command: the USD extension ships this file too.
+    const contributes = id => manifest.contributes.commands?.some(({ command }) => command === id);
+    if (contributes('robotPreviewMeshSplat.openAsPoints')) {
+        context.subscriptions.push(vscode.commands.registerCommand('robotPreviewMeshSplat.openAsPoints', uri => {
+            uri ??= vscode.window.activeTextEditor?.document.uri ?? vscode.window.tabGroups?.activeTabGroup.activeTab?.input?.uri;
+            if (uri) return vscode.commands.executeCommand('vscode.openWith', uri, 'robotPreviewMeshSplat.textPoints');
+        }));
+    }
+    // Dragging files onto a webview reaches it only while Shift is held, else VS Code opens each in a tab; the
+    // Explorer menu adds a selection to the view used last, or opens one for it.
+    if (contributes('robotPreviewMeshSplat.addToView')) {
+        const viewOf = uri => views.find(view => view.takesFiles && sameFile(view.uri.fsPath, uri.fsPath));
+        // The view registers while its editor resolves, which may finish after openWith returns.
+        const waitForView = uri => viewOf(uri) ? Promise.resolve(viewOf(uri)) : new Promise(resolve => {
+            const waiter = view => sameFile(view.uri.fsPath, uri.fsPath) && done(view);
+            const timer = setTimeout(() => done(null), 10000);
+            const done = view => {
+                clearTimeout(timer);
+                viewWaiters.delete(waiter);
+                resolve(view);
+            };
+            viewWaiters.add(waiter);
+        });
+        context.subscriptions.push(vscode.commands.registerCommand('robotPreviewMeshSplat.addToView', async (clicked, selected) => {
+            const uris = (Array.isArray(selected) && selected.length ? selected : [clicked]).filter(Boolean);
+            if (!uris.length) return;
+            let view = views.find(candidate => candidate.takesFiles);
+            if (view) {
+                view.panel.reveal();
+                return view.addUris(uris);
+            }
+            const [first, ...rest] = uris;
+            const viewType = /\.(bin|asc)$/i.test(first.path) && !/\.pcd\.bin$/i.test(first.path) ? 'robotPreviewMeshSplat.textPoints' : 'robotPreviewMeshSplat.viewer';
+            const opened = waitForView(first);
+            await vscode.commands.executeCommand('vscode.openWith', first, viewType);
+            view = await opened;
+            if (view && rest.length) await view.addUris(rest);
+        }));
+    }
 }
 
 module.exports = { activate, deactivate() {} };
