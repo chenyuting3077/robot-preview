@@ -794,17 +794,19 @@ function frame() {
 // 200 m map added to a 10 cm part lay past a far of 15 m. Far takes in every loaded file, hidden ones too, so
 // showing one again cannot leave it past far. Near rises with far toward frame()'s 1:1e5 (a map's faces z-fight
 // past that), but never past a tenth of the way to the target: a cloud 12 km off pushed near to 13 cm and cut
-// the part being looked at. Past 1:1e6 one depth range cannot hold both, and the view is framed afresh.
+// the part being looked at. Past 1:1e6 one depth range cannot hold both: shown files are framed afresh, while a
+// hidden file is only covered as far as 1:1e6 allows (frame() leaves it out, so falling back for it would
+// re-frame on every eye toggle, add or remove); shown again, it is a shown file.
 function coverFiles() {
-    const box = viewBox();
-    for (const file of files) if (file.box) box.union(file.box.clone().applyMatrix4(root.matrixWorld));
-    if (box.isEmpty()) return;
-    const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
-    const far = Math.max(camera.far, ...corners.map(corner => corner.distanceTo(camera.position) * 1.1));
+    const reach = box => (box.isEmpty() ? 0 : Math.max(...[0, 1, 2, 3, 4, 5, 6, 7].map(i => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).distanceTo(camera.position) * 1.1)));
+    const shown = viewBox();
+    const all = shown.clone();
+    for (const file of files) if (file.box) all.union(file.box.clone().applyMatrix4(root.matrixWorld));
+    const far = Math.max(camera.far, reach(all));
     if (far === camera.far) return;
     const near = Math.max(camera.near, Math.min(far / 1e5, camera.position.distanceTo(controls.target) / 10));
-    if (far / near > 1e6) return frame();
-    Object.assign(camera, { near, far });
+    if (reach(shown) / near > 1e6) return frame();
+    Object.assign(camera, { near, far: Math.min(far, near * 1e6) });
     camera.updateProjectionMatrix();
 }
 
@@ -1169,6 +1171,11 @@ function refit() {
     updateBox();
     cloudGround = isCloud && nearZeroPlane() ? 0 : null;
     coverFiles();
+    // Axes held back for an origin past far are drawn once a file shown again brings it within far.
+    if (axesHeldBack && camera.position.length() <= camera.far) {
+        axesHeldBack = false;
+        setHelper('axes', true);
+    }
     for (const kind of Object.keys(helpers)) if (helpers[kind]) setHelper(kind, true);
     wake();
 }

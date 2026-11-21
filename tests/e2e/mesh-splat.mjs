@@ -989,6 +989,85 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(farDir, { recursive: true, force: true });
 }
 
+// A file 50 km off cannot share one depth range with a 10 cm part: shown, the view frames both; hidden, it must not
+// re-frame the view on every other change. And a cloud whose axes were held back (origin past far) gets them as soon
+// as a file shown again brings the origin within far.
+{
+    const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-remote-'));
+    const disk = (radius, x, y, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = radius * Math.sqrt(i / 3000), a = i * 2.399; return `${x + r * Math.cos(a)} ${y + r * Math.sin(a)} 0 ${rgb}`; }).join('\n');
+    const at = name => path.join(remoteDir, name);
+    fs.writeFileSync(at('part.xyz'), disk(0.05, 0, 0, '255 0 0'));
+    fs.writeFileSync(at('side.xyz'), disk(0.05, 0.2, 0, '255 255 0'));
+    fs.writeFileSync(at('remote.xyz'), disk(100, 50000, 0, '255 0 255'));
+    fs.writeFileSync(at('utm.xyz'), disk(1, 500000, 4000000, '255 0 0'));
+    fs.writeFileSync(at('origin.xyz'), disk(0.5, 0, 0, '255 0 255'));
+    fs.writeFileSync(at('near.xyz'), disk(1, 500003, 4000000, '255 255 0'));
+    const blue = png => evaluate(`(async () => {
+        const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0;
+        // The Z axis shades from blue to cyan; the grid is grey and the clouds red, yellow and magenta.
+        for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 150 && d[i] < 80) n++;
+        return n;
+    })()`);
+    const axesBlue = async () => blue((await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 900, height: 600, scale: 0.5 } })).data);
+    const look = async (key, panel) => {
+        pages.set(`/page/${key}`, panel.webview.html.replaceAll('vscode-webview:', "'self'"));
+        await send('Page.navigate', { url: `${origin}/page/${key}` });
+        for (let i = 0; i < 150 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+        await evaluate("document.querySelectorAll('#top-control-bar, #stage-bar, #stage-panel, #color-legend').forEach(e => { e.style.visibility = 'hidden'; })");
+        await sleep(800);
+    };
+    const eye = async row => {
+        await evaluate(`document.querySelectorAll('#stage-panel .prim-row')[${row}].querySelector('.prim-eye').click()`);
+        await sleep(500);
+    };
+    const key = async (name, code, hold = 0) => {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code, text: name });
+        await sleep(hold);
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code });
+        await sleep(800);
+    };
+    await htmlFor(at('part.xyz'));
+    const part = panels.get('part.xyz');
+    await evaluate('sessionStorage.clear()');
+    await look('remote-alone', part);
+    await part.listener({ type: 'addPaths', uris: [pathToFileURL(at('side.xyz')).href, pathToFileURL(at('remote.xyz')).href] });
+    await look('remote-added', part);
+    // Hide the far file, frame the rest and move off that framing; then hide and show the side file.
+    await eye(2);
+    await key('f', 'KeyF');
+    await key('w', 'KeyW', 300);
+    // Where the points fall on screen, not the whole picture: the grid redraws for the far plane the hidden file widens.
+    const points = async () => coloredPoints((await send('Page.captureScreenshot', { format: 'png' })).data);
+    const [, x0, y0] = await points();
+    await eye(1);
+    await eye(1);
+    const [, x1, y1] = await points();
+    const moved = Math.hypot(x1 - x0, y1 - y0);
+    const okStay = moved < 2;
+    results.push(okStay);
+    console.log(`${okStay ? 'PASS' : 'FAIL'} part.xyz + side.xyz + remote.xyz 50 km off, hidden: side hidden and shown again moves the points ${moved.toFixed(1)} px`);
+    await htmlFor(at('utm.xyz'));
+    const utm = panels.get('utm.xyz');
+    await evaluate('sessionStorage.clear()');
+    await look('utm-alone', utm);
+    await utm.listener({ type: 'addPaths', uris: [pathToFileURL(at('origin.xyz')).href] });
+    await look('utm-origin', utm);
+    // Hide the file at the origin and frame the UTM cloud: the next page holds the axes back.
+    await eye(1);
+    await key('f', 'KeyF');
+    await utm.listener({ type: 'addPaths', uris: [pathToFileURL(at('near.xyz')).href] });
+    await look('utm-near', utm);
+    const held = await axesBlue();
+    await eye(1);
+    const shown = await axesBlue();
+    const okAxes = held === 0 && shown > 20;
+    results.push(okAxes);
+    console.log(`${okAxes ? 'PASS' : 'FAIL'} utm.xyz + origin.xyz hidden + near.xyz: axes blue ${held} held back, ${shown} once origin.xyz is shown`);
+    fs.rmSync(remoteDir, { recursive: true, force: true });
+}
+
 // A file with no points opens empty, and a view whose every file fails still lists them, the added one removable.
 {
     const started = Date.now();

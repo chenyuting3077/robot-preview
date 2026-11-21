@@ -591,6 +591,19 @@ test('a file added while the opened file\'s delete is being checked is refused',
     assert.equal(env.state.watchers.length, watchers);
 });
 
+test('an add and a remove sent while a late delete of the opened file is checked run once it is found there', async () => {
+    const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'a.pcd': 'a', 'b.pcd': 'b' });
+    await panel.listener({ type: 'addPaths', uris: [url('a.pcd')] });
+    const [watcher] = env.state.watchers;
+    // A rename-style save whose delete event comes after the create: the file is there.
+    const deleting = watcher.delete({ fsPath: at('map.pcd') });
+    const a = listed(panel)[1];
+    await panel.listener({ type: 'addPaths', uris: [url('b.pcd')] });
+    await panel.listener({ type: 'removeFile', file: a.id });
+    await deleting;
+    assert.deepEqual(names(panel), ['map.pcd', 'b.pcd']);
+});
+
 test('a file added after the tab closed starts no watcher or reader', async () => {
     const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'a.pcd': 'a', 'b.pcd': 'b' });
     let pick;

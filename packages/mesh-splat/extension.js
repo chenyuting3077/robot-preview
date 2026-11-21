@@ -207,12 +207,23 @@ function activate(context) {
             let pageRender = null;
             // A delete event can arrive after the create that follows it, so the file is looked at again; a render
             // started since decides instead. The opened file is marked gone until then.
+            // An add or remove refused while that look is pending runs once the file is found there.
+            let checking = 0;
+            let refused = [];
             const openedDeleted = async () => {
                 deletes++;
                 openedGone = true;
                 const turn = renders;
-                if (await exists(document.uri) && turn === renders) openedGone = false;
+                checking++;
+                const there = await exists(document.uri);
+                checking--;
+                if (there && turn === renders) openedGone = false;
+                if (checking) return;
+                const replay = refused;
+                refused = [];
+                if (!openedGone) for (const request of replay) await request();
             };
+            const refuse = request => checking && refused.push(request);
             // A rename-style save of an added file is not a delete: re-rendering would read every file again.
             const addedDeleted = async file => {
                 const turn = renders;
@@ -251,7 +262,8 @@ function activate(context) {
             const addUris = async uris => {
                 const fresh = uris.filter((uri, i) => takesFiles && extensions.includes(extensionOf(uri.path))
                     && !files.some(file => sameFile(file.uri.fsPath, uri.fsPath)) && uris.findIndex(other => sameFile(other.fsPath, uri.fsPath)) === i);
-                if (!fresh.length || openedGone || disposed) return;
+                if (!fresh.length || disposed) return;
+                if (openedGone) return refuse(() => addUris(uris));
                 fresh.forEach(add);
                 await render(true);
             };
@@ -304,7 +316,8 @@ function activate(context) {
                 },
                 removeFile: async message => {
                     const file = fileOf(message.file);
-                    if (!file || file === files[0] || openedGone) return;
+                    if (!file || file === files[0]) return;
+                    if (openedGone) return refuse(() => handlers.removeFile(message));
                     drop(file);
                     await render(true);
                 }
