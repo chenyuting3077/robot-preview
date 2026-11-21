@@ -1294,12 +1294,12 @@ async function setupView(shown) {
         const [x, y, z, tx, ty, tz, near, far] = kept.camera;
         camera.position.set(x, y, z);
         // The kept planes were set for the files before: a 200 m map added to a 10 cm part lay past a far of 15 m.
-        // Near follows at frame()'s 1:1e5, but stays short of the box so nothing in front is cut.
+        // Near follows at frame()'s 1:1e5, the depth range frame() gives any file: wider, a map's faces z-fight.
         const box = viewBox();
         const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(i => new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z));
         const farthest = box.isEmpty() ? 0 : Math.max(...corners.map(corner => corner.distanceTo(camera.position)));
         const wide = Math.max(far, farthest * 1.1);
-        Object.assign(camera, { near: wide > far ? Math.max(near, Math.min(wide / 1e5, box.distanceToPoint(camera.position) / 2)) : near, far: wide });
+        Object.assign(camera, { near: Math.max(near, wide / 1e5), far: wide });
         camera.updateProjectionMatrix();
         controls.target.set(tx, ty, tz);
         controls.update();

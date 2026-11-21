@@ -528,6 +528,65 @@ test('a deleted added file re-renders the view with that file shown missing', as
     assert.match(panel.webview.html, /data-keep="1"/);
 });
 
+test('a delete event for an added file that is already back (a rename-style save) does not re-render', async () => {
+    const { env, panel, at, url } = await open({ 'map.pgm': 'P5', 'scan.pcd': 'scan' });
+    await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
+    const watcher = env.state.watchers.find(({ pattern }) => pattern.pattern === 'scan.pcd');
+    fs.writeFileSync(at('scan.pcd'), 'saved scan');
+    await watcher.create({ fsPath: at('scan.pcd') });
+    const html = panel.webview.html;
+    await watcher.delete({ fsPath: at('scan.pcd') });
+    assert.equal(panel.webview.html, html, 'every file would be read again');
+});
+
+test('a render whose stat passed before the opened file was deleted does not unlock the view\'s files', async () => {
+    const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'scan.pcd': 'scan' });
+    const [watcher] = env.state.watchers;
+    const stat = env.vscode.workspace.fs.stat;
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    let first = true;
+    env.vscode.workspace.fs.stat = async uri => {
+        if (!first) return stat(uri);
+        first = false;
+        const result = await stat(uri);
+        await held;
+        return result;
+    };
+    const rendering = watcher.change({ fsPath: at('map.pcd') });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    fs.rmSync(at('map.pcd'));
+    await watcher.delete({ fsPath: at('map.pcd') });
+    release();
+    await rendering;
+    const watchers = env.state.watchers.length;
+    await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
+    assert.equal(env.state.watchers.length, watchers, 'nothing is added while the opened file is gone');
+});
+
+test('a file added while the opened file\'s delete is being checked is refused', async () => {
+    const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'scan.pcd': 'scan' });
+    const [watcher] = env.state.watchers;
+    fs.rmSync(at('map.pcd'));
+    const deleting = watcher.delete({ fsPath: at('map.pcd') });
+    const watchers = env.state.watchers.length;
+    await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
+    await deleting;
+    assert.equal(env.state.watchers.length, watchers);
+});
+
+test('a file added after the tab closed starts no watcher or reader', async () => {
+    const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'a.pcd': 'a', 'b.pcd': 'b' });
+    let pick;
+    env.vscode.window.showOpenDialog = () => new Promise(resolve => { pick = resolve; });
+    const adding = panel.listener({ type: 'addFiles' });
+    panel.dispose();
+    pick([env.vscode.Uri.file(at('a.pcd'))]);
+    await adding;
+    await panel.listener({ type: 'addPaths', uris: [url('b.pcd')] });
+    assert.deepEqual(env.state.watchers.filter(w => !w.disposed), []);
+});
+
 test('two files whose 64-bit file ids differ only past 2^53 (NTFS) are two files', async () => {
     const { panel, at, url } = await open({ 'scan_a.pcd': 'a', 'scan_b.pcd': 'b' });
     // As Node on Windows: the file id is exact as a bigint, rounded as a Number.

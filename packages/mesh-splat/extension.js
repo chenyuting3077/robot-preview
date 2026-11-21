@@ -162,12 +162,17 @@ function activate(context) {
             // It keeps the view only if no render since the last page was for a change.
             let renders = 0;
             let keeps = true;
-            // While the opened file is gone no page can be rendered, so the list stays as the page shows it.
+            // While the opened file is gone no page can be rendered, so the list stays as the page shows it. A delete
+            // marks it at once (an add while its stat is pending would pass); `deletes` tells a render whose stat
+            // came before a delete that the file may be gone since.
             let openedGone = false;
+            let deletes = 0;
+            const exists = uri => vscode.workspace.fs.stat(uri).then(() => true, () => false);
             // A render still waiting on a stat when the tab closes would find no files (and a disposed webview).
             let disposed = false;
             const render = async (keep = false) => {
                 const turn = ++renders;
+                const seen = deletes;
                 keeps &&= keep;
                 const stats = await Promise.all(files.map(file => vscode.workspace.fs.stat(file.uri).catch(() => null)));
                 if (disposed) return;
@@ -180,6 +185,10 @@ function activate(context) {
                 const cache = stepCache(cacheDir, document.uri, stats[0], build);
                 const html = await renderHtml(template, panel.webview, distUri, files.map((file, i) => ({ ...file, stat: stats[i], takesFiles })), cache, turn, keeps,
                     context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true, context.globalState.get(SETTINGS_KEY) ?? {});
+                if (deletes !== seen && !(await exists(document.uri))) {
+                    if (turn === renders) openedGone = true;
+                    return;
+                }
                 if (turn !== renders || disposed) return;
                 keeps = true;
                 openedGone = false;
@@ -195,10 +204,19 @@ function activate(context) {
                 panel.webview.html = html;
             };
             let pageRender = null;
-            const confirmGone = async () => {
+            // A delete event can arrive after the create that follows it, so the file is looked at again; a render
+            // started since decides instead. The opened file is marked gone until then.
+            const openedDeleted = async () => {
+                deletes++;
+                openedGone = true;
                 const turn = renders;
-                const there = await vscode.workspace.fs.stat(document.uri).then(() => true, () => false);
-                if (!there && turn === renders) openedGone = true;
+                if (await exists(document.uri) && turn === renders) openedGone = false;
+            };
+            // A rename-style save of an added file is not a delete: re-rendering would read every file again.
+            const addedDeleted = async file => {
+                const turn = renders;
+                if (await exists(file.uri) || turn !== renders || disposed || !files.includes(file)) return;
+                await render(true);
             };
             const startReader = file => {
                 file.reader?.dispose();
@@ -212,11 +230,10 @@ function activate(context) {
                 // Editors that save by writing a new file and renaming it over the old one fire create, not change.
                 watcher.onDidChange(changed);
                 watcher.onDidCreate(changed);
-                // A delete event can arrive after the create that follows it, so the opened file is looked at again.
                 // An added file that is deleted shows as missing, the view kept as for a removed one.
                 const opened = !files.length;
-                watcher.onDidDelete(event => event && samePath(event.fsPath, uri.fsPath) && (opened ? confirmGone() : render(true)));
                 const file = { id, uri, watcher, reader: null };
+                watcher.onDidDelete(event => event && samePath(event.fsPath, uri.fsPath) && (opened ? openedDeleted() : addedDeleted(file)));
                 startReader(file);
                 files.push(file);
             };
@@ -229,7 +246,7 @@ function activate(context) {
             const addUris = async uris => {
                 const fresh = uris.filter((uri, i) => takesFiles && extensions.includes(extensionOf(uri.path))
                     && !files.some(file => sameFile(file.uri.fsPath, uri.fsPath)) && uris.findIndex(other => sameFile(other.fsPath, uri.fsPath)) === i);
-                if (!fresh.length || openedGone) return;
+                if (!fresh.length || openedGone || disposed) return;
                 fresh.forEach(add);
                 await render(true);
             };
