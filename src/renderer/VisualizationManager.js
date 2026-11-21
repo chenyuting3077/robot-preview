@@ -161,9 +161,6 @@ export class VisualizationManager {
                     child.castShadow = false;
                     child.receiveShadow = false;
 
-                    // Disable raycasting for colliders (don't interfere with dragging)
-                    child.raycast = () => {};
-
                         this.collisionMeshes.push(child);
                     }
                 });
@@ -354,9 +351,6 @@ export class VisualizationManager {
 
                     child.castShadow = false;
                     child.receiveShadow = false;
-
-                    // Disable raycasting for colliders
-                    child.raycast = () => {};
 
                     // Set visibility based on current collision display state
                     child.visible = this.showCollision;

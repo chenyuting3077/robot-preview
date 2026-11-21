@@ -157,13 +157,13 @@ async function connect(port) {
         await sleep(1000);
         try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
     };
-    return { ev, waitFor, finalDiagnostics, close };
+    return { send, ev, waitFor, finalDiagnostics, close };
 }
 
 const messages = await captureMessages();
 const server = await serve(messages);
 const page = await connect(server.address().port);
-const { ev, waitFor, finalDiagnostics } = page;
+const { send, ev, waitFor, finalDiagnostics } = page;
 
 try {
     const panelsHidden = `['floating-joints-panel','floating-model-tree'].every(id => getComputedStyle(document.getElementById(id)).display === 'none')`;
@@ -370,6 +370,57 @@ try {
     const daeUrdf = '<robot name="n"><link name="l"><visual><geometry><mesh filename="package://n/m.dae"/></geometry></visual></link></robot>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/n/n.urdf', data: new TextEncoder().encode(${JSON.stringify(daeUrdf)}) }, { path: '/n/m.dae', data: new TextEncoder().encode(${JSON.stringify(noNormalsDae)}) }], primary: '/n/n.urdf' }, '*')`);
     check('a DAE without normals gets them', await waitFor(`(() => { let ok = false; window.app.currentModel?.threeObject?.traverse(o => { if (o.isMesh && o.geometry.attributes.normal) ok = true; }); return ok; })()`, 5000));
+
+    // Only what is on screen answers the pointer. The collision box reaches past the end of the visual box; `tip` is
+    // a point there, on collision geometry only, with no visual behind it.
+    const arm = '<robot name="h"><link name="base"/><link name="arm"><visual><origin xyz="0.25 0 0"/><geometry><box size="0.3 0.1 0.1"/></geometry></visual><collision><origin xyz="0.25 0 0"/><geometry><box size="0.4 0.2 0.2"/></geometry></collision></link><joint name="j" type="revolute"><parent link="base"/><child link="arm"/><origin xyz="0 0 0.3"/><axis xyz="0 0 1"/><limit lower="-3" upper="3" effort="1" velocity="1"/></joint></robot>';
+    await ev(`window.postMessage({ type: 'load', files: [{ path: '/h/h.urdf', data: new TextEncoder().encode(${JSON.stringify(arm)}) }], primary: '/h/h.urdf' }, '*')`);
+    await waitFor(`window.app.currentModel?.joints?.has('j')`, 10000);
+    await sleep(500);
+    // A press that grabs nothing orbits the camera, so every hover and drag starts from the same view.
+    const view = () => ev(`const sm = window.app.sceneManager; sm.camera.position.set(0.25, -0.8, 0.9); sm.controls.target.set(0.25, 0, 0.3); sm.controls.update(); sm.camera.updateMatrixWorld();`);
+    await view();
+    const [middle, tip] = await ev(`
+        const sm = window.app.sceneManager, link = window.app.currentModel.links.get('arm').threeObject, r = sm.renderer.domElement.getBoundingClientRect();
+        window.app.currentModel.threeObject.updateMatrixWorld(true);
+        return [0.25, 0.43].map(along => {
+            const v = link.localToWorld(sm.camera.position.clone().set(along, 0, 0)).project(sm.camera);
+            const x = Math.round(r.left + (v.x + 1) / 2 * r.width), y = Math.round(r.top + (1 - v.y) / 2 * r.height);
+            return { x, y, onCanvas: document.elementFromPoint(x, y) === sm.renderer.domElement };
+        });`);
+    const mouse = (type, x, y, buttons = 0) => send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? (buttons ? 'left' : 'none') : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1 });
+    const hover = async at => {
+        await view();
+        await mouse('mouseMoved', 5, 5);
+        await mouse('mouseMoved', at.x, at.y);
+        await sleep(100);
+        return ev(`return window.app.sceneManager.highlightManager.currentHighlightedLink?.name || null`);
+    };
+    const drag = async at => {
+        await ev(`window.app.poseController.setJointValue('j', 0)`);
+        await view();
+        await mouse('mouseMoved', at.x, at.y);
+        await mouse('mousePressed', at.x, at.y, 1);
+        for (let i = 1; i <= 6; i++) await mouse('mouseMoved', at.x, at.y - i * 10, 1);
+        await mouse('mouseReleased', at.x, at.y - 60);
+        await sleep(100);
+        const moved = await ev(`return window.app.poseController.getJointValue('j')`);
+        await ev(`window.app.poseController.setJointValue('j', 0)`);
+        return moved;
+    };
+    const display = (id, on) => ev(`const b = document.getElementById('${id}'); if (b.classList.contains('active') !== ${on}) b.click();`);
+    await display('show-visual', true);
+    await display('show-collision', false);
+    check('the pointer targets are on the canvas and the shown visual is hovered', middle.onCanvas && tip.onCanvas && await hover(middle) === 'arm', JSON.stringify({ middle, tip }));
+    await display('show-visual', false);
+    check('a hidden visual is not hovered', await hover(middle) === null);
+    await display('show-collision', true);
+    const collision = { hover: await hover(tip), drag: await drag(tip) };
+    check('with only collision shown, hovering it highlights its link and a drag moves its joint', collision.hover === 'arm' && Math.abs(collision.drag) > 0.05, JSON.stringify(collision));
+    await display('show-collision', false);
+    const none = { hover: await hover(middle), drag: await drag(middle) };
+    check('with visual and collision hidden, nothing is hovered or dragged', none.hover === null && none.drag === 0, JSON.stringify(none));
+    await display('show-visual', true);
 
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));

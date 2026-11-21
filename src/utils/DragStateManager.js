@@ -3,6 +3,7 @@
  * Used to apply forces when dragging objects during physics simulation
  */
 import * as THREE from 'three';
+import { intersectDisplayed } from './picking.js';
 
 export class DragStateManager {
     constructor(scene, renderer, camera, container, controls) {
@@ -81,7 +82,7 @@ export class DragStateManager {
     start(x, y) {
         this.physicsObject = null;
         this.updateRaycaster(x, y);
-        const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+        const intersects = intersectDisplayed(this.raycaster, this.scene.children, this.camera);
 
         for (let i = 0; i < intersects.length; i++) {
             const obj = intersects[i].object;

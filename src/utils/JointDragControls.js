@@ -1,6 +1,7 @@
 import { isScalarJoint } from '../models/UnifiedRobotModel.js';
 import * as THREE from 'three';
 import { MathUtils } from './MathUtils.js';
+import { intersectDisplayed } from './picking.js';
 
 /**
  * Universal joint drag control system
@@ -97,8 +98,6 @@ export class JointDragControls {
         this.domElement = domElement;
         this.model = model;
         this.raycaster = new THREE.Raycaster();
-        // Allow raycasting to detect invisible objects (for when visual is hidden)
-        this.raycaster.layers.enableAll();
         this.initialGrabPoint = new THREE.Vector3();
         this.hitDistance = -1;
         this.hovered = null;
@@ -116,62 +115,10 @@ export class JointDragControls {
 
         let hoveredLink = null;
 
-        // Temporarily store and enable visibility for visual meshes to allow raycasting
-        const hiddenMeshes = [];
-        model.threeObject.traverse((child) => {
-            if (child.isMesh && !child.visible) {
-                // Check if it's a visual mesh (not collision)
-                let isInCollider = false;
-                let checkNode = child;
-                while (checkNode) {
-                    if (checkNode.isURDFCollider) {
-                        isInCollider = true;
-                        break;
-                    }
-                    checkNode = checkNode.parent;
-                }
-                if (!isInCollider) {
-                    child.visible = true;
-                    hiddenMeshes.push(child);
-                }
-            }
-        });
-
-        // Only detect robot model, not entire scene
-        const intersections = raycaster.intersectObject(model.threeObject, true);
-
-        // Restore visibility
-        hiddenMeshes.forEach(mesh => {
-            mesh.visible = false;
-        });
-
-        // Filter out collision meshes (but allow invisible visual meshes for interaction)
-        const validIntersections = intersections.filter(intersect => {
-            const obj = intersect.object;
-            // Skip collision meshes
-            if (obj.isURDFCollider || obj.userData?.isCollision || obj.userData?.isCollisionGeom) {
-                return false;
-            }
-            // Check if object is in collision hierarchy
-            let isInCollider = false;
-            let checkNode = obj;
-            while (checkNode) {
-                if (checkNode.isURDFCollider) {
-                    isInCollider = true;
-                    break;
-                }
-                checkNode = checkNode.parent;
-            }
-            if (isInCollider) {
-                return false;
-            }
-            // Allow all visual meshes
-            return obj.isMesh;
-        });
-
-        // Like urdf-loaders, only detect first intersecting object (closest)
-        if (validIntersections.length !== 0) {
-            const hit = validIntersections[0];
+        // Like urdf-loaders, only the closest hit counts. A shown collision mesh maps to its link like a visual, so
+        // joints stay draggable with visuals off.
+        const hit = this.pickHit(raycaster);
+        if (hit) {
             hoveredLink = findParentLink(hit.object, model);
 
             if (hoveredLink) {
@@ -197,6 +144,11 @@ export class JointDragControls {
             // Even for same link, update object reference (keep latest object)
             this.hovered = hoveredLink;
         }
+    }
+
+    pickHit(raycaster) {
+        if (!this.model?.threeObject) return null;
+        return intersectDisplayed(raycaster, [this.model.threeObject], this.camera).find(({ object }) => object.isMesh) || null;
     }
 
     updateJoint(joint, angle) {
@@ -422,59 +374,8 @@ export class PointerJointDragControls extends JointDragControls {
             // Check if ray intersects with the model before disabling camera controls
             if (!this.model || !this.model.threeObject) return;
 
-            // Temporarily store and enable visibility for visual meshes to allow raycasting
-            const hiddenMeshes = [];
-            this.model.threeObject.traverse((child) => {
-                if (child.isMesh && !child.visible) {
-                    // Check if it's a visual mesh (not collision)
-                    let isInCollider = false;
-                    let checkNode = child;
-                    while (checkNode) {
-                        if (checkNode.isURDFCollider) {
-                            isInCollider = true;
-                            break;
-                        }
-                        checkNode = checkNode.parent;
-                    }
-                    if (!isInCollider) {
-                        child.visible = true;
-                        hiddenMeshes.push(child);
-                    }
-                }
-            });
-
-            const intersections = raycaster.intersectObject(this.model.threeObject, true);
-
-            // Restore visibility
-            hiddenMeshes.forEach(mesh => {
-                mesh.visible = false;
-            });
-
-            // Filter out collision meshes (but allow invisible visual meshes for interaction)
-            const validIntersections = intersections.filter(intersect => {
-                const obj = intersect.object;
-                // Skip collision meshes
-                if (obj.isURDFCollider || obj.userData?.isCollision || obj.userData?.isCollisionGeom) {
-                    return false;
-                }
-                // Check if object is in collision hierarchy
-                let isInCollider = false;
-                let checkNode = obj;
-                while (checkNode) {
-                    if (checkNode.isURDFCollider) {
-                        isInCollider = true;
-                        break;
-                    }
-                    checkNode = checkNode.parent;
-                }
-                if (isInCollider) {
-                    return false;
-                }
-                // Allow all visual meshes
-                return obj.isMesh;
-            });
-
-            const hitLink = validIntersections.length > 0 ? findParentLink(validIntersections[0].object, this.model) : null;
+            const hit = this.pickHit(raycaster);
+            const hitLink = hit ? findParentLink(hit.object, this.model) : null;
 
             // Only set grabbed if we actually hit a visible link
             if (hitLink) {
