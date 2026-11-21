@@ -432,6 +432,16 @@ function frame() {
 // shrink the cloud to a speck, so the grid keeps the lowest point instead.
 const helpers = {};
 let isCloud = false;
+// Point clouds and other models each open with the helpers last left on for their kind, or these the first time.
+const DEFAULT_HELPERS = { cloud: ['grid', 'axes'], model: ['grid'] };
+const helperKind = () => (isCloud ? 'cloud' : 'model');
+const savedHelpers = (() => {
+    try {
+        return JSON.parse(page.helpers || '{}');
+    } catch {
+        return {};
+    }
+})();
 let cloudGround = null;
 // The model's box in the view's frame, with a point cloud's up = 0 plane under it when the grid sits there.
 function viewBox() {
@@ -585,7 +595,10 @@ function setupUi(hasMesh, hasPoints, up) {
     document.querySelectorAll('[data-mode], #size-separator').forEach(element => { element.hidden = !hasMesh; });
     document.querySelectorAll('#size-row, #helper-separator').forEach(element => { element.hidden = !hasMesh && !hasPoints; });
     document.querySelector('[data-helper="bounds"]').hidden = isCloud;
-    document.querySelectorAll('[data-helper]').forEach(button => button.addEventListener('click', () => setHelper(button.dataset.helper, !helpers[button.dataset.helper])));
+    document.querySelectorAll('[data-helper]').forEach(button => button.addEventListener('click', () => {
+        setHelper(button.dataset.helper, !helpers[button.dataset.helper]);
+        vscodeApi?.postMessage({ type: 'helpers', helpers: { [helperKind()]: Object.keys(HELPERS).filter(kind => helpers[kind]) } });
+    }));
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
     document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => setPointSize(Number(button.dataset.size))));
     for (const [button, panel] of [[$('display-menu-btn'), $('display-menu')], [$('info-btn'), $('info-panel')], [$('help-btn'), $('help-panel')]]) {
@@ -639,7 +652,7 @@ async function main() {
         isCloud = counted.points > 0 && !counted.faces;
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
-        if (isCloud) for (const helper of ['grid', 'axes']) setHelper(helper, true);
+        for (const helper of savedHelpers[helperKind()] ?? DEFAULT_HELPERS[helperKind()]) if (!(isCloud && helper === 'bounds')) setHelper(helper, true);
     } catch (error) {
         // A page whose file changed keeps showing that it loads.
         if (!showError(error)) return;

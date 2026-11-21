@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { openMeshSplat, waitFor } from './vscode-mock.mjs';
+import { fakePanel, openMeshSplat, waitFor } from './vscode-mock.mjs';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
 
@@ -39,4 +39,18 @@ test('IGES files get a tessellation cache key like STEP, meshes do not', async (
     assert.match(await keyOf('part.igs'), /\.meshopt$/);
     assert.match(await keyOf('PART.IGES'), /\.meshopt$/);
     assert.equal(await keyOf('part.stl'), '');
+});
+
+test('Display helpers left on for a kind of model open the next file, and unknown names are dropped', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-helpers-'));
+    const [first, second] = ['a.ply', 'b.ply'].map(name => path.join(root, name));
+    for (const file of [first, second]) fs.writeFileSync(file, 'ply\n');
+    const helpersOf = html => JSON.parse(html.match(/data-helpers="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+    const { env, panel } = await openMeshSplat(root, first);
+    assert.deepEqual(helpersOf(panel.webview.html), {});
+    await panel.listener({ type: 'helpers', helpers: { cloud: ['grid', 'script'] } });
+    await panel.listener({ type: 'helpers', helpers: { model: [] } });
+    const next = fakePanel();
+    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(second) }, next);
+    assert.deepEqual(helpersOf(next.webview.html), { cloud: ['grid'], model: [] });
 });

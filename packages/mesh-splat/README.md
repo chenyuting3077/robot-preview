@@ -24,7 +24,7 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 - Solid, wireframe and point display, point size, up-axis selection, and vertex / face / splat counts.
 - Color point clouds by their original color, height, intensity or any other PLY property (confidence, curvature, ...), with a legend.
-- Grid, axes and bounding box from the Display menu.
+- Grid, axes and bounding box from the Display menu, kept as last left for point clouds and for other models.
 - Save the view as a PNG screenshot.
 - Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls.
 - Draws only while the view changes, so a large model left open does not keep the GPU busy.
