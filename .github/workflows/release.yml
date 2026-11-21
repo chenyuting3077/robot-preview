@@ -1,0 +1,100 @@
+# Publishes one extension per release tag (urdf-mjcf-v*, mesh-splat-v*, usd-v*).
+# Marketplace: Trusted Publishing (`vsce publish --oidc`, vsce 4.x). The publisher's policy names this repo and
+# `release.yml` with no environment; renaming the file or adding an environment needs the policy changed too.
+# Global Azure DevOps PATs are being retired, and this publisher's Microsoft account cannot create the Azure
+# DevOps organization a PAT needs (it asks for an Azure subscription).
+# Open VSX: the OVSX_PAT repository secret; the step is skipped when the secret is absent.
+# Both registries refuse to replace a version, so an already published version is skipped, not failed.
+name: Release
+
+on:
+  push:
+    tags: ['urdf-mjcf-v*', 'mesh-splat-v*', 'usd-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish, e.g. mesh-splat-v0.5.0'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: Read the tag
+        id: tag
+        run: |
+          if [[ ! "$TAG" =~ ^(urdf-mjcf|mesh-splat|usd)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::$TAG is not <urdf-mjcf|mesh-splat|usd>-v<x.y.z>"; exit 1
+          fi
+          echo "package=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - name: Check the version in package.json
+        env:
+          PACKAGE: ${{ steps.tag.outputs.package }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          actual=$(node -p "require('./packages/$PACKAGE/package.json').version")
+          [ "$actual" = "$VERSION" ] || { echo "::error::$TAG but packages/$PACKAGE/package.json says $actual"; exit 1; }
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        env:
+          PACKAGE: ${{ steps.tag.outputs.package }}
+        run: |
+          pnpm install --frozen-lockfile
+          # Mesh & Splat keeps its own node_modules (Spark needs a newer three.js); USD builds with it.
+          if [ "$PACKAGE" != urdf-mjcf ]; then npm ci --prefix packages/mesh-splat; fi
+
+      - name: Build
+        env:
+          PACKAGE: ${{ steps.tag.outputs.package }}
+        run: |
+          case "$PACKAGE" in
+            urdf-mjcf) npx vite build ;;
+            mesh-splat) npm --prefix packages/mesh-splat run build ;;
+            usd) npm --prefix packages/usd run build ;;
+          esac
+
+      - name: Package
+        working-directory: packages/${{ steps.tag.outputs.package }}
+        env:
+          PACKAGE: ${{ steps.tag.outputs.package }}
+        run: |
+          npx --yes @vscode/vsce@4.1.1 package --no-dependencies \
+            --baseImagesUrl "https://github.com/chenyuting3077/robot-preview/raw/$TAG/packages/$PACKAGE" \
+            --out "$RUNNER_TEMP/extension.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.TAG }}
+          path: ${{ runner.temp }}/extension.vsix
+
+      - name: Publish to the Visual Studio Marketplace
+        run: npx --yes @vscode/vsce@4.1.1 publish --oidc --skip-duplicate --packagePath "$RUNNER_TEMP/extension.vsix"
+
+      - name: Publish to Open VSX
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: |
+          if [ -z "$OVSX_PAT" ]; then echo "::warning::OVSX_PAT is not set; Open VSX skipped"; exit 0; fi
+          npx --yes ovsx@0.10.6 publish "$RUNNER_TEMP/extension.vsix" --skip-duplicate
