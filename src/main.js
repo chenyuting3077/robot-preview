@@ -27,7 +27,8 @@ const vscode = acquireVsCodeApi();
 
 const SETTING_BUTTONS = [
     'show-visual', 'show-collision', 'show-inertia', 'show-com', 'toggle-axes-btn', 'toggle-joint-axes-btn',
-    'toggle-shadow', 'toggle-lighting', 'toggle-grid', 'toggle-joints-panel', 'toggle-model-tree', 'ignore-limits'
+    'toggle-shadow', 'toggle-lighting', 'toggle-grid', 'toggle-joints-panel', 'toggle-model-tree', 'ignore-limits',
+    'hover-info-btn'
 ];
 const PANEL_BUTTONS = { 'toggle-joints-panel': 'floating-joints-panel', 'toggle-model-tree': 'floating-model-tree' };
 const MODEL_FILE_RE = /\.(urdf|xacro|xml|sdf|world)$/i;
@@ -133,6 +134,14 @@ class App {
             const screenshotButton = document.getElementById('screenshot-btn');
             screenshotButton.title = screenshotButton.ariaLabel = window.i18n.t('screenshot');
             screenshotButton.addEventListener('click', () => this.captureScreenshot());
+            const hoverInfoButton = document.getElementById('hover-info-btn');
+            hoverInfoButton.title = hoverInfoButton.ariaLabel = window.i18n.t('hoverInfo');
+            hoverInfoButton.addEventListener('click', () => {
+                const on = !hoverInfoButton.classList.contains('active');
+                hoverInfoButton.classList.toggle('active', on);
+                hoverInfoButton.setAttribute('aria-pressed', String(on));
+                this.sceneManager.highlightManager.setInfoEnabled(on);
+            });
             for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['help-btn', 'help-panel']]) {
                 const button = document.getElementById(buttonId);
                 const panel = document.getElementById(panelId);

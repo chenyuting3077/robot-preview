@@ -15,6 +15,33 @@ export class HighlightManager {
             emissive: 0xffffff,
             emissiveIntensity: 0.25
         });
+
+        // The toolbar's arrow button turns the info card off; the link still highlights so a joint can be dragged.
+        this.infoEnabled = true;
+        this.pointer = null;
+        globalThis.document?.addEventListener('pointermove', event => {
+            this.pointer = { x: event.clientX, y: event.clientY };
+            const hoverInfo = document.getElementById('hover-info');
+            if (hoverInfo?.classList.contains('visible')) this.placeHoverInfo(hoverInfo);
+        }, { capture: true, passive: true });
+    }
+
+    setInfoEnabled(on) {
+        this.infoEnabled = on;
+        if (!on) this.hideHoverInfo();
+    }
+
+    // Below-right of the pointer, flipped to the other side near the window's right or bottom edge.
+    placeHoverInfo(hoverInfo) {
+        if (!this.pointer) return;
+        const OFFSET = 16, MARGIN = 8;
+        const { offsetWidth: width, offsetHeight: height } = hoverInfo;
+        let x = this.pointer.x + OFFSET;
+        let y = this.pointer.y + OFFSET;
+        if (x + width > window.innerWidth - MARGIN) x = this.pointer.x - OFFSET - width;
+        if (y + height > window.innerHeight - MARGIN) y = this.pointer.y - OFFSET - height;
+        hoverInfo.style.left = `${Math.max(MARGIN, x)}px`;
+        hoverInfo.style.top = `${Math.max(MARGIN, y)}px`;
     }
 
     /**
@@ -237,6 +264,7 @@ export class HighlightManager {
      * Show hover information (Link name, parent Joint name, mass, pose)
      */
     showHoverInfo(link, currentModel) {
+        if (!this.infoEnabled) return;
         const hoverInfo = document.getElementById('hover-info');
         const jointNameEl = document.getElementById('hover-joint-name');
         const linkNameEl = document.getElementById('hover-link-name');
@@ -404,7 +432,7 @@ export class HighlightManager {
             linkPoseEl.style.display = 'block';
         }
 
-        // Show tooltip
+        this.placeHoverInfo(hoverInfo);
         hoverInfo.classList.add('visible');
     }
 

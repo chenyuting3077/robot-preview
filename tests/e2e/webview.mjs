@@ -432,6 +432,24 @@ try {
     check('with visual and collision hidden, nothing is hovered or dragged', none.hover === null && none.drag === 0, JSON.stringify(none));
     await display('show-visual', true);
 
+    // The info card sits beside the pointer, flipped near the window's edges; the arrow button turns it off and is kept.
+    const card = () => ev(`const el = document.getElementById('hover-info'), r = el.getBoundingClientRect();
+        return { visible: el.classList.contains('visible'), left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) };`);
+    await hover(middle);
+    const beside = await card();
+    check('the hover info opens below-right of the pointer', beside.visible && beside.left === middle.x + 16 && beside.top === middle.y + 16, JSON.stringify({ beside, middle }));
+    const flipped = await ev(`const hm = window.app.sceneManager.highlightManager, el = document.getElementById('hover-info');
+        hm.pointer = { x: innerWidth - 10, y: innerHeight - 10 }; hm.placeHoverInfo(el);
+        const r = el.getBoundingClientRect(); return { right: Math.round(r.right), bottom: Math.round(r.bottom), x: innerWidth - 10, y: innerHeight - 10 };`);
+    check('near the bottom-right corner it flips above-left of the pointer', flipped.right === flipped.x - 16 && flipped.bottom === flipped.y - 16, JSON.stringify(flipped));
+    await ev(`window.__out.length = 0; document.getElementById('hover-info-btn').click()`);
+    const off = { hover: await hover(middle), card: (await card()).visible, drag: await drag(middle) };
+    check('with the hover info off, the link still highlights and drags but no card shows', off.hover === 'arm' && !off.card && Math.abs(off.drag) > 0.05, JSON.stringify(off));
+    await sleep(400);
+    check('the hover info choice is saved', await ev(`return window.__out.findLast(m => m.type === 'settings')?.settings['hover-info-btn'] === false`));
+    await ev(`document.getElementById('hover-info-btn').click()`);
+    check('turned back on, the card shows again', await hover(middle) === 'arm' && (await card()).visible);
+
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));
 } finally {
