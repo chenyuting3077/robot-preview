@@ -1,7 +1,7 @@
 {
   "name": "robot-preview-mesh-splat",
-  "displayName": "Robot Preview: Gaussian Splat, Point Cloud, STEP & STL Viewer",
-  "description": "Fast 3D viewer for Gaussian splats (3DGS, 2DGS), large point clouds (PCD, PLY, XYZ), STEP and IGES CAD models and meshes (STL, OBJ, glTF) inside VS Code",
+  "displayName": "Robot Preview: Point Cloud & Splat Viewer",
+  "description": "Fast 3D viewer for large point clouds and LiDAR scans (PCD, PLY, KITTI, nuScenes), Gaussian splats (3DGS, 2DGS), ROS maps, STEP / IGES CAD and meshes (STL, OBJ, glTF) inside VS Code",
   "version": "0.4.0",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
@@ -31,7 +31,7 @@
     "customEditors": [
       {
         "viewType": "robotPreviewMeshSplat.viewer",
-        "displayName": "Robot Preview: Mesh & Splat",
+        "displayName": "Robot Preview: Point Cloud & Splat",
         "selector": [
           {
             "filenamePattern": "*.stl"
@@ -107,7 +107,7 @@
       },
       {
         "viewType": "robotPreviewMeshSplat.textPoints",
-        "displayName": "Robot Preview: Mesh & Splat",
+        "displayName": "Robot Preview: Point Cloud & Splat",
         "selector": [
           {
             "filenamePattern": "*.asc"
@@ -178,36 +178,36 @@
     "publish:ovsx": "npm run build && npx --yes -p node@20 -p ovsx@0.10.6 ovsx publish --no-dependencies --skip-duplicate --baseImagesUrl https://github.com/chenyuting3077/robot-preview/raw/HEAD/packages/mesh-splat"
   },
   "keywords": [
-    "mesh",
     "point cloud",
+    "point cloud viewer",
+    "large point cloud",
+    "pcd",
+    "ply",
+    "lidar",
+    "kitti",
+    "nuscenes",
+    "occupancy grid",
+    "ros map",
+    "ros",
     "gaussian splatting",
+    "3d gaussian splatting",
+    "2d gaussian splatting",
     "3dgs",
     "2dgs",
-    "ply",
+    "splat",
+    "ply viewer",
     "stl",
+    "stl viewer",
     "obj",
     "gltf",
-    "meshlab",
-    "preview",
-    "viewer",
-    "3d viewer",
-    "stl viewer",
-    "ply viewer",
-    "point cloud viewer",
-    "pcd",
     "glb",
-    "splat",
-    "3d gaussian splatting",
     "step",
     "stp",
-    "cad",
     "step viewer",
+    "cad",
     "cad viewer",
-    "2d gaussian splatting",
-    "lidar",
-    "large point cloud",
-    "3d model viewer",
-    "step file"
+    "mesh",
+    "3d viewer"
   ],
   "dependencies": {
     "@sparkjsdev/spark": "2.4.0",

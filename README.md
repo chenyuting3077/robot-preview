@@ -24,8 +24,8 @@ pnpm test:e2e
 ## Contents
 
 - [packages/urdf-mjcf/](packages/urdf-mjcf/) — Robot Preview: URDF, Xacro & MJCF ([CHANGELOG](packages/urdf-mjcf/CHANGELOG.md))
-- [packages/mesh-splat/](packages/mesh-splat/) — Robot Preview: Mesh & Splat ([CHANGELOG](packages/mesh-splat/CHANGELOG.md))
-- [packages/usd/](packages/usd/) — Robot Preview: USD, sharing the Mesh & Splat viewer ([CHANGELOG](packages/usd/CHANGELOG.md))
+- [packages/mesh-splat/](packages/mesh-splat/) — Robot Preview: Point Cloud & Splat Viewer ([CHANGELOG](packages/mesh-splat/CHANGELOG.md))
+- [packages/usd/](packages/usd/) — Robot Preview: USD Viewer (OpenUSD, Isaac Sim), sharing the Mesh & Splat viewer ([CHANGELOG](packages/usd/CHANGELOG.md))
 - [docs/vscode-extension.md](docs/vscode-extension.md) — URDF & MJCF design decisions and limits
 - [docs/mesh-splat.md](docs/mesh-splat.md) — Mesh & Splat, STEP and USD design decisions, measurements and limits
 - [docs/mjcf-parallel-mechanisms.md](docs/mjcf-parallel-mechanisms.md) — supported MJCF constraints and closed-chain behaviour

@@ -1,7 +1,7 @@
 {
   "name": "robot-preview-usd",
-  "displayName": "Robot Preview: USD",
-  "description": "OpenUSD viewer for USD, USDA, USDC and USDZ inside VS Code: Isaac Sim robots, meshes and Gaussian splats with a Stage tree",
+  "displayName": "Robot Preview: USD Viewer (OpenUSD, Isaac Sim)",
+  "description": "OpenUSD viewer for USD, USDA, USDC and USDZ inside VS Code: Isaac Sim robots, NuRec Gaussian splats and meshes, with a Stage tree and click-to-select prims",
   "version": "0.2.1",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
@@ -31,7 +31,7 @@
     "customEditors": [
       {
         "viewType": "robotPreviewUsd.viewer",
-        "displayName": "Robot Preview: USD",
+        "displayName": "Robot Preview: USD Viewer (OpenUSD, Isaac Sim)",
         "selector": [
           {
             "filenamePattern": "*.usd"
@@ -47,7 +47,7 @@
       },
       {
         "viewType": "robotPreviewUsd.text",
-        "displayName": "Robot Preview: USD",
+        "displayName": "Robot Preview: USD Viewer (OpenUSD, Isaac Sim)",
         "selector": [
           {
             "filenamePattern": "*.usda"
@@ -68,20 +68,26 @@
     "usda",
     "usdc",
     "usdz",
-    "isaac sim",
-    "omniverse",
-    "gaussian splatting",
-    "3dgs",
-    "preview",
-    "viewer",
-    "3d viewer",
     "usd viewer",
+    "usdz viewer",
+    "openusd viewer",
     "usd preview",
     "usdview",
-    "robotics",
-    "robot",
     "usd stage",
     "pixar usd",
-    "nvidia isaac"
+    "isaac sim",
+    "isaac lab",
+    "nvidia isaac",
+    "omniverse",
+    "omnipbr",
+    "nurec",
+    "neural reconstruction",
+    "gaussian splatting",
+    "3dgs",
+    "robotics",
+    "robot",
+    "preview",
+    "viewer",
+    "3d viewer"
   ]
 }

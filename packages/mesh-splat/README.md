@@ -1,6 +1,6 @@
-# Robot Preview: Gaussian Splat, Point Cloud, STEP & STL Viewer
+# Robot Preview: Point Cloud & Splat Viewer
 
-Open Gaussian splats, point clouds, STEP and IGES CAD models and meshes in VS Code as a 3D view, including the large files other viewers give up on.
+Open point clouds and LiDAR scans, Gaussian splats, ROS maps, STEP and IGES CAD models and meshes in VS Code as a 3D view, including the large files other viewers give up on.
 
 ![preview](images/preview.png)
 
@@ -32,6 +32,6 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 - Draws only while the view changes, so a large model left open does not keep the GPU busy.
 - Works in Restricted Mode.
 
-Part of the Robot Preview series with [Robot Preview: URDF, Xacro & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) and [Robot Preview: USD](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-usd).
+Part of the Robot Preview series with [Robot Preview: URDF, Xacro & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) and [Robot Preview: USD Viewer (OpenUSD, Isaac Sim)](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-usd).
 
 Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs, STEP with [foxtrot](https://github.com/Formlabs/foxtrot) and [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)); format coverage follows [MeshLab](https://www.meshlab.net/). Screenshot: a splat derived from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0).
