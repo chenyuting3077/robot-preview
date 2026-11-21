@@ -38,8 +38,8 @@ canvas { display: block; }
 .tool-button:hover, .control-button:hover { background: var(--hover); color: var(--text-primary); transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
 .tool-button:active, .control-button:active { transform: scale(0.98); }
 .tool-button.active, .control-button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3); }
-#display-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
-#display-menu.open { display: flex; }
+#display-menu, #up-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
+#display-menu.open, #up-menu.open { display: flex; }
 #stage-bar { position: fixed; top: 20px; right: 20px; padding: 5px 9px; border-radius: 21px; z-index: 100; }
 #stage-panel { position: fixed; top: 70px; right: 20px; width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
 .stage-head, .prim-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 24px; align-items: center; gap: 6px; }
@@ -78,10 +78,6 @@ canvas { display: block; }
 .size-row [data-size="1"] i { width: 3px; height: 3px; }
 .size-row [data-size="2"] i { width: 5px; height: 5px; }
 .size-row [data-size="4"] i { width: 8px; height: 8px; }
-#up-select { padding: 5px 24px 5px 12px; background-color: rgba(255, 255, 255, 0.08); border: none; border-radius: 12px; color: var(--text-primary); font: 11px inherit; font-family: inherit; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23aaaaaa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 7px center; }
-#up-select:hover, #up-select:focus { outline: none; background-color: rgba(255, 255, 255, 0.12); }
-[data-theme="dark"] #up-select option { background-color: #2a2a2a; color: var(--text-primary); }
-[data-theme="light"] #up-select { background-color: rgba(0, 0, 0, 0.04); border: 1px solid rgba(0, 0, 0, 0.1); }
 #info-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; z-index: 200; width: max-content; max-width: min(420px, calc(100vw - 40px)); }
 #info-panel.open { display: block; }
 #info-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
@@ -123,7 +119,17 @@ canvas { display: block; }
     </div>
   </div>
   <div class="control-bar-section">
-    <select id="up-select">
+    <button class="tool-button" id="up-menu-btn" data-title="upAxis"><span id="up-label">+Z</span> ▾</button>
+    <div id="up-menu" class="glass">
+      <button class="control-button" data-up="+Z">+Z</button>
+      <button class="control-button" data-up="-Z">-Z</button>
+      <button class="control-button" data-up="+Y">+Y</button>
+      <button class="control-button" data-up="-Y">-Y</button>
+      <button class="control-button" data-up="+X">+X</button>
+      <button class="control-button" data-up="-X">-X</button>
+    </div>
+    <!-- Holds the axis for the code that reads it; the menu above is what shows. -->
+    <select id="up-select" hidden>
       <option value="+Z">+Z</option>
       <option value="-Z">-Z</option>
       <option value="+Y">+Y</option>
