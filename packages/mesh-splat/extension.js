@@ -21,10 +21,26 @@ const HELPERS_KEY = 'displayHelpers';
 const HELPER_NAMES = ['grid', 'axes', 'bounds'];
 // Whether a USD view picks parts under the pointer, as last left.
 const PICK_KEY = 'pickParts';
+// Point size and Original / Height colouring are kept for every file; the up axis is the file's own convention, so
+// it is kept per file, the 500 last chosen.
+const SETTINGS_KEY = 'viewSettings';
+const UP_AXES = ['+Z', '-Z', '+Y', '-Y', '+X', '-X'];
+const MAX_UP_FILES = 500;
+function mergeSettings(saved = {}, message, file) {
+    const next = { ...saved, upByFile: { ...saved.upByFile } };
+    if ([1, 2, 4].includes(message.pointSize)) next.pointSize = message.pointSize;
+    if (['rgb', 'height'].includes(message.colorMode)) next.colorMode = message.colorMode;
+    if (UP_AXES.includes(message.up)) {
+        delete next.upByFile[file];
+        next.upByFile[file] = message.up;
+        for (const old of Object.keys(next.upByFile).slice(0, -MAX_UP_FILES)) delete next.upByFile[old];
+    }
+    return next;
+}
 const validHelpers = helpers => Object.fromEntries(['cloud', 'model'].filter(kind => Array.isArray(helpers?.[kind]))
     .map(kind => [kind, helpers[kind].filter(name => HELPER_NAMES.includes(name))]));
 
-async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn, helpers, pick) {
+async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn, helpers, pick, settings) {
     const source = webview.cspSource;
     const csp = [
         "default-src 'none'",
@@ -44,7 +60,8 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn
         render: turn,
         cached: cache ? await vscode.workspace.fs.stat(cache.uri).then(() => webview.asWebviewUri(cache.uri), () => '') : '',
         helpers: JSON.stringify(helpers),
-        pick: String(pick)
+        pick: String(pick),
+        settings: JSON.stringify({ pointSize: settings.pointSize, colorMode: settings.colorMode, up: settings.upByFile?.[fileUri.fsPath] })
     };
     return template
         .replace(/<html lang="[^"]*">/, `<html lang="${vscode.env.language}">`)
@@ -92,7 +109,7 @@ function activate(context) {
                 const stat = await vscode.workspace.fs.stat(document.uri).catch(() => null);
                 if (!stat) return;
                 const cache = stepCache(cacheDir, document.uri, stat, build);
-                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache, turn, context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true);
+                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache, turn, context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true, context.globalState.get(SETTINGS_KEY) ?? {});
                 if (turn !== renders) return;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
                 panel.webview.html = html;
@@ -106,6 +123,7 @@ function activate(context) {
                 stepCache: message => writer.receive(message),
                 screenshot: message => saveScreenshot(document.uri, message.data),
                 pick: message => context.globalState.update(PICK_KEY, message.on !== false),
+                settings: message => context.globalState.update(SETTINGS_KEY, mergeSettings(context.globalState.get(SETTINGS_KEY), message, document.uri.fsPath)),
                 helpers: message => context.globalState.update(HELPERS_KEY, { ...context.globalState.get(HELPERS_KEY), ...validHelpers(message.helpers) })
             };
             panel.webview.onDidReceiveMessage(message => Object.hasOwn(handlers, message?.type) && handlers[message.type](message));

@@ -66,3 +66,23 @@ test('turning part picking off is kept for the next file opened', async () => {
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(second) }, next);
     assert.match(next.webview.html, /data-pick="false"/);
 });
+
+test('point size and colouring carry to every file, the up axis only to the file it was chosen on', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-settings-'));
+    const [first, second] = ['a.ply', 'b.ply'].map(name => path.join(root, name));
+    for (const file of [first, second]) fs.writeFileSync(file, 'ply\n');
+    const settingsOf = html => JSON.parse(html.match(/data-settings="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+    const { env, panel } = await openMeshSplat(root, first);
+    assert.deepEqual(settingsOf(panel.webview.html), {});
+    await panel.listener({ type: 'settings', pointSize: 4 });
+    await panel.listener({ type: 'settings', colorMode: 'height' });
+    await panel.listener({ type: 'settings', up: '+Y' });
+    await panel.listener({ type: 'settings', pointSize: 3, colorMode: 'field:x', up: 'sideways' });
+    const open = async file => {
+        const next = fakePanel();
+        await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, next);
+        return settingsOf(next.webview.html);
+    };
+    assert.deepEqual(await open(second), { pointSize: 4, colorMode: 'height' });
+    assert.deepEqual(await open(first), { pointSize: 4, colorMode: 'height', up: '+Y' });
+});

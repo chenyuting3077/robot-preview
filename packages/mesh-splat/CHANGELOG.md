@@ -7,6 +7,7 @@
 - Point sizes take one row of dots in the Display menu instead of three rows.
 - The ground grid reaches the horizon, as in Isaac Sim, with minor and 10x major lines whose spacing follows the zoom.
 - Grid, axes and bounds stay as last left, for point clouds and for other models apart; a model opens with the grid the first time.
+- Point size and Original / Height colouring stay as last left, and each file reopens with the up axis last chosen for it.
 
 ## 0.4.0
 

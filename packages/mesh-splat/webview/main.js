@@ -535,6 +535,15 @@ let isCloud = false;
 // Point clouds and other models each open with the helpers last left on for their kind, or these the first time.
 const DEFAULT_HELPERS = { cloud: ['grid', 'axes'], model: ['grid'] };
 const helperKind = () => (isCloud ? 'cloud' : 'model');
+// Point size and Original / Height colouring as last left anywhere, and this file's up axis as last chosen for it.
+const savedSettings = (() => {
+    try {
+        return JSON.parse(page.settings || '{}');
+    } catch {
+        return {};
+    }
+})();
+const saveSettings = settings => vscodeApi?.postMessage({ type: 'settings', ...settings });
 const savedHelpers = (() => {
     try {
         return JSON.parse(page.helpers || '{}');
@@ -751,7 +760,10 @@ function setupUi(hasMesh, hasPoints, up) {
         vscodeApi?.postMessage({ type: 'helpers', helpers: { [helperKind()]: Object.keys(HELPERS).filter(kind => helpers[kind]) } });
     }));
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
-    document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => setPointSize(Number(button.dataset.size))));
+    document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => {
+        setPointSize(Number(button.dataset.size));
+        saveSettings({ pointSize: pointSize });
+    }));
     for (const [button, panel] of [[$('display-menu-btn'), $('display-menu')], [$('info-btn'), $('info-panel')], [$('help-btn'), $('help-panel')]]) {
         button.addEventListener('click', () => {
             panel.classList.toggle('open');
@@ -771,9 +783,11 @@ function setupUi(hasMesh, hasPoints, up) {
     $('up-select').value = up;
     $('up-select').addEventListener('change', () => {
         setUp($('up-select').value);
+        saveSettings({ up: $('up-select').value });
         if ($('color-height').classList.contains('active')) cloudColors.setMode('height');
     });
     cloudColors.setup();
+    document.querySelectorAll('[data-color="rgb"], [data-color="height"]').forEach(button => button.addEventListener('click', () => saveSettings({ colorMode: button.dataset.color })));
 }
 
 
@@ -799,10 +813,13 @@ async function main() {
         if (!load) throw new Error(`${t('unsupportedFormat')}: ${name}`);
         const object = await load(info);
         const counted = show(object, info);
-        const up = object.userData.up ?? '+Z';
+        const up = savedSettings.up ?? object.userData.up ?? '+Z';
         isCloud = counted.points > 0 && !counted.faces;
         setupUi(counted.faces > 0, counted.points > 0, up);
         setUp(up);
+        if ([1, 2, 4].includes(savedSettings.pointSize)) setPointSize(savedSettings.pointSize);
+        // Original is already the choice for a cloud that has colours; Height applies to any cloud.
+        if (counted.points > 0 && savedSettings.colorMode === 'height') cloudColors.setMode('height');
         for (const helper of savedHelpers[helperKind()] ?? DEFAULT_HELPERS[helperKind()]) if (!(isCloud && helper === 'bounds')) setHelper(helper, true);
     } catch (error) {
         // A page whose file changed keeps showing that it loads.
