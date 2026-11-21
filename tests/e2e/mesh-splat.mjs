@@ -348,9 +348,21 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             await click(...onTri);
             const backOn = await selectedName();
             await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
-            const toggleOk = offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri';
+            // Hiding the selected part hides its box: the view then matches the same part hidden and unselected.
+            const viewShot = async () => (await send('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width: Math.round(size[0] * 0.55), height: size[1], scale: 0.25 } })).data;
+            const triRow = `[...document.querySelectorAll('#stage-panel .prim-row')].find(row => row.querySelector('.prim-name span').textContent === 'Tri')`;
+            await evaluate(`${triRow}.querySelector('.prim-name span').click(); ${triRow}.querySelector('.prim-eye').click()`);
+            await sleep(400);
+            const hiddenSelected = await viewShot();
+            await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            await sleep(400);
+            const hiddenBox = await shotChange(hiddenSelected, await viewShot());
+            await evaluate(`${triRow}.querySelector('.prim-eye').click()`);
+            await sleep(300);
+            const toggleOk = hiddenBox < 0.001 && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri';
             const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '' && toggleOk;
-            camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}" toggle ${toggleOk}`;
+            camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}" toggle ${toggleOk} hidden-box ${(hiddenBox * 100).toFixed(2)}%`;
             const before = await shot();
             await evaluate(`['Tri', 'Gaussians'].forEach(name => [...document.querySelectorAll('#stage-panel .prim-row')].find(row => row.querySelector('.prim-name span').textContent === name).querySelector('.prim-eye').click())`);
             await sleep(600);

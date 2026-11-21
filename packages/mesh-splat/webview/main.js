@@ -107,12 +107,34 @@ let selectionBox = null;
 let hovered = null;
 let hoverBox = null;
 let hoverTimer = 0;
-// A box, not a recoloured material: cheap on million-triangle robots and visible on any colour.
+// A box, not a recoloured material: cheap on million-triangle robots and visible on any colour. It bounds only what
+// is shown, so a link's hidden collision meshes do not widen it and hiding the part hides its box.
+const fitBox = (helper, prim) => {
+    if (!helper) return;
+    const part = new THREE.Box3();
+    root.updateMatrixWorld(true);
+    if (visibleInScene(prim)) {
+        prim.traverseVisible(object => {
+            if (!(object.isMesh || object.isPoints) || !object.geometry) return;
+            object.geometry.boundingBox ?? object.geometry.computeBoundingBox();
+            part.union(object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld));
+        });
+    }
+    helper.box.copy(part);
+    helper.visible = !part.isEmpty();
+};
 const primBox = (prim, color) => {
-    const box = Object.assign(new THREE.BoxHelper(prim, color), { raycast: () => {} });
-    scene.add(box);
-    return box;
-};const dropBox = box => {
+    const helper = Object.assign(new THREE.Box3Helper(new THREE.Box3(), color), { raycast: () => {} });
+    fitBox(helper, prim);
+    scene.add(helper);
+    return helper;
+};
+function refitBoxes() {
+    fitBox(selectionBox, selected);
+    fitBox(hoverBox, hovered);
+    wake();
+}
+const dropBox = box => {
     box?.removeFromParent();
     box?.dispose();
     return null;
@@ -400,7 +422,7 @@ async function loadUsd(info) {
         for (let level = object; level && level !== group; level = level.parent) splat ||= Boolean(level.userData.splat);
         if ((object.isMesh || object.isPoints) && !splat) pickable.push(object);
     });
-    usdStage = { group, pickable, panel: buildStage(group, { onSelect: selectPrim }) };
+    usdStage = { group, pickable, panel: buildStage(group, { onSelect: selectPrim, onVisibility: refitBoxes }) };
     $('pick-section').hidden = false;
     setPicking(picking);
     $('pick-btn').addEventListener('click', () => {
@@ -573,7 +595,7 @@ function setUp(up) {
     root.rotation.set(...UP[up]);
     cloudGround = isCloud && nearZeroPlane() ? 0 : null;
     frame();
-    selectionBox?.update();
+    fitBox(selectionBox, selected);
     if (usdStage) hoverPrim(null);
     if (helpers.grid) setHelper('grid', true);
 }

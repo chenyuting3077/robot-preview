@@ -3,8 +3,9 @@ const $ = id => document.getElementById(id);
 const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 
-// `onSelect` gets the prim a row's name was clicked on; select() marks a prim (or none) in the tree and shows its path.
-export function buildStage(group, { onSelect = () => {} } = {}) {
+// `onSelect` gets the prim a row's name was clicked on and `onVisibility` runs after an eye is toggled; select() marks
+// a prim (or none) in the tree and shows its path.
+export function buildStage(group, { onSelect = () => {}, onVisibility = () => {} } = {}) {
     document.querySelector('.stage-head span:last-child').innerHTML = EYE;
     const prims = object => object.children.filter(child => !child.userData.splat);
     const expanded = new Set();
@@ -31,6 +32,7 @@ export function buildStage(group, { onSelect = () => {} } = {}) {
             eye.addEventListener('click', () => {
                 child.visible = !child.visible;
                 render();
+                onVisibility();
             });
             row.append(name, Object.assign(document.createElement('div'), { className: 'prim-type', textContent: child.userData.usdType ?? '', title: child.userData.usdType ?? '' }), eye);
             rows.push(row);
