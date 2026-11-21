@@ -1,7 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
+- Now listed as "Robot Preview: USD Viewer (OpenUSD, Isaac Sim)".
 - The grid shows on opening and grid, axes and bounds stay as last left.
 - Each file reopens with the up axis last chosen for it.
 - Click a part in the view to select its prim: it is boxed, marked in the Stage panel, and its path shown with each level clickable; a row's name selects too, Esc clears. A closed Stage panel stays closed; opened later, it shows the picked prim.
