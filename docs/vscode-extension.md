@@ -44,6 +44,14 @@ Pitfalls of building and publishing it: issues #1 and #5.
 - Only the geometry is parsed in Rust (`rust/dae`, 100 KB of WASM); ColladaLoader still reads materials, units and the node tree, so its material and node-collapse rules hold by construction. Unhandled features (vertex colors, a second UV set, skinning, CDATA) go to ColladaLoader alone.
 - Release 0.4.4 against this build: the RealSense xacro 2.14–2.38 s against 1.98–2.07 s, Franka 1.34–1.48 s against 1.33–1.35 s (VS Code 1.144, 3 runs each, interleaved).
 
+## MJCF textures
+
+- Matched to MuJoCo's classic renderer (`render_gl3.c` `settexture`, `render_context.c` `makePlane`), not to three.js defaults: an infinite plane is textured in metres from its centre, one repeat every `2 / texrepeat` m with `texuniform`; finite planes, primitives and meshes repeat `texrepeat` times over their texture coordinates.
+- MuJoCo flips v of OBJ texture coordinates and keeps image rows top first, so file textures load with `flipY` off and the uv transform flips v. The simulation rebuilds meshes from MuJoCo's own texcoords and flips them back, so the same material works in both.
+- Textures are sRGB: MuJoCo puts texture bytes on screen unchanged.
+- Not drawn: cube and skybox textures (MuJoCo's default `type` is cube), KTX files, `texuniform` on meshes. Random marks have MuJoCo's density but not its exact dots (it seeds a `mt19937_64`).
+- Planes are not drawn while simulating (the simulation builds no geometry for them); this predates textures.
+
 ## Limits
 
 - The CSP keeps `'unsafe-eval'`: mujoco-js builds its bindings with `new Function`.

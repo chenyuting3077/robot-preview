@@ -934,7 +934,25 @@ export class MujocoSimulationManager {
         geometry.setIndex(Array.from(triangle_buffer));
         geometry.computeVertexNormals();
 
-        return geometry;
+        // Textured meshes index texcoords per face corner, apart from vertices.
+        // MuJoCo stored OBJ texcoords with v flipped; flip back so the
+        // materials cloned from the preview keep their uv transform.
+        const texcoordAdr = model.mesh_texcoordadr?.[meshID] ?? -1;
+        if (texcoordAdr < 0 || !model.mesh_facetexcoord) return geometry;
+        const faceTexcoords = model.mesh_facetexcoord.subarray(
+            model.mesh_faceadr[meshID] * 3,
+            (model.mesh_faceadr[meshID] + model.mesh_facenum[meshID]) * 3
+        );
+        const uv = new Float32Array(faceTexcoords.length * 2);
+        for (let i = 0; i < faceTexcoords.length; i++) {
+            const t = 2 * (texcoordAdr + faceTexcoords[i]);
+            uv[2 * i] = model.mesh_texcoord[t];
+            uv[2 * i + 1] = 1 - model.mesh_texcoord[t + 1];
+        }
+        const corners = geometry.toNonIndexed();
+        corners.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        geometry.dispose();
+        return corners;
     }
 
 

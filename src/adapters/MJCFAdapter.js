@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { loadMeshFile, ensureMeshHasPhongMaterial, getLoaders } from '../utils/MeshLoader.js';
 import { cleanFilePath, resolveFileFromMap } from '../utils/FileUtils.js';
 import { ClosedChainSolver } from '../utils/ClosedChainSolver.js';
+import { parseTextures, parseMaterialTexture, loadTexture, textureMatrix, applyTexture } from '../utils/MJCFTextures.js';
 
 export class MJCFAdapter {
     /**
@@ -226,6 +227,7 @@ export class MJCFAdapter {
 
         // Parse material definitions in material tags
         const materialMap = this.parseMaterials(doc);
+        const textureMap = this.parseTextureAssets(doc, basePath);
 
         // Get worldbody (root node)
         const worldbody = doc.querySelector('worldbody');
@@ -323,27 +325,14 @@ export class MJCFAdapter {
                         visual.name = geomEl.getAttribute('name') || `worldbody_geom_${geomIndex}`;
                         visual.origin = this.parseOrigin(geomEl);
 
-                        // Parse rgba (priority: explicit > inherited)
-                        let rgba = null;
-                        if (geomEl.hasAttribute('rgba')) {
-                            const rgbaStr = geomEl.getAttribute('rgba');
-                            const rgbaVals = rgbaStr.trim().split(/\s+/).map(parseFloat);
-                            if (rgbaVals.length >= 3) {
-                                rgba = {
-                                    r: rgbaVals[0],
-                                    g: rgbaVals[1],
-                                    b: rgbaVals[2],
-                                    a: rgbaVals.length >= 4 ? rgbaVals[3] : 1.0
-                                };
-                            }
-                        } else if (inheritedProps.rgba) {
-                            rgba = inheritedProps.rgba;
-                        }
+                        const { rgba, materialName, texture } = this.getGeomAppearance(geomEl, inheritedProps, materialMap);
 
                         visual.userData = {
                             group: groupNum,
                             hasRgba: hasRgba || !!rgba,
                             rgba: rgba,
+                            materialName,
+                            texture,
                             meshRef: meshRef,
                             geomType: geomEl.getAttribute('type') || (meshRef ? 'mesh' : 'box')
                         };
@@ -420,7 +409,7 @@ export class MJCFAdapter {
         }
 
         // Create Three.js objects (asynchronously load mesh files)
-        await this.createThreeObject(model, fileMap, meshMap);
+        await this.createThreeObject(model, fileMap, meshMap, textureMap);
         model.userData.basePath = cleanFilePath(basePath || '');
         if (hasAttachments) model.userData.compiledMJCF = processedContent;
         if (model.constraints.size) {
@@ -665,10 +654,52 @@ export class MJCFAdapter {
                 material.shininess = parseFloat(shininess);
             }
 
+            Object.assign(material, parseMaterialTexture(matEl));
             materialMap.set(name, material);
         });
 
         return materialMap;
+    }
+
+    /** Texture files resolve against compiler.texturedir (default assetdir), like meshes against meshdir. */
+    static parseTextureAssets(doc, basePath = null) {
+        const compiler = doc.querySelector('compiler');
+        const textureDir = (compiler?.getAttribute('texturedir') ?? compiler?.getAttribute('assetdir'))?.trim() || '';
+        const strippath = compiler?.getAttribute('strippath') === 'true';
+        return parseTextures(doc, file => this.resolveAssetFilePath(
+            strippath ? file.replace(/\\/g, '/').split('/').pop() : file, basePath, textureDir));
+    }
+
+    /**
+     * A geom's color and texture as MuJoCo draws them: geom rgba (own or from
+     * its class) wins over the material's unless it is MuJoCo's default
+     * 0.5 0.5 0.5 1; the material's texture applies either way.
+     */
+    static getGeomAppearance(geomEl, inheritedProps, materialMap) {
+        let rgba = null;
+        if (geomEl.hasAttribute('rgba')) {
+            const values = geomEl.getAttribute('rgba').trim().split(/\s+/).map(parseFloat);
+            if (values.length >= 3) {
+                rgba = { r: values[0], g: values[1], b: values[2], a: values.length >= 4 ? values[3] : 1.0 };
+            }
+        } else if (inheritedProps.rgba) {
+            rgba = inheritedProps.rgba;
+        }
+
+        const materialName = geomEl.getAttribute('material') || inheritedProps.material || null;
+        const material = materialName ? materialMap?.get(materialName) : null;
+        if (!material) return { rgba, materialName, texture: null };
+
+        const isDefault = rgba && rgba.r === 0.5 && rgba.g === 0.5 && rgba.b === 0.5 && rgba.a === 1;
+        const texture = material.texture
+            ? { name: material.texture, texrepeat: material.texrepeat, texuniform: material.texuniform }
+            : null;
+        if (!rgba || isDefault) {
+            // A textured material without rgba is white in MuJoCo, which leaves
+            // the texture's own colors; a mesh file's colors would tint it.
+            rgba = material.rgba || (texture ? { r: 1, g: 1, b: 1, a: 1 } : rgba);
+        }
+        return { rgba, materialName, texture };
     }
 
     /**
@@ -1030,45 +1061,14 @@ export class MJCFAdapter {
                         visual.name = geomEl.getAttribute('name') || `geom_${geomIndex}`;
                         visual.origin = this.parseOrigin(geomEl);
 
-                        // Parse MJCF rgba color (priority: geom rgba > inherited rgba > material rgba)
-                        let rgba = null;
-                        let materialName = null;
-
-                        // 1. First check geom's own rgba, then inherited rgba
-                        if (geomEl.hasAttribute('rgba')) {
-                            const rgbaStr = geomEl.getAttribute('rgba');
-                            const rgbaVals = rgbaStr.trim().split(/\s+/).map(parseFloat);
-                            if (rgbaVals.length >= 3) {
-                                rgba = {
-                                    r: rgbaVals[0],
-                                    g: rgbaVals[1],
-                                    b: rgbaVals[2],
-                                    a: rgbaVals.length >= 4 ? rgbaVals[3] : 1.0
-                                };
-                            }
-                        }
-
-                        // 2. If geom has no explicit rgba, check inherited rgba
-                        if (!rgba && inheritedProps.rgba) {
-                            rgba = inheritedProps.rgba;
-                        }
-
-                        // 3. If still no rgba, check if references material (explicit or inherited)
-                        if (!rgba && materialMap) {
-                            materialName = geomEl.getAttribute('material') || inheritedProps.material;
-                            if (materialName && materialMap.has(materialName)) {
-                                const mat = materialMap.get(materialName);
-                                if (mat.rgba) {
-                                    rgba = mat.rgba;
-                                }
-                            }
-                        }
+                        const { rgba, materialName, texture } = this.getGeomAppearance(geomEl, inheritedProps, materialMap);
 
                         visual.userData = {
                             group: groupNum,
                             hasRgba: hasRgba || !!rgba,
                             rgba: rgba,
                             materialName: materialName,
+                            texture,
                             meshRef: meshRef,
                             geomType: geomType
                         };
@@ -1769,9 +1769,19 @@ export class MJCFAdapter {
      * @param {Map} fileMap - File map for loading mesh files
      * @param {Map} meshMap - Mesh name to file path mapping (optional)
      */
-    static async createThreeObject(model, fileMap = null, meshMap = null) {
+    static async createThreeObject(model, fileMap = null, meshMap = null, textureMap = null) {
         // Preload loaders
         await getLoaders();
+
+        // Load each texture the visuals use once; geoms get clones.
+        const textures = new Map();
+        for (const link of model.links.values()) {
+            for (const visual of link.visuals) {
+                const name = visual.userData?.texture?.name;
+                const spec = name && textureMap?.get(name);
+                if (spec && !textures.has(name)) textures.set(name, loadTexture(spec, fileMap));
+            }
+        }
 
         const rootGroup = new THREE.Group();
         rootGroup.name = model.name || 'mujoco_model';
@@ -1935,6 +1945,12 @@ export class MJCFAdapter {
                                 }
                             }
                         });
+                    }
+
+                    const textureRef = visual.userData?.texture;
+                    const texture = textureRef && await textures.get(textureRef.name);
+                    if (texture) {
+                        applyTexture(mesh, texture, textureMatrix(visual.geometry, textureRef, textureMap.get(textureRef.name)));
                     }
 
                     linkGroup.add(mesh);

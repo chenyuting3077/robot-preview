@@ -6,6 +6,8 @@
 - Hover on a URDF element, attribute or joint type explains it with what it takes, units and defaults.
 - Structure checks while typing, without the preview: elements and attributes ROS ignores (typos, an `<origin>` directly in a `<link>`, a second `<origin>`, `quat_xyzw` below URDF 1.1), missing required attributes and children, malformed values (including a number broken over two lines) and missing shapes, each saying whether ROS rejects the model or drops part of a link; a quick fix for typos. Rule ids `ignored-element`, `ignored-attribute`, `missing-attribute`, `missing-element`, `invalid-value`, `invalid-geometry`.
 - `robotPreviewUrdf.packageSearchPaths` searches folders for ROS packages at any depth, for another workspace or a pixi environment's `share`.
+- MJCF textures: 2D `<texture>` files and builtin checker, gradient and flat textures with their marks, placed by `texrepeat` and `texuniform` as MuJoCo does, also while simulating. The MuJoCo Menagerie floor and Cassie's texture now look as they do in MuJoCo.
+- MJCF geoms directly in `<worldbody>` (a scene floor) take their material's color; a geom's `rgba` overrides its material unless it is MuJoCo's default `0.5 0.5 0.5 1`.
 
 ## 0.4.6
 
