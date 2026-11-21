@@ -223,12 +223,22 @@ async function floatingPanels() {
     const unpinned = await ev(`return { inline: document.getElementById('${JOINTS}').style.top, saved: window.__out.filter(m => m.type === 'panelLayout' && m.id === '${JOINTS}').at(-1)?.layout }`);
     check('maximize and restore of an untouched panel keep its CSS place', unpinned.inline === '' && unpinned.saved?.maximized === false && !('left' in unpinned.saved), JSON.stringify(unpinned));
 
+    const cssPlace = await rectOf(JOINTS);
+    await ev(maximizeButton(JOINTS));
+    await sleep(600);
+    await ev(maximizeButton(JOINTS));
+    await sleep(80);
+    let moving = await rectOf(JOINTS);
+    await drag(midLeft(moving), { x: moving.left - 12, y: midLeft(moving).y });
+    let after = await rectOf(JOINTS);
+    check('a resize started while an untouched panel restores from maximized starts from its CSS place', near(after.top, cssPlace.top) && near(after.height, cssPlace.height) && near(after.width, cssPlace.width + 15), JSON.stringify({ cssPlace, moving, after }));
+
     await ev(`if (!document.getElementById('toggle-model-tree').classList.contains('active')) document.getElementById('toggle-model-tree').click()`);
     await sleep(800);
 
     r = await rectOf(TREE);
     await drag(midRight(r), { x: r.right - 64, y: midRight(r).y });
-    let after = await rectOf(TREE);
+    after = await rectOf(TREE);
     check('the tree panel resizes from its right border, also beside the graph', near(after.width, r.width - 60) && near(after.left, r.left), JSON.stringify({ r, after }));
 
     r = after;
@@ -276,6 +286,30 @@ async function floatingPanels() {
     after = await rectOf(TREE);
     g = await graph();
     check('maximize then restore gives back the panel and its view', max.width > r.width && ['left', 'top', 'width', 'height'].every(k => near(after[k], r[k])) && near(g.k, beforeMax.k, 1e-3) && near(g.centre[0], beforeMax.centre[0], 1), JSON.stringify({ r, max, after, beforeMax, g }));
+
+    // Maximized again while the graph animates back to its view (450 ms + 600 ms after restore).
+    await ev(maximizeButton(TREE));
+    await sleep(1300);
+    await ev(maximizeButton(TREE));
+    await sleep(750);
+    await ev(maximizeButton(TREE));
+    await sleep(1300);
+    await ev(maximizeButton(TREE));
+    await sleep(1300);
+    g = await graph();
+    check('maximizing while the graph returns to its view still gives that view back', near(g.k, beforeMax.k, 1e-3) && near(g.centre[0], beforeMax.centre[0], 1) && near(g.centre[1], beforeMax.centre[1], 1), JSON.stringify({ beforeMax, g }));
+
+    // Dragged while the show fade (200 ms) still runs: the panel must follow the pointer, not ease after it.
+    await ev(`document.querySelector('.panel-close-btn[data-panel=${TREE}]').click()`);
+    await sleep(400);
+    await ev(`document.getElementById('toggle-model-tree').click()`);
+    await sleep(30);
+    r = await rectOf(TREE);
+    await drag(header(r), { x: header(r).x - 150, y: header(r).y + 60 }, { release: false, steps: 12 });
+    const lag = await ev(`const p = document.getElementById('${TREE}'); return { inline: parseFloat(p.style.left), shown: parseFloat(getComputedStyle(p).left) }`);
+    await mouse('mouseReleased', header(r).x - 150, header(r).y + 60);
+    await sleep(600);
+    check('a panel dragged right after it is shown follows the pointer', near(lag.inline, lag.shown), JSON.stringify(lag));
 
     r = await rectOf(JOINTS);
     await drag(midLeft(r), { x: r.right - 100, y: midLeft(r).y });

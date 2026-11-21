@@ -38,7 +38,8 @@ export class ModelGraphView {
     drawModelGraph(model, { keepView = false } = {}) {
         const svg = d3.select('#model-graph-svg');
         const emptyState = document.getElementById('graph-empty-state');
-        const previousTransform = keepView && svg.node() ? d3.zoomTransform(svg.node()) : null;
+        // An auto-fitted view is refitted to the redrawn graph rather than kept.
+        const previousTransform = keepView && !this.autoFit && svg.node() ? d3.zoomTransform(svg.node()) : null;
         if (!keepView) {
             this.drawing = (this.drawing || 0) + 1;
             this.autoFit = true;
@@ -805,9 +806,7 @@ export class ModelGraphView {
 
             this.autoFit = true;
             if (animated && duration > 0) {
-                this.currentSvg.transition()
-                    .duration(duration)
-                    .call(this.currentZoom.transform, transform);
+                this.animateTo(transform, duration);
             } else {
                 this.currentSvg.call(this.currentZoom.transform, transform);
             }
@@ -822,22 +821,32 @@ export class ModelGraphView {
         this.currentSvg.call(this.currentZoom.transform, d3.zoomIdentity.translate(t.x + dx, t.y + dy).scale(t.k));
     }
 
+    // While an animation runs, the view to save is where it is going, not the
+    // frame it is at; a jump or a newer animation interrupts it and clears this.
+    animateTo(transform, duration) {
+        const target = { x: transform.x, y: transform.y, k: transform.k, autoFit: this.autoFit };
+        this.viewTarget = target;
+        this.currentSvg.transition()
+            .duration(duration)
+            .call(this.currentZoom.transform, transform)
+            .on('end interrupt', () => { if (this.viewTarget === target) this.viewTarget = null; });
+    }
+
     saveView() {
         if (!this.currentSvg) return null;
-        const { x, y, k } = d3.zoomTransform(this.currentSvg.node());
-        return { x, y, k, autoFit: this.autoFit, drawing: this.drawing };
+        const { x, y, k, autoFit } = this.viewTarget || { ...d3.zoomTransform(this.currentSvg.node()), autoFit: this.autoFit };
+        return { x, y, k, autoFit, drawing: this.drawing };
     }
 
     restoreView(view, duration = 0) {
-        // A view saved before another model was drawn does not fit this one.
-        if (!view || view.drawing !== this.drawing || !this.currentSvg || !this.currentZoom) {
+        // A view saved before another model was drawn does not fit this one, and
+        // an auto-fitted one is fitted again rather than taken back to its old frame.
+        if (!view || view.autoFit || view.drawing !== this.drawing || !this.currentSvg || !this.currentZoom) {
             this.fitToView(duration > 0, duration);
             return;
         }
-        this.autoFit = view.autoFit;
-        this.currentSvg.transition()
-            .duration(duration)
-            .call(this.currentZoom.transform, d3.zoomIdentity.translate(view.x, view.y).scale(view.k));
+        this.autoFit = false;
+        this.animateTo(d3.zoomIdentity.translate(view.x, view.y).scale(view.k), duration);
     }
 }
 

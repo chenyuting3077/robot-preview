@@ -1278,7 +1278,10 @@ class Preview {
         } else if (msg?.type === 'panelLayout') {
             // A key per panel: previews in other windows know only the panels they moved,
             // and a merged object written from two windows would drop one of the writes.
-            await this.context.globalState.update(`panel:${msg.id}`, msg.layout);
+            // Merged into what is there: a maximize from a window that never moved the
+            // panel carries no rect and must keep the one another window saved.
+            const key = `panel:${msg.id}`;
+            await this.context.globalState.update(key, { ...this.context.globalState.get(key), ...msg.layout });
         } else if (msg?.type === 'diagnostics') {
             await this.onDiagnostics(msg);
         } else if (msg?.type === 'screenshot') {

@@ -99,17 +99,35 @@ export class PanelManager {
         }
     }
 
-    // Without animation the inline transition is put back afterwards, so the show fade it may hold goes on.
-    render({ panel, layout }, animate = true) {
+    // Any running transition (maximize/restore, a snap, UIController's show fade)
+    // ends at its target while the panel is still: whatever is measured then is
+    // the real place, not an in-between one. The class beats inline transitions,
+    // so the fade's timer cannot turn them back on during a gesture.
+    still(state, fn) {
+        state.panel.classList.add('panel-still');
+        state.panel.offsetHeight;
+        const result = fn?.();
+        if (!state.busy) state.panel.classList.remove('panel-still');
+        return result;
+    }
+
+    startGesture(state) {
+        state.busy = true;
+        this.still(state);
+    }
+
+    endGesture(state) {
+        state.busy = false;
+        state.panel.classList.remove('panel-still');
+    }
+
+    render(state, animate = true) {
+        const { panel, layout } = state;
         if (!hasRect(layout)) return;
         const rect = placement(layout);
-        const transition = panel.style.transition;
-        if (!animate) panel.style.transition = 'none';
-        Object.assign(panel.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
-        if (!animate) {
-            panel.offsetHeight;
-            panel.style.transition = transition;
-        }
+        const apply = () => Object.assign(panel.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+        if (animate) apply();
+        else this.still(state, () => { apply(); panel.offsetHeight; });
     }
 
     // Computed left/top, not the bounding rect: during the opening slideIn the
@@ -117,21 +135,22 @@ export class PanelManager {
     adopt(state) {
         if (hasRect(state.layout)) return;
         const { panel } = state;
-        const style = getComputedStyle(panel);
-        state.layout = { left: Math.round(parseFloat(style.left)), top: Math.round(parseFloat(style.top)), width: panel.offsetWidth, height: panel.offsetHeight, dock: null, maximized: !!state.layout?.maximized };
+        this.still(state, () => {
+            const style = getComputedStyle(panel);
+            state.layout = { left: Math.round(parseFloat(style.left)), top: Math.round(parseFloat(style.top)), width: panel.offsetWidth, height: panel.offsetHeight, dock: null, maximized: !!state.layout?.maximized };
+        });
         this.render(state, false);
     }
 
-    // Where a gesture starts. Rendering first ends a running transition (restore
-    // from maximized, a snap, the show fade), whose in-between rect must not be
-    // measured and saved.
     startRect(state) {
         if (hasRect(state.layout)) {
             this.render(state, false);
             return placement(state.layout);
         }
-        const style = getComputedStyle(state.panel);
-        return { left: parseFloat(style.left), top: parseFloat(style.top), width: state.panel.offsetWidth, height: state.panel.offsetHeight };
+        return this.still(state, () => {
+            const style = getComputedStyle(state.panel);
+            return { left: parseFloat(style.left), top: parseFloat(style.top), width: state.panel.offsetWidth, height: state.panel.offsetHeight };
+        });
     }
 
     changed(state) {
@@ -161,9 +180,10 @@ export class PanelManager {
             if (maximized()) return null;
             // A scrollbar inside the border stays a scrollbar.
             const target = e.target;
-            if (target instanceof Element && target.scrollHeight > target.clientHeight && target !== panel) {
+            if (target instanceof Element && target !== panel) {
                 const box = target.getBoundingClientRect();
-                if (e.clientX >= box.left + target.clientLeft + target.clientWidth) return null;
+                if (target.scrollHeight > target.clientHeight && e.clientX >= box.left + target.clientLeft + target.clientWidth) return null;
+                if (target.scrollWidth > target.clientWidth && e.clientY >= box.top + target.clientTop + target.clientHeight) return null;
             }
             const r = panel.getBoundingClientRect();
             const x = e.clientX - r.left, y = e.clientY - r.top;
@@ -199,12 +219,11 @@ export class PanelManager {
             if (!edge) return;
             e.preventDefault();
             e.stopPropagation();
+            this.startGesture(state);
             this.adopt(state);
-            state.busy = true;
             resizing = { edge, x: e.clientX, y: e.clientY, ...this.startRect(state), last: e };
             showCursor(edge);
             document.documentElement.style.cursor = CURSORS[edge];
-            panel.style.transition = 'none';
             document.addEventListener('mousemove', resize);
             document.addEventListener('mouseup', stopResize);
         }, true);
@@ -256,10 +275,9 @@ export class PanelManager {
                 dock: keepDock ? dock : null, ...(keepDock && undocked ? { undocked } : {}), maximized: false
             };
             resizing = null;
-            state.busy = false;
             showCursor(null);
             document.documentElement.style.cursor = '';
-            panel.style.transition = '';
+            this.endGesture(state);
             this.render(state, false);
             document.removeEventListener('mousemove', resize);
             document.removeEventListener('mouseup', stopResize);
@@ -287,11 +305,10 @@ export class PanelManager {
             if (!dragging.moved) {
                 if (Math.hypot(e.clientX - dragging.x, e.clientY - dragging.y) < 3) return;
                 // Only now: a plain click on the header must not pin the panel's CSS place.
+                this.startGesture(state);
                 this.adopt(state);
-                state.busy = true;
                 dragging.moved = true;
                 header.style.cursor = 'grabbing';
-                panel.style.transition = 'none';
                 // Leaving a dock gives back the size from before docking.
                 const { undocked } = state.layout;
                 if (state.layout.dock && undocked) {
@@ -319,9 +336,8 @@ export class PanelManager {
             const { moved, left, top, width, height, zone } = dragging;
             dragging = null;
             if (!moved) return;
-            state.busy = false;
+            this.endGesture(state);
             header.style.cursor = '';
-            panel.style.transition = '';
             if (this.preview) this.preview.style.display = 'none';
             const size = { width: Math.round(width), height: Math.round(height) };
             state.layout = zone

@@ -191,8 +191,10 @@ test('the floating panels open where the last previews left them, each panel fro
     await sleep(20);
     other.panel.receive({ type: 'panelLayout', id: 'floating-joints-panel', layout: joints });
     other.panel.receive({ type: 'settings', settings: { 'show-collision': true } });
+    // The other window never moved the tree panel: its maximize carries no rect.
+    other.panel.receive({ type: 'panelLayout', id: 'floating-model-tree', layout: { maximized: true } });
     await sleep(20);
-    const panels = { 'floating-model-tree': tree, 'floating-joints-panel': joints };
+    const panels = { 'floating-model-tree': { ...tree, maximized: true }, 'floating-joints-panel': joints };
 
     env.panel.dispose();
     const next = env.vscode.window.createWebviewPanel();
