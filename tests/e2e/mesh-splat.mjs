@@ -316,16 +316,26 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 await sleep(50);
             };
             let byClick = '';
+            let onTri = null;
             for (let y = 0.15; y < 0.95 && byClick !== 'Tri'; y += 0.1) {
                 for (let x = 0.05; x < 0.6 && byClick !== 'Tri'; x += 0.1) {
-                    await click(Math.round(x * size[0]), Math.round(y * size[1]));
+                    onTri = [Math.round(x * size[0]), Math.round(y * size[1])];
+                    await click(...onTri);
                     byClick = await selectedName();
                 }
             }
             await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
             const emptyClears = await selectedName() === '';
-            const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears;
-            camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears}`;
+            // Resting the pointer names the part under it; moving off the model clears the name.
+            const hoverAt = async (x, y) => {
+                await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+                await sleep(400);
+                return evaluate(`document.getElementById('hover-label').hidden ? '' : document.getElementById('hover-label').textContent`);
+            };
+            const hoverName = await hoverAt(...onTri);
+            const hoverOff = await hoverAt(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
+            const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '';
+            camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}"`;
             const before = await shot();
             await evaluate(`['Tri', 'Gaussians'].forEach(name => [...document.querySelectorAll('#stage-panel .prim-row')].find(row => row.querySelector('.prim-name span').textContent === name).querySelector('.prim-eye').click())`);
             await sleep(600);

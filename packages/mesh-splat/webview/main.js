@@ -98,14 +98,54 @@ const cameraKeys = createCameraKeys({
 // A click (a press that did not drag the view) on a USD stage selects the prim under the cursor. The raycast runs
 // per click, never per pointer move: on a 1.24M-triangle URDF a hover raycast cost orbiting 10 fps. A click on
 // Isaac's G1 (1.1M faces) takes 2 ms at the median and 136 ms at worst over 20 rays (node, Apple M2).
+// Resting the pointer on a part (100 ms, never while dragging) boxes it faintly and names it by the cursor, for the
+// same reason: a raycast per resting point, not per move. The name is the path's last three levels: Isaac calls
+// every leaf "mesh", and the link it belongs to sits two levels up (left_hip_roll_link › visuals › mesh).
 let usdStage = null;
+let selected = null;
 let selectionBox = null;
+let hovered = null;
+let hoverBox = null;
+let hoverTimer = 0;
+// A box, not a recoloured material: cheap on million-triangle robots and visible on any colour.
+const primBox = (prim, color) => {
+    const box = Object.assign(new THREE.BoxHelper(prim, color), { raycast: () => {} });
+    scene.add(box);
+    return box;
+};
+const dropBox = box => {
+    box?.removeFromParent();
+    box?.dispose();
+    return null;
+};
+function primAt(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    let prim = pickAt(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1))?.object;
+    while (prim?.userData.splat) prim = prim.parent;
+    let inStage = prim;
+    while (inStage && inStage !== usdStage.group) inStage = inStage.parent;
+    return inStage ? prim : null;
+}
+function hoverPrim(prim, event) {
+    const label = $('hover-label');
+    label.hidden = !prim;
+    if (prim) {
+        const path = [];
+        for (let level = prim; level && level !== usdStage.group && path.length < 3; level = level.parent) path.unshift(level.name || level.type);
+        label.textContent = path.join(' › ');
+        Object.assign(label.style, { left: `${event.clientX + 14}px`, top: `${event.clientY + 14}px` });
+    }
+    if (prim === hovered) return;
+    hovered = prim;
+    hoverBox = dropBox(hoverBox);
+    if (prim && prim !== selected) hoverBox = primBox(prim, 0x7fb5ff);
+    wake();
+}
 function selectPrim(prim) {
-    selectionBox?.removeFromParent();
-    selectionBox?.dispose();
-    // A box, not a recoloured material: cheap on million-triangle robots and visible on any colour.
-    selectionBox = prim && Object.assign(new THREE.BoxHelper(prim, 0x0a84ff), { raycast: () => {} });
-    if (selectionBox) scene.add(selectionBox);
+    selected = prim;
+    selectionBox = dropBox(selectionBox);
+    if (prim) selectionBox = primBox(prim, 0x0a84ff);
+    if (hovered === prim) hoverBox = dropBox(hoverBox);
     usdStage?.panel.select(prim);
     wake();
 }
@@ -113,15 +153,23 @@ let pressedAt = null;
 renderer.domElement.addEventListener('pointerdown', event => { pressedAt = event.button === 0 ? [event.clientX, event.clientY] : null; });
 renderer.domElement.addEventListener('pointerup', event => {
     if (!usdStage || !pressedAt || Math.hypot(event.clientX - pressedAt[0], event.clientY - pressedAt[1]) > 4) return;
-    const rect = renderer.domElement.getBoundingClientRect();
-    let prim = pickAt(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1))?.object;
-    while (prim?.userData.splat) prim = prim.parent;
-    let inStage = prim;
-    while (inStage && inStage !== usdStage.group) inStage = inStage.parent;
-    selectPrim(inStage ? prim : null);
+    selectPrim(primAt(event));
+});
+renderer.domElement.addEventListener('pointermove', event => {
+    clearTimeout(hoverTimer);
+    if (!usdStage) return;
+    if (event.buttons) {
+        hoverPrim(null);
+        return;
+    }
+    hoverTimer = setTimeout(() => hoverPrim(primAt(event), event), 100);
+});
+renderer.domElement.addEventListener('pointerleave', () => {
+    clearTimeout(hoverTimer);
+    if (usdStage) hoverPrim(null);
 });
 document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && selectionBox) selectPrim(null);
+    if (event.key === 'Escape' && selected) selectPrim(null);
 });
 controls.addEventListener('change', wake);
 renderer.setAnimationLoop(() => {
@@ -497,6 +545,7 @@ function setUp(up) {
     cloudGround = isCloud && nearZeroPlane() ? 0 : null;
     frame();
     selectionBox?.update();
+    if (usdStage) hoverPrim(null);
     if (helpers.grid) setHelper('grid', true);
 }
 

@@ -65,6 +65,7 @@ canvas { display: block; }
 #prim-path button:hover { background: var(--hover); }
 #prim-path button:last-of-type { color: var(--accent); font-weight: 600; }
 .prim-path-type { margin-left: auto; padding-left: 8px; }
+#hover-label { position: fixed; padding: 3px 8px; border-radius: 8px; font-size: 11px; color: var(--text-primary); pointer-events: none; white-space: nowrap; z-index: 150; }
 #help-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; white-space: nowrap; z-index: 200; }
 #help-panel.open { display: block; }
 #help-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
@@ -143,6 +144,7 @@ canvas { display: block; }
     <div id="help-panel" class="glass"><table><tr><td data-t="helpKeyOrbit"></td><td data-t="helpOrbit"></td></tr><tr><td data-t="helpKeyPan"></td><td data-t="helpPan"></td></tr><tr><td data-t="helpKeyZoom"></td><td data-t="helpZoom"></td></tr><tr><td data-t="helpKeyPivot"></td><td data-t="helpPivot"></td></tr><tr><td data-t="helpKeyFly"></td><td data-t="helpFly"></td></tr><tr><td data-t="helpKeyTurn"></td><td data-t="helpTurn"></td></tr><tr><td data-t="helpKeyFast"></td><td data-t="helpFast"></td></tr><tr><td data-t="helpKeyFrame"></td><td data-t="helpFrame"></td></tr></table></div>
   </div>
 </div>
+<div id="hover-label" class="glass" hidden></div>
 <div id="stage-bar" class="glass" hidden><button class="tool-button" id="stage-btn"><span data-t="stage"></span> ▾</button></div>
 <div id="stage-panel" class="glass" hidden>
   <div class="stage-head"><span data-t="primName"></span><span data-t="primType"></span><span></span></div>
