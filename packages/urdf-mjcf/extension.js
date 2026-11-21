@@ -3,6 +3,7 @@ const path = require('path');
 const url = require('url');
 const os = require('os');
 const fs = require('fs/promises');
+const schema = require('./urdf-schema');
 
 // .gazebo and .trans are xacro fragments fusion2urdf writes and includes.
 const ASSET_RE = /\.(urdf|xacro|xml|gazebo|trans|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|bmp|tga|tiff?|webp|msh|ya?ml)$/i;
@@ -155,15 +156,40 @@ function settingPath(value) {
     return path.resolve(first, expanded);
 }
 
+// Package folders under `dir` the way colcon finds them: a folder with
+// package.xml is not searched further, and COLCON_IGNORE / AMENT_IGNORE hide one.
+async function findPackageDirs(dir, out = [], visited = new Set()) {
+    const real = await fs.realpath(dir).catch(() => null);
+    if (!real || visited.has(real)) return out;
+    visited.add(real);
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+    const names = new Set(entries.map(entry => entry.name));
+    if (names.has('COLCON_IGNORE') || names.has('AMENT_IGNORE')) return out;
+    if (names.has('package.xml')) {
+        out.push(dir);
+        return out;
+    }
+    for (const entry of entries) {
+        if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
+        const full = path.join(dir, entry.name);
+        const isDir = entry.isSymbolicLink() ? (await fs.stat(full).catch(() => null))?.isDirectory() : entry.isDirectory();
+        if (isDir) await findPackageDirs(full, out, visited);
+    }
+    return out;
+}
+
 // Candidate folders in priority order (first one naming a package wins), read
 // in parallel: /opt/ros/<distro> is usually also AMENT_PREFIX_PATH, and its
 // ~400 package.xml files read one by one took 150-270 ms.
 async function buildPackageIndex() {
     const index = new Map();
-    const configured = vscode.workspace.getConfiguration('robotPreviewUrdf').get('packages') || {};
-    for (const [name, dir] of Object.entries(configured)) index.set(name, settingPath(dir));
+    const config = vscode.workspace.getConfiguration('robotPreviewUrdf');
+    for (const [name, dir] of Object.entries(config.get('packages') || {})) index.set(name, settingPath(dir));
     const dirs = (await vscode.workspace.findFiles('**/package.xml', '**/{.git,node_modules,build,install,log}/**'))
         .map(uri => path.dirname(uri.fsPath));
+    for (const searched of await Promise.all((config.get('packageSearchPaths') || []).map(dir => findPackageDirs(settingPath(dir))))) {
+        dirs.push(...searched);
+    }
     for (const dir of (process.env.ROS_PACKAGE_PATH || '').split(path.delimiter).filter(Boolean)) {
         dirs.push(dir, ...(await listDir(dir)).map(name => path.join(dir, name)));
     }
@@ -382,7 +408,7 @@ function missingPackageMessage(name, isModel) {
         return `Gazebo model "${name}" not found. Searched: ${GAZEBO_MODEL_VARIABLES.map(variable).join(', ')}, ~/.gazebo/models.`;
     }
     const sourced = process.env.ROS_PACKAGE_PATH || process.env.AMENT_PREFIX_PATH;
-    return `ROS package "${name}" not found. Searched: robotPreviewUrdf.packages, package.xml in the workspace, ${variable('ROS_PACKAGE_PATH')}, ${variable('AMENT_PREFIX_PATH')}, /opt/ros/*/share.`
+    return `ROS package "${name}" not found. Searched: robotPreviewUrdf.packages, package.xml in the workspace, robotPreviewUrdf.packageSearchPaths, ${variable('ROS_PACKAGE_PATH')}, ${variable('AMENT_PREFIX_PATH')}, /opt/ros/*/share.`
         + (sourced ? '' : ' VS Code sees ROS variables only when started from a sourced shell.');
 }
 
@@ -508,7 +534,8 @@ const NAVIGATION_KINDS = {
     property: { tag: /<xacro:property\b[^>]*>/g, completion: vscode.CompletionItemKind.Variable },
     macro: { tag: /<xacro:macro\b[^>]*>/g, completion: vscode.CompletionItemKind.Function },
     arg: { tag: /<xacro:arg\b[^>]*>/g, completion: vscode.CompletionItemKind.Constant },
-    link: { tag: /<link\b[^>]*>/g }
+    link: { tag: /<link\b[^>]*>/g },
+    joint: { tag: /<joint\b[^>]*>/g }
 };
 const XACRO_DIRECTIVES = new Set(['property', 'macro', 'arg', 'include', 'if', 'unless', 'insert_block', 'element', 'attribute', 'call']);
 const INCLUDE_FILE_RE = /<xacro:include\b[^>]*?\bfilename\s*=\s*["']([^"']+)["']/g;
@@ -564,6 +591,74 @@ async function resolvePathReference(value, fromFile, args = {}) {
         if ((await fs.stat(candidate).catch(() => null))?.isFile()) return candidate;
     }
     return null;
+}
+
+// SRDF shares the <robot> root and the .xacro extension.
+const isSrdf = doc => /\.srdf(\.xacro)?$/i.test(doc.fileName);
+
+function schemaHover(doc, position) {
+    if (isSrdf(doc)) return undefined;
+    const text = doc.getText();
+    const offset = doc.offsetAt(position);
+    const token = schema.tokenize(text).tokens.find(token => token.start <= offset && offset < token.end);
+    if (!token) return undefined;
+    // A closing tag's context is its own element; an opening tag's is its parent's.
+    const { parent } = schema.contextAt(text, token.start);
+    const element = token.kind === 'close' ? parent : schema.childContext(parent, token.name, token.attributes);
+    if (element !== token.name) return undefined;
+    const hover = (markdown, start, length) => markdown && new vscode.Hover(new vscode.MarkdownString(markdown), new vscode.Range(doc.positionAt(start), doc.positionAt(start + length)));
+    if (offset <= token.nameStart + token.name.length) {
+        return hover(schema.elementDoc(element, token.kind === 'close' ? undefined : parent), token.nameStart, element.length);
+    }
+    const attribute = token.attributes?.find(a => offset >= a.nameStart && offset <= a.valueStart + a.value.length);
+    if (!attribute) return undefined;
+    if (offset < attribute.valueStart) return hover(schema.attributeDoc(element, attribute.name), attribute.nameStart, attribute.name.length);
+    const valueDoc = schema.SCHEMA[element].attributes[attribute.name]?.values?.[attribute.value];
+    return hover(valueDoc && `**${attribute.value}**: ${valueDoc}`, attribute.valueStart, attribute.value.length);
+}
+
+// Runs on the text alone, so it reports while typing with no preview open.
+class StructureChecks {
+    constructor() {
+        this.diagnostics = vscode.languages.createDiagnosticCollection('robot-preview-structure');
+        this.fixes = new Map();
+        this.timers = new Map();
+    }
+
+    check(doc) {
+        if (!isRobotModel(doc) || isSrdf(doc)) return;
+        const disabled = new Set(vscode.workspace.getConfiguration('robotPreviewUrdf').get('checks.disabled') || []);
+        const fsPath = doc.uri.fsPath;
+        for (const key of this.fixes.keys()) if (key.startsWith(`${fsPath}:`)) this.fixes.delete(key);
+        const range = (start, end) => new vscode.Range(doc.positionAt(start), doc.positionAt(end));
+        const diagnostics = schema.checkStructure(doc.getText()).filter(issue => !disabled.has(issue.rule)).map(issue => {
+            const diagnostic = new vscode.Diagnostic(range(issue.start, issue.end), issue.message,
+                issue.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning);
+            Object.assign(diagnostic, { source: 'Robot Preview', code: issue.rule });
+            const fix = issue.replacement;
+            if (fix) {
+                const edits = [fix.openStart, fix.closeStart].filter(at => at !== undefined)
+                    .map(at => ({ range: range(at, at + fix.length), text: fix.text }));
+                this.fixes.set(fixKey(fsPath, diagnostic.range), [{ title: `Change to "${fix.text}"`, edits }]);
+            }
+            return diagnostic;
+        });
+        this.diagnostics.set(doc.uri, diagnostics);
+    }
+
+    schedule(doc) {
+        clearTimeout(this.timers.get(doc.uri.fsPath));
+        this.timers.set(doc.uri.fsPath, setTimeout(() => this.check(doc), UPDATE_DELAY_MS));
+    }
+
+    forget(doc) {
+        clearTimeout(this.timers.get(doc.uri.fsPath));
+        this.diagnostics.delete(doc.uri);
+    }
+
+    handles(diagnostic) {
+        return schema.RULES[diagnostic.code] !== undefined;
+    }
 }
 
 class Navigator {
@@ -663,7 +758,7 @@ class Navigator {
 
     async provideHover(doc, position) {
         const symbol = symbolAt(doc.getText(), doc.offsetAt(position));
-        if (!symbol) return undefined;
+        if (!symbol) return schemaHover(doc, position);
         const scope = await this.scope(doc);
         const range = new vscode.Range(doc.positionAt(symbol.start), doc.positionAt(symbol.start + symbol.text.length));
         const markdown = new vscode.MarkdownString();
@@ -694,10 +789,43 @@ class Navigator {
             : /<xacro:[\w.-]*$/.test(before) ? 'macro'
             : open !== -1 && !before.includes('}', open) && /(^|[^\w.'"])\w*$/.test(before.slice(open + 2)) ? 'property'
             : null;
-        if (!kind) return undefined;
+        if (!kind) return this.schemaCompletions(doc, position);
         const definitions = await this.definitions(doc, kind, undefined, await this.scope(doc));
         const names = new Set(definitions.map(definition => attributeOf(definition.tag, 'name')).filter(Boolean));
         return Array.from(names, name => new vscode.CompletionItem(name, NAVIGATION_KINDS[kind].completion));
+    }
+
+    async schemaCompletions(doc, position) {
+        if (isSrdf(doc)) return undefined;
+        const text = doc.getText();
+        const offset = doc.offsetAt(position);
+        const tag = schema.tagAt(text, offset);
+        if (!tag) return undefined;
+        const range = new vscode.Range(doc.positionAt(tag.start), position);
+        const item = (label, kind, insert, documentation) => Object.assign(new vscode.CompletionItem(label, kind), {
+            range,
+            insertText: insert && new vscode.SnippetString(insert),
+            documentation: documentation && new vscode.MarkdownString(documentation)
+        });
+        if (tag.kind === 'element') {
+            return schema.childrenOf(tag.parent).map(name =>
+                item(name, vscode.CompletionItemKind.Property, schema.elementSnippet(name), schema.elementDoc(name, tag.parent)));
+        }
+        const spec = schema.SCHEMA[tag.element];
+        if (tag.kind === 'attribute') {
+            return Object.keys(spec.attributes).filter(name => !tag.present.includes(name)).map(name => Object.assign(
+                item(name, vscode.CompletionItemKind.Field, schema.attributeSnippet(name, spec.attributes[name], 1), schema.attributeDoc(tag.element, name)),
+                { sortText: (spec.attributes[name].required ? '0' : '1') + name }));
+        }
+        const attribute = spec.attributes[tag.attribute];
+        if (attribute?.type === 'enum') {
+            return Object.entries(attribute.values).map(([value, doc]) => item(value, vscode.CompletionItemKind.EnumMember, null, doc));
+        }
+        const kind = tag.attribute === 'link' ? 'link' : tag.element === 'mimic' && tag.attribute === 'joint' ? 'joint' : null;
+        if (!kind) return undefined;
+        const definitions = await this.definitions(doc, kind, undefined, await this.scope(doc));
+        const names = new Set(definitions.map(definition => attributeOf(definition.tag, 'name')).filter(Boolean));
+        return Array.from(names, name => item(name, vscode.CompletionItemKind.Reference));
     }
 
     async provideDocumentLinks(doc) {
@@ -916,9 +1044,9 @@ class Preview {
         }
     }
 
-    provideCodeActions(document, range, context) {
+    provideCodeActions(document, range, context, fixesFor = () => this.fixes) {
         return context.diagnostics.flatMap(diagnostic => {
-            const actions = this.fixes?.get(fixKey(document.uri.fsPath, diagnostic.range)) || [];
+            const actions = fixesFor(diagnostic)?.get(fixKey(document.uri.fsPath, diagnostic.range)) || [];
             return actions.map(fix => {
                 const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
                 if (fix.command) {
@@ -1331,6 +1459,8 @@ exports.activate = context => {
         deserializeWebviewPanel: (panel, state) => preview.restore(panel, state)
     }));
     const navigator = new Navigator(preview);
+    const structure = new StructureChecks();
+    context.subscriptions.push(structure.diagnostics);
     const packageWatcher = vscode.workspace.createFileSystemWatcher('**/package.xml');
     const resetIndex = () => {
         packageIndex = null;
@@ -1348,11 +1478,11 @@ exports.activate = context => {
         modelWatcher,
         vscode.languages.registerDefinitionProvider(xacroFiles, { provideDefinition: (doc, position) => navigator.provideDefinition(doc, position) }),
         vscode.languages.registerHoverProvider(xacroFiles, { provideHover: (doc, position) => navigator.provideHover(doc, position) }),
-        vscode.languages.registerCompletionItemProvider(xacroFiles, { provideCompletionItems: (doc, position) => navigator.provideCompletionItems(doc, position) }, '{', ':', ' '),
+        vscode.languages.registerCompletionItemProvider(xacroFiles, { provideCompletionItems: (doc, position) => navigator.provideCompletionItems(doc, position) }, '{', ':', ' ', '<', '"'),
         vscode.languages.registerDocumentLinkProvider(xacroFiles, { provideDocumentLinks: doc => navigator.provideDocumentLinks(doc) }),
         vscode.languages.registerCodeActionsProvider(
             [{ scheme: 'file', pattern: '**/*.{urdf,xacro,xml}' }],
-            { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context) },
+            { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context, diagnostic => (structure.handles(diagnostic) ? structure.fixes : preview.fixes)) },
             { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
         ),
         vscode.commands.registerCommand('robotPreviewUrdf.locatePackage', name => preview.locatePackage(name)),
@@ -1370,16 +1500,24 @@ exports.activate = context => {
             preview.panel?.reveal(undefined, true);
         }),
         vscode.window.onDidChangeActiveTextEditor(editor => preview.onActiveEditorChanged(editor)),
-        vscode.workspace.onDidChangeTextDocument(event => preview.onDocumentChanged(event)),
+        vscode.workspace.onDidChangeTextDocument(event => {
+            structure.schedule(event.document);
+            preview.onDocumentChanged(event);
+        }),
+        vscode.workspace.onDidOpenTextDocument(doc => structure.check(doc)),
+        vscode.workspace.onDidCloseTextDocument(doc => structure.forget(doc)),
         vscode.workspace.onDidSaveTextDocument(doc => {
             navigator.invalidate();
             preview.onDocumentSaved(doc);
         }),
         vscode.workspace.onDidChangeConfiguration(event => {
-            if (event.affectsConfiguration('robotPreviewUrdf.packages')) resetIndex();
-            if (event.affectsConfiguration('robotPreviewUrdf.updateOn') || event.affectsConfiguration('robotPreviewUrdf.packages')) preview.scheduleUpdate();
+            const packages = event.affectsConfiguration('robotPreviewUrdf.packages') || event.affectsConfiguration('robotPreviewUrdf.packageSearchPaths');
+            if (packages) resetIndex();
+            if (event.affectsConfiguration('robotPreviewUrdf.updateOn') || packages) preview.scheduleUpdate();
+            if (event.affectsConfiguration('robotPreviewUrdf.checks.disabled')) vscode.workspace.textDocuments.forEach(doc => structure.check(doc));
         }),
         vscode.window.onDidChangeTextEditorSelection(event => preview.onSelectionChanged(event))
     );
+    vscode.workspace.textDocuments.forEach(doc => structure.check(doc));
     preview.onActiveEditorChanged(vscode.window.activeTextEditor);
 };

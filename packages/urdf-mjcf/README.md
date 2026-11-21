@@ -7,6 +7,7 @@ Live 3D preview of URDF, Xacro and MJCF beside the text editor.
 - Reports XML errors, missing meshes and paths ROS would not find in the Problems panel, with quick fixes.
 - Model checks: broken kinematic trees, missing limits and inertia, impossible inertia and mm/m scale mistakes.
 - Go to Definition, hover and completion for xacro macros, properties, arguments, links and include paths.
+- URDF completion (elements as snippets, attributes, joint types, link names), hover docs with units and defaults, and checks for typos, misplaced elements and missing attributes as you type.
 - Save the view as a PNG screenshot.
 - Xacro arguments, expanded URDF export, mesh preview and MuJoCo simulation.
 

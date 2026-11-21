@@ -6,6 +6,7 @@ Pitfalls of building and publishing it: issues #1 and #5.
 
 - The webview cannot read the disk, so the extension sends the nearest `package.xml` package (or the workspace folder) plus every package a `package://` / `$(find)` names, recursively.
 - The `robotPreviewUrdf.packages` setting is searched before everything else: it is the only fix for a package without `package.xml` or shadowed by another checkout. `/opt/ros` is searched too, so packages resolve in a VS Code started outside a sourced shell.
+- `robotPreviewUrdf.packageSearchPaths` walks folders as colcon does (stop at a `package.xml`, skip `COLCON_IGNORE` / `AMENT_IGNORE`), so the packages found match what a build there would find; it ranks after the workspace so an overlay checkout still wins.
 - A reference outside every package sends only that file and the textures it names; sending its directory would upload all of `~/Downloads` for one STL.
 - `$(env)` values: only the variables the model references are sent, because the environment can hold tokens.
 
@@ -22,6 +23,15 @@ Pitfalls of building and publishing it: issues #1 and #5.
 - An error is what ROS's URDF parser rejects; a warning is what breaks simulation or planning.
 - The scale rule fires at a 100x visual / collision size gap: a mm / m mistake is 1000x, a simplified collision shape a few x.
 - Elements inside a `<xacro:macro>` are reported once, at the macro, without a quick fix, since an edit there changes every instance. MJCF is not checked: MuJoCo's compiler already is.
+
+## Structure checks
+
+- A tag scanner on the source text, not an XSD: the URDF XSD rejects every `xacro:` element, needs the Red Hat XML extension, and the model checks above only see the expanded URDF, so they cannot point at a typo in an include.
+- An error is what urdfdom rejects (a `<box>` without `size`, an unknown joint type); a warning is what it silently ignores (`<orgin>`, an `<origin>` directly in `<link>`). Missing `effort` / `velocity` / mass `value` are left to the model checks so a mistake is reported once.
+- xacro: `xacro:if` / `unless` are transparent; a macro body or block argument can land anywhere, so only elements URDF knows are checked there and others pass. A `<joint>` without `type` in a macro body is taken as a ros2_control or transmission joint. Values containing `$` are not checked. `<gazebo>`, `<transmission>`, `<ros2_control>`, `<sensor>`, `<mujoco>` and `<webots>` follow other schemas and are skipped.
+- Which attribute or element urdfdom rejects or ignores was read from its source (`urdf_parser/src/link.cpp`, `joint.cpp`, 2026-07). A `<material>` without `name` inside `<visual>` fails the whole link there, so it is an error although Unitree's H1-2 URDF does it 113 times. `<capsule>` needs urdfdom from February 2026 and `<robot version="1.1">`.
+- SRDF shares the `<robot>` root and `.xacro`: its elements are skipped, and `.srdf` / `.srdf.xacro` files get no URDF completion or hover.
+- Run on 454 URDF / xacro / SRDF files (urdf_tutorial, franka_description, ros2_control_demos, turtlebot4, robotiq, abb_experimental, moveit_resources, clearpath_common, realsense-ros, unitree_ros, tiago_robot and the development machine's): no false positive left; the one typo was a real `<intertial>` in clearpath_common's `flir_blackfly.urdf.xacro`. Every other warning is something ROS indeed ignores (`<dynamics D K>`, `<axis rpy>`, `<material>` or `<surface>` in `<collision>`, `dont_collapse`). Under 50 ms per file.
 
 ## Xacro
 

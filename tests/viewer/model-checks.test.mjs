@@ -142,7 +142,9 @@ test('a singular inertia with off-diagonal terms is caught despite rounding', ()
 
 test('the rules offered in robotPreviewUrdf.checks.disabled are exactly the implemented ones', async () => {
     const { RULES } = await import('../../src/utils/ModelChecks.js');
+    const { createRequire } = await import('node:module');
+    const structure = createRequire(import.meta.url)('../../packages/urdf-mjcf/urdf-schema.js');
     const fs = await import('node:fs');
     const pkg = JSON.parse(fs.readFileSync(new URL('../../packages/urdf-mjcf/package.json', import.meta.url), 'utf8'));
-    assert.deepEqual(pkg.contributes.configuration.properties['robotPreviewUrdf.checks.disabled'].items.enum, Object.keys(RULES));
+    assert.deepEqual(pkg.contributes.configuration.properties['robotPreviewUrdf.checks.disabled'].items.enum, [...Object.keys(RULES), ...Object.keys(structure.RULES)]);
 });

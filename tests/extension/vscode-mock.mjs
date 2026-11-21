@@ -101,6 +101,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         applied: [],
         status: [],
         diagnostics: new Map(),
+        collections: {},
         globalState: new Map(),
         workspaceState: new Map(),
         serializer: null,
@@ -161,16 +162,22 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         Hover: class { constructor(contents, range) { Object.assign(this, { contents, range }); } },
         MarkdownString: class { constructor(value = '') { this.value = value; } appendCodeblock(code, lang) { this.value += `\n\`\`\`${lang}\n${code}\n\`\`\`\n`; return this; } appendMarkdown(text) { this.value += text; return this; } },
         CompletionItem: class { constructor(label, kind) { Object.assign(this, { label, kind }); } },
-        CompletionItemKind: { Variable: 5, Function: 2, Constant: 20 },
+        CompletionItemKind: { Variable: 5, Function: 2, Field: 4, Property: 9, Reference: 17, EnumMember: 19, Constant: 20 },
+        SnippetString: class { constructor(value) { this.value = value; } },
         DocumentLink: class { constructor(range, target) { Object.assign(this, { range, target }); } },
         CodeActionKind: { QuickFix: 'quickfix' },
         env: { language: 'zh-tw' },
         languages: {
-            createDiagnosticCollection: () => ({
-                clear: () => state.diagnostics.clear(),
-                set: (uri, list) => state.diagnostics.set(uri.fsPath, list),
-                dispose() {}
-            }),
+            // The preview's collection is state.diagnostics; any other is state.collections[name].
+            createDiagnosticCollection: name => {
+                const target = name === 'robot-preview' ? state.diagnostics : (state.collections[name] = new Map());
+                return {
+                    clear: () => target.clear(),
+                    set: (uri, list) => target.set(uri.fsPath, list),
+                    delete: uri => target.delete(uri.fsPath),
+                    dispose() {}
+                };
+            },
             registerCodeActionsProvider: (selector, provider) => {
                 state.codeActions = provider;
                 return { dispose() {} };
@@ -198,6 +205,8 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             createFileSystemWatcher: () => ({ onDidChange: f => { state.watched.change = f; }, onDidCreate: f => { state.watched.create = f; }, onDidDelete() {}, dispose() {} }),
             onDidChangeTextDocument: on('change'),
             onDidSaveTextDocument: on('save'),
+            onDidOpenTextDocument: on('open'),
+            onDidCloseTextDocument: on('close'),
             onDidChangeConfiguration: on('config'),
             getConfiguration: () => ({
                 get: key => state.config[key],
@@ -210,11 +219,17 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             }),
             openTextDocument: async fsPath => openDocument(fsPath),
             asRelativePath: fsPath => path.relative(workspace, fsPath).split(path.sep).join('/'),
+            // Like VS Code, every range refers to the text before the edit.
             applyEdit: async edit => {
-                for (const { uri, range, text } of edit.edits) {
+                const located = edit.edits.map(({ uri, range, text }) => {
                     const doc = openDocument(uri.fsPath);
+                    return { doc, start: doc.offsetAt(range.start), end: doc.offsetAt(range.end), text };
+                });
+                for (const { doc, start, end, text } of [...located].sort((a, b) => b.start - a.start)) {
                     const current = doc.getText();
-                    doc.edit(current.slice(0, doc.offsetAt(range.start)) + text + current.slice(doc.offsetAt(range.end)));
+                    doc.edit(current.slice(0, start) + text + current.slice(end));
+                }
+                for (const { doc, text } of located) {
                     state.applied.push(text);
                     fire('change', { document: doc, contentChanges: [{}] });
                 }

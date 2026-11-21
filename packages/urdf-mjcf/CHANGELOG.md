@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- URDF completion: typing `<` offers the elements ROS reads at that spot, each a snippet with its required attributes (a `<joint>` comes with `<parent>`, `<child>` and `<origin>`); attribute names, joint types, and link and joint names for `<parent>`, `<child>` and `<mimic>`.
+- Hover on a URDF element, attribute or joint type explains it with units and defaults.
+- Structure checks while typing, without the preview: elements and attributes ROS ignores (typos, an `<origin>` directly in a `<link>`), missing required attributes and malformed values, with a quick fix for typos. Rule ids `ignored-element`, `ignored-attribute`, `missing-attribute`, `invalid-value`.
+- `robotPreviewUrdf.packageSearchPaths` searches folders for ROS packages at any depth, for another workspace or a pixi environment.
+
 ## 0.4.6
 
 - Orbiting the camera no longer stutters on large models: the hover check is skipped while a mouse button is held. In VS Code a 1.24M-triangle AMR URDF orbits at 57-59 fps against 43-49 fps with 0.4.5.
