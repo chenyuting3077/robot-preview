@@ -10,6 +10,7 @@
 - MJCF textures: 2D `<texture>` files and builtin checker, gradient and flat textures with their marks, placed by `texrepeat` and `texuniform` as MuJoCo does, also while simulating. The MuJoCo Menagerie floor and Cassie's texture now look as they do in MuJoCo.
 - MJCF geoms directly in `<worldbody>` (a scene floor) take their material's color; a geom's `rgba` overrides its material unless it is MuJoCo's default `0.5 0.5 0.5 1`.
 - The preview button and menu entries also show for upper-case extensions (`.URDF`, `.XML`, `.Xacro`, `.SDF`).
+- Hidden parts no longer react to the pointer: with visuals off the empty space is not highlighted or dragged, and with only collision shown, hovering a collision shape highlights its link and dragging it moves the joint. With both shown, the visual seen through a collision shape is the one picked.
 - The editor title's preview button has its own icon (code beside an axis tripod) instead of the generic preview icon Markdown uses too.
 
 ## 0.4.6
