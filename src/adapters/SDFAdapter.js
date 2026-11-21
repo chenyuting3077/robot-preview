@@ -142,19 +142,20 @@ function objText(geometry) {
 
 export class SDFAdapter {
     static async parse(content, fileName, fileMap) {
-        const { urdf, files } = await this.toURDF(content, fileName, fileMap);
+        const { urdf, files, missingIncludes } = await this.toURDF(content, fileName, fileMap);
         const map = new Map(fileMap || []);
         for (const [key, file] of files) map.set(key, file);
         const model = await ModelLoaderFactory.loadURDF(urdf, fileName, map);
         // The URDF checks follow ROS's parser, which never reads SDF.
         model.expandedUrdf = null;
         model.userData = { ...model.userData, format: 'sdf' };
+        model.missingIncludes = missingIncludes;
         model.threeObject?.traverse(object => {
             if (object.urdfNode?.getAttribute?.('sdf_plane')) object.userData.excludeFromBounds = true;
         });
         model.meshesReady = Promise.resolve(model.meshesReady).then(() => {
             this.colorGenerated(model.threeObject);
-            return this.opaqueCollada(model.threeObject, map);
+            return this.meshOpacity(model.threeObject, map);
         });
         return model;
     }
@@ -177,30 +178,35 @@ export class SDFAdapter {
     }
 
     /**
-     * Gazebo draws a Collada `<transparent>` without an `opaque` mode as
-     * opaque (gazebo-classic ColladaLoader::LoadTransparent); the Collada
-     * default, A_ONE, makes the `<transparency>0.0</transparency>` that
-     * Blender 2.49 wrote (osrf/gazebo_models' pioneer2dx) fully transparent.
+     * A mesh file's own opacity, then the visual's `<transparency>` on top, as
+     * Gazebo draws it. Gazebo draws a Collada `<transparent>` without an
+     * `opaque` mode as opaque (gazebo-classic ColladaLoader::LoadTransparent);
+     * the Collada default, A_ONE, makes the `<transparency>0.0</transparency>`
+     * that Blender 2.49 wrote (osrf/gazebo_models' pioneer2dx) fully transparent.
      */
-    static async opaqueCollada(root, fileMap) {
+    static async meshOpacity(root, fileMap) {
         const visuals = [];
         root?.traverse(object => {
             const filename = object.isURDFVisual && object.urdfNode?.querySelector('mesh')?.getAttribute('filename');
-            if (filename && /\.dae$/i.test(filename)) visuals.push({ object, filename });
+            if (filename && !filename.startsWith(GENERATED)) visuals.push({ object, filename });
         });
         const verdicts = new Map();
         for (const { object, filename } of visuals) {
-            if (!verdicts.has(filename)) {
+            if (/\.dae$/i.test(filename) && !verdicts.has(filename)) {
                 const file = resolveFileMatch(filename, fileMap)?.file;
                 verdicts.set(filename, file?.text().then(text => /<transparent\b/.test(text) && !/<transparent\b[^>]*\bopaque\s*=/.test(text)));
             }
-            if (!(await verdicts.get(filename))) continue;
+            const opaque = await verdicts.get(filename);
+            const transparency = Number(object.urdfNode.getAttribute('sdf_transparency') || 0);
+            if (!opaque && !transparency) continue;
             object.traverse(mesh => {
                 if (!mesh.isMesh) return;
-                for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+                const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                for (const material of materials) {
                     if (!material) continue;
-                    material.opacity = 1;
-                    material.transparent = false;
+                    if (opaque) material.opacity = 1;
+                    material.opacity *= 1 - transparency;
+                    material.transparent = material.opacity < 1;
                 }
             });
         }
@@ -220,6 +226,7 @@ class Converter {
         this.links = [];
         this.joints = [];
         this.files = new Map();
+        this.missingIncludes = [];
     }
 
     async load(content, fileKey) {
@@ -291,9 +298,11 @@ class Converter {
         const uri = text(include, 'uri');
         const found = uri && await this.findIncluded(uri, scope.fileKey);
         if (!found) {
-            // A missing model:// is reported by the extension with the paths it searched.
-            if (uri && /^model:\/\//.test(uri)) return console.warn(`SDF: cannot find ${uri}`);
-            throw Object.assign(new Error(`SDF: cannot find included model ${uri}`), { location: { missing: uri } });
+            // The rest of the model still shows; Problems names the include.
+            // Fuel URLs are never fetched: the webview has no network access.
+            console.warn(`SDF: cannot find included model ${uri}`);
+            this.missingIncludes.push(uri || '');
+            return;
         }
         const doc = this.parseXml(found.content, found.key);
         const root = doc.documentElement;
@@ -394,10 +403,13 @@ class Converter {
                     if (!shape) continue;
                     const name = element.getAttribute('name');
                     // sdf_plane: a ground must not set the camera's framing.
-                    out.push(`    <${tag}${name ? ` name="${escapeXml(name)}"` : ''}${shape.plane ? ' sdf_plane="true"' : ''}>`,
+                    // sdf_transparency: a mesh file keeps its colors, so its transparency is applied after loading.
+                    const isMesh = shape.mesh && tag === 'visual';
+                    const transparency = isMesh ? Number(text(element, 'transparency') ?? 0) : 0;
+                    out.push(`    <${tag}${name ? ` name="${escapeXml(name)}"` : ''}${shape.plane ? ' sdf_plane="true"' : ''}${transparency ? ` sdf_transparency="${urdfNumber(transparency)}"` : ''}>`,
                         `      ${originXml(local(element).multiply(shape.offset))}`,
                         `      <geometry>${shape.xml}</geometry>`);
-                    const color = tag === 'visual' && this.color(element);
+                    const color = tag === 'visual' && this.color(element, !isMesh);
                     if (color) out.push(`      <material name="sdf_material_${materials++}"><color rgba="${color.map(urdfNumber).join(' ')}"/></material>`);
                     out.push(`    </${tag}>`);
                 }
@@ -423,7 +435,7 @@ class Converter {
             }
         }
         out.push('</robot>');
-        return { urdf: out.join('\n'), files: this.files };
+        return { urdf: out.join('\n'), files: this.files, missingIncludes: this.missingIncludes };
     }
 
     jointDetails({ scope, element, frame, name }) {
@@ -460,9 +472,9 @@ class Converter {
         return { type, axis, limit };
     }
 
-    color(visual) {
+    color(visual, withTransparency = true) {
         const material = child(visual, 'material');
-        const transparency = Number(text(visual, 'transparency') ?? 0);
+        const transparency = withTransparency ? Number(text(visual, 'transparency') ?? 0) : 0;
         const diffuse = numbers(text(material, 'diffuse'));
         const ambient = numbers(text(material, 'ambient'));
         const rgb = diffuse.length ? diffuse : ambient.length ? ambient : GAZEBO_MATERIALS[text(child(material, 'script'), 'name')];
@@ -512,7 +524,7 @@ class Converter {
                 // for an included model is not the opened file.
                 const filename = /^[a-z]+:\/\//i.test(uri) || uri.startsWith('/') ? uri : this.relative(fileKey, uri);
                 const scale = text(shape, 'scale');
-                return { xml: `<mesh filename="${escapeXml(filename)}"${scale ? ` scale="${numbers(scale).map(urdfNumber).join(' ')}"` : ''}/>`, offset };
+                return { xml: `<mesh filename="${escapeXml(filename)}"${scale ? ` scale="${numbers(scale).map(urdfNumber).join(' ')}"` : ''}/>`, offset, mesh: true };
             }
             default:
                 console.warn(`SDF: <${shape.tagName}> geometry is not shown`);

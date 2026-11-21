@@ -13,7 +13,7 @@ import { checkModel, linkGeometrySizes } from './utils/ModelChecks.js';
 
 // What a load tells the extension for the Problems panel.
 const isMJCF = model => model?.userData?.type === 'mjcf';
-const emptyLoadReport = () => ({ loadError: null, loadErrorLocation: null, missingMeshes: [], guessedMeshes: [], checks: [] });
+const emptyLoadReport = () => ({ loadError: null, loadErrorLocation: null, missingMeshes: [], missingIncludes: [], guessedMeshes: [], checks: [] });
 import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
 import { createCameraKeys, pointerNdc } from './utils/camera-keys.js';
@@ -354,6 +354,7 @@ class App {
         document.getElementById('screenshot-btn').hidden = Boolean(model.isMesh);
         Object.assign(this.loadReport, {
             missingMeshes: model.missingMeshes || [],
+            missingIncludes: model.missingIncludes || [],
             guessedMeshes: model.guessedMeshes || [],
             checks: model.expandedUrdf && !mjcf ? checkModel(model.expandedUrdf, { sizes: linkGeometrySizes(model, THREE.Box3) }) : []
         });

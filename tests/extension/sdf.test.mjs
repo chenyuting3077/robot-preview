@@ -22,6 +22,8 @@ before(async () => {
       <visual name="v"><geometry><mesh><uri>meshes/missing.dae</uri></mesh></geometry></visual>
     </link>
     <include><uri>model://wheel</uri><name>front</name></include>
+    <include><uri>model://ground_plane</uri></include>
+    <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table</uri></include>
     <joint name="axle" type="revolute"><parent>chassis</parent><child>front::rim</child>
       <axis><xyz>0 1 0</xyz><limit><lower>-1</lower><upper>1</upper></limit></axis></joint>
   </model>
@@ -68,4 +70,20 @@ test('joint limits are not written into SDF', async () => {
     env.state.panels[0].receive({ type: 'editLimits', joint: 'axle', limits: { upper: 2 } });
     await waitFor(() => env.state.status.some(message => message.includes('cannot write limits')));
     assert.equal(env.state.applied.length, 0);
+});
+
+test('an include of a model:// Gazebo cannot find is reported on its <uri>', async () => {
+    const diagnostics = await waitFor(() => env.state.diagnostics.get(primary)?.find(d => d.message.includes('ground_plane')));
+    assert.match(diagnostics.message, /Gazebo model "ground_plane" not found/);
+    assert.equal(diagnostics.range.start.line, 7);
+});
+
+test('a Fuel include the webview skipped says the preview does not download it', async () => {
+    env.state.panels[0].receive({ type: 'diagnostics', syntax: {}, loadError: null, missingMeshes: [],
+        missingIncludes: ['model://ground_plane', 'https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table'], guessedMeshes: [] });
+    const fuel = await waitFor(() => env.state.diagnostics.get(primary)?.find(d => d.message.includes('fuel.gazebosim.org')));
+    assert.match(fuel.message, /does not download from fuel\.gazebosim\.org/);
+    assert.equal(fuel.range.start.line, 8);
+    // The missing model:// is reported once, by the listing, not again for the webview.
+    assert.equal(env.state.diagnostics.get(primary).filter(d => d.message.includes('ground_plane')).length, 1);
 });

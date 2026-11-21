@@ -949,7 +949,7 @@ class Preview {
         this.diagnostics.clear();
     }
 
-    async onDiagnostics({ syntax, loadError, loadErrorLocation, missingMeshes, guessedMeshes, checks }) {
+    async onDiagnostics({ syntax, loadError, loadErrorLocation, missingMeshes, missingIncludes, guessedMeshes, checks }) {
         const token = this.diagnosticsToken = (this.diagnosticsToken || 0) + 1;
         const make = (range, message, severity) => {
             const diagnostic = new vscode.Diagnostic(range, message, severity);
@@ -991,6 +991,20 @@ class Preview {
             if (!references.length && this.primary) {
                 add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), `Mesh not found: ${meshPath}`, vscode.DiagnosticSeverity.Warning));
             }
+        }
+
+        // A model:// the listing could not find is reported below with the paths searched.
+        const unlistedModels = new Set((this.listing?.missing || []).filter(entry => entry.isModel).map(entry => entry.name));
+        for (const uri of new Set(missingIncludes || [])) {
+            const model = uri.match(/^model:\/\/([^/]+)/)?.[1];
+            if (model && unlistedModels.has(model)) continue;
+            const host = uri.match(/^https?:\/\/([^/]+)/i)?.[1];
+            const message = host
+                ? `Included model not shown: the preview does not download from ${host}. Download it and include it by model:// or a path.`
+                : `Included model not found: ${uri}`;
+            const references = await this.findUriReferences(uri);
+            for (const reference of references) add(reference.fsPath, make(reference.range, message, vscode.DiagnosticSeverity.Warning));
+            if (!references.length && this.primary) add(this.primary.fsPath, make(new vscode.Range(0, 0, 0, 0), message, vscode.DiagnosticSeverity.Warning));
         }
 
         const fixes = new Map();
@@ -1097,9 +1111,27 @@ class Preview {
         return dir ? path.join(dir, rest) : null;
     }
 
+    async findUriReferences(uri) {
+        const re = new RegExp(`<uri>\\s*(${escapeRegex(uri)})\\s*</uri>`, 'g');
+        const found = [];
+        for (const fsPath of this.listing?.paths || []) {
+            if (!MODEL_RE.test(fsPath)) continue;
+            const text = await currentText(fsPath);
+            const matches = text === null ? [] : Array.from(text.matchAll(re));
+            if (!matches.length) continue;
+            const doc = await vscode.workspace.openTextDocument(fsPath);
+            for (const match of matches) {
+                const start = match.index + match[0].indexOf(match[1]);
+                found.push({ fsPath, range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + uri.length)) });
+            }
+        }
+        return found;
+    }
+
     async findPackageReferences(name, isModel) {
         const escaped = escapeRegex(name);
-        const re = isModel ? new RegExp(`model://(${escaped})(?=/)`, 'g') : new RegExp(`package://(${escaped})(?=/)|\\$\\(find\\s+(${escaped})\\)`, 'g');
+        // An SDF <include> names a model with nothing after it: <uri>model://ground_plane</uri>.
+        const re = isModel ? new RegExp(`model://(${escaped})(?=[/<\\s"']|$)`, 'g') : new RegExp(`package://(${escaped})(?=/)|\\$\\(find\\s+(${escaped})\\)`, 'g');
         const found = [];
         for (const fsPath of this.listing.paths) {
             if (!MODEL_RE.test(fsPath)) continue;

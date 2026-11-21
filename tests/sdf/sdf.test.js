@@ -142,3 +142,28 @@ test('capsules become generated meshes; a loop-closing joint is dropped', async 
     assert.equal(link('c').querySelector('color').getAttribute('rgba'), '1 0 0 1');
     assert.equal(joint('ac'), undefined);
 });
+
+test('a missing or Fuel include is skipped and listed, the rest still converts', async () => {
+    const { urdf, missingIncludes } = await SDFAdapter.toURDF(`<sdf version="1.9"><world name="w">
+        <include><uri>model://ground_plane</uri></include>
+        <include><uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table</uri></include>
+        <include><uri>../missing_dir</uri></include>
+        <model name="m"><link name="l"/></model>
+      </world></sdf>`, '/pkg/w.sdf', new Map());
+    assert.deepEqual(missingIncludes, ['model://ground_plane', 'https://fuel.gazebosim.org/1.0/OpenRobotics/models/Table', '../missing_dir']);
+    assert.match(urdf, /<link name="m::l">/);
+});
+
+test('a mesh visual carries its transparency for after loading; a primitive folds it into its color', async () => {
+    const { link } = await convert(`<sdf version="1.9"><model name="m"><link name="l">
+        <visual name="mesh"><transparency>0.25</transparency><geometry><mesh><uri>a.dae</uri></mesh></geometry>
+          <material><diffuse>1 0 0 1</diffuse></material></visual>
+        <visual name="box"><transparency>0.25</transparency><geometry><box><size>1 1 1</size></box></geometry>
+          <material><diffuse>1 0 0 1</diffuse></material></visual>
+      </link></model></sdf>`);
+    const [mesh, box] = link('l').querySelectorAll('visual');
+    assert.equal(mesh.getAttribute('sdf_transparency'), '0.25');
+    assert.equal(mesh.querySelector('color').getAttribute('rgba'), '1 0 0 1');
+    assert.equal(box.getAttribute('sdf_transparency'), null);
+    assert.equal(box.querySelector('color').getAttribute('rgba'), '1 0 0 0.75');
+});
