@@ -2,7 +2,7 @@
   "name": "robot-preview-mesh-splat",
   "displayName": "Robot Preview: Point Cloud & Splat Viewer",
   "description": "Fast 3D viewer for large point clouds and LiDAR scans (PCD, PLY, KITTI, nuScenes), Gaussian splats (3DGS, 2DGS), ROS maps, STEP / IGES CAD and meshes (STL, OBJ, glTF) inside VS Code",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
   "license": "Apache-2.0",
