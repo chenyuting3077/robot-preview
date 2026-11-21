@@ -15,11 +15,13 @@ test('a nuScenes .pcd.bin opens in the viewer by default: no other file is named
 });
 
 test('a .bin or .asc editor has a title button and an Explorer entry that open it as points', () => {
-    // The same icon as the URDF preview button, not a codicon shared with other extensions.
+    // Its own icon, drawn from this extension's (a mesh triangle and a splat), in the URDF button's style; not a
+    // codicon shared with other extensions, nor the URDF one.
     const { icon } = commands.find(({ command }) => command === 'robotPreviewMeshSplat.openAsPoints');
     for (const theme of ['light', 'dark']) {
         const own = fs.readFileSync(new URL(`../../packages/mesh-splat/${icon[theme]}`, import.meta.url), 'utf8');
-        assert.equal(own, fs.readFileSync(new URL(`../../packages/urdf-mjcf/images/preview-${theme}.svg`, import.meta.url), 'utf8'), theme);
+        assert.match(own, /viewBox="0 0 16 16"/, theme);
+        assert.notEqual(own, fs.readFileSync(new URL(`../../packages/urdf-mjcf/images/preview-${theme}.svg`, import.meta.url), 'utf8'), theme);
     }
     for (const place of ['editor/title', 'explorer/context']) {
         const item = menus[place].find(({ command }) => command === 'robotPreviewMeshSplat.openAsPoints');
