@@ -5,7 +5,7 @@
 - Point clouds open with the grid shown on their z = 0 plane (the up axis's zero), not under their lowest point; a cloud farther from it than twice its largest side keeps the grid under its lowest point.
 - Point clouds also open with the axes shown, and their Display menu leaves out Bounds.
 - Point sizes take one row of dots in the Display menu instead of three rows.
-- The grid spans the model's largest side, not its footprint: a standing robot got 1 cm cells.
+- The ground grid reaches the horizon, as in Isaac Sim, with minor and 10x major lines whose spacing follows the zoom.
 - Grid, axes and bounds stay as last left, for point clouds and for other models apart; a model opens with the grid the first time.
 
 ## 0.4.0

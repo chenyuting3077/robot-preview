@@ -551,19 +551,69 @@ function viewBox() {
     return box;
 }
 
+// The ground grid reaches the horizon like Isaac Sim's: a plane under the camera whose shader draws minor and
+// major (10x) lines in powers of ten picked by the camera's distance to its target, minor lines fading out as the
+// view zooms out until the major ones take their place, and everything fading with distance. A GridHelper sized to
+// the model left a patch floating in the void when zoomed out, and its 10-100 cells jumped with the model's size.
+const GRID_VERTEX = `
+varying vec3 vWorld;
+void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+}`;
+const GRID_FRAGMENT = `
+uniform float cell;
+uniform float blend;
+uniform float fade;
+uniform vec3 minorColor;
+uniform vec3 majorColor;
+varying vec3 vWorld;
+float lines(vec2 p, float size, float width) {
+    vec2 coord = p / size;
+    vec2 d = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+    return 1.0 - min(min(d.x, d.y) / width, 1.0);
+}
+void main() {
+    float minor = lines(vWorld.xz, cell, 1.0) * (1.0 - blend);
+    float major = lines(vWorld.xz, cell * 10.0, 1.4);
+    float alpha = max(minor * 0.55, major * 0.9) * (1.0 - smoothstep(fade * 0.25, fade, distance(vWorld, cameraPosition)));
+    if (alpha < 0.01) discard;
+    gl_FragColor = vec4(mix(minorColor, majorColor, step(minor * 0.55, major * 0.9)), alpha);
+    // The colour uniforms arrive in linear space; without this the greys drew near the background's (86 on 80).
+    #include <colorspace_fragment>
+}`;
 function gridHelper() {
     const box = viewBox();
-    const size = box.getSize(new THREE.Vector3());
-    const center = box.getCenter(new THREE.Vector3());
-    // Cells of a power of ten, 10-100 of them across 1.5 times the model's largest side, on round coordinates:
-    // by the footprint alone a standing robot (0.5 m wide, 1.3 m tall) got a 0.75 m grid of 1 cm cells.
-    const extent = Math.max(size.x, size.y, size.z, 1e-6) * 1.5;
-    const cell = 10 ** Math.ceil(Math.log10(extent / 100));
-    const divisions = 2 * Math.ceil(extent / cell / 2);
-    // Mid greys stand out against both the light (white) and the dark (#505050) background.
-    const grid = new THREE.GridHelper(cell * divisions, divisions, 0xa0a0a0, 0x8c8c8c);
-    grid.position.set(Math.round(center.x / cell) * cell, cloudGround ?? box.min.y, Math.round(center.z / cell) * cell);
-    Object.assign(grid.material, { transparent: true, opacity: 0.85, depthWrite: false });
+    const material = new THREE.ShaderMaterial({
+        vertexShader: GRID_VERTEX,
+        fragmentShader: GRID_FRAGMENT,
+        // Mid greys stand out against both the light (white) and the dark (#505050) background.
+        uniforms: { cell: { value: 1 }, blend: { value: 0 }, fade: { value: 1 }, minorColor: { value: new THREE.Color(0x8c8c8c) }, majorColor: { value: new THREE.Color(0xa0a0a0) } },
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        extensions: { derivatives: true }
+    });
+    const grid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), material);
+    grid.position.y = cloudGround ?? box.min.y;
+    grid.frustumCulled = false;
+    grid.onBeforeRender = (renderer, scene, viewer) => {
+        // Minor cells of about a tenth of the viewing distance: G1 framed whole gets 10 cm cells and 1 m major lines.
+        const level = Math.log10(Math.max(viewer.position.distanceTo(controls.target), 1e-6) / 10);
+        material.uniforms.cell.value = 10 ** Math.floor(level);
+        material.uniforms.blend.value = level - Math.floor(level);
+        // Gone by 15 viewing distances: fading out by half the far plane left the horizon a moiré of crowded lines.
+        material.uniforms.fade.value = viewer.position.distanceTo(controls.target) * 15;
+        grid.position.x = viewer.position.x;
+        grid.position.z = viewer.position.z;
+        grid.scale.setScalar(viewer.far * 2);
+        grid.updateMatrixWorld();
+    };
+    grid.dispose = () => {
+        grid.geometry.dispose();
+        material.dispose();
+    };
     return grid;
 }
 // The grid lives in the scene, already in the view's frame; the axes and bounds turn with the up axis.
