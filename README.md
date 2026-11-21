@@ -14,7 +14,7 @@ code --install-extension packages/usd/robot-preview-usd-*.vsix
 
 ## Usage
 
-Open a `.urdf`, `.xacro` or MJCF `.xml` file for the live robot preview; open a mesh, point cloud, splat or USD file for the 3D view.
+Open a `.urdf`, `.xacro`, MJCF `.xml` or SDF `.sdf` / `.world` file for the live robot preview; open a mesh, point cloud, splat or USD file for the 3D view.
 
 ```bash
 pnpm test

@@ -1,6 +1,6 @@
 # Robot Preview: URDF, Xacro & MJCF
 
-Live 3D preview of URDF, Xacro and MJCF beside the text editor.
+Live 3D preview of URDF, Xacro, MJCF and SDF beside the text editor.
 
 - Updates as you type; click a link to jump to its source, move the cursor to highlight it.
 - Resolves `package://`, `$(find)`, `model://`, absolute and `file://` paths across ROS packages; xacro `load_yaml` and `$(env)`.

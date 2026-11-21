@@ -52,6 +52,15 @@ Pitfalls of building and publishing it: issues #1 and #5.
 - Not drawn: cube and skybox textures (MuJoCo's default `type` is cube), KTX files, `texuniform` on meshes. Random marks have MuJoCo's density but not its exact dots (it seeds a `mt19937_64`).
 - Planes are not drawn while simulating (the simulation builds no geometry for them); this predates textures.
 
+## SDF
+
+- Converted to URDF and loaded as one, so mesh lookup, missing-mesh reports, joint sliders and the tree view are the URDF ones. URDF puts a child link's frame on its joint, so visuals, collisions and inertials are re-expressed in the joint frame; positions match the SDF (`tests/sdf/`).
+- Model checks and Export Expanded URDF are off: the checks follow ROS's URDF parser, and the URDF is a lossy stand-in, not an export.
+- Not shown faithfully: kinematic loops (URDF is a tree; the joint closing the loop is dropped), the second axis of universal / revolute2 joints, ball and gearbox joints (shown fixed), submeshes, PBR and texture materials, heightmaps and polylines. Unbounded prismatic joints get a ±1 m slider.
+- A Collada `<transparent>` without `opaque` is drawn opaque, as gazebo-classic's `ColladaLoader::LoadTransparent` does; by the Collada default (A_ONE) Blender 2.49's `<transparency>0.0</transparency>` makes osrf/gazebo_models' pioneer2dx chassis invisible. URDF keeps the Collada default.
+- `.sdf` is also a chemistry and a SQL Server Compact extension: a file opens the preview only with `<sdf` in its first 50 lines, and the extension does not claim `.sdf` as XML.
+- Checked in headless Chrome on osrf/gazebo_models `pioneer2dx` (SDF 1.5, `model://` meshes, `Gazebo/FlatBlack`) and gz-sim `examples/worlds/shapes.sdf` (SDF 1.11, every primitive).
+
 ## Limits
 
 - The CSP keeps `'unsafe-eval'`: mujoco-js builds its bindings with `new Function`.

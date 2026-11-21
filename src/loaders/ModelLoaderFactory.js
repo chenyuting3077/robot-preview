@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { URDFAdapter } from '../adapters/URDFAdapter.js';
 import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
+import { SDFAdapter } from '../adapters/SDFAdapter.js';
 import { resolveFileFromMap, resolveMeshFile, fileUrlModifier, directoryOf } from '../utils/FileUtils.js';
 import { trackMeshLoads, cachedMeshParse, ensureMeshNormals } from '../utils/MeshLoader.js';
 import { parseCollada } from '../utils/colladaFast.js';
@@ -22,6 +23,9 @@ export class ModelLoaderFactory {
                 return 'urdf';
             case 'xacro':
                 return 'xacro';
+            case 'sdf':
+            case 'world':
+                return 'sdf';
             case 'xml':
                 // XML files are MJCF format, verify the document by content
                 if (content) {
@@ -118,6 +122,8 @@ export class ModelLoaderFactory {
                 return await XacroAdapter.parse(content, fileName, fileMap, { args: xacroArgs, env });
             case 'mjcf':
                 return await this.loadMJCF(content, fileMap, basePath);
+            case 'sdf':
+                return await SDFAdapter.parse(content, fileName, fileMap);
             default:
                 throw new Error(`Unsupported file type: ${fileType}`);
         }

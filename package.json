@@ -7,7 +7,7 @@
   "scripts": {
     "build": "vite build && npm --prefix packages/mesh-splat run build && npm --prefix packages/usd run build",
     "package": "vite build && cd packages/urdf-mjcf && npm run package && cd ../mesh-splat && npm run package && cd ../usd && npm run package",
-    "test": "node --import ./tests/setup.mjs --test tests/animation/*.test.js tests/mjcf/*.test.js tests/viewer/*.test.mjs tests/extension/*.test.mjs tests/mesh-splat/*.test.mjs",
+    "test": "node --import ./tests/setup.mjs --test tests/animation/*.test.js tests/mjcf/*.test.js tests/sdf/*.test.js tests/viewer/*.test.mjs tests/extension/*.test.mjs tests/mesh-splat/*.test.mjs",
     "fixtures:usd": "node scripts/fetch-usd-fixtures.mjs",
     "test:e2e": "npm run build && npx -y -p node@22 node tests/e2e/webview.mjs && npx -y -p node@22 node tests/e2e/mesh-splat.mjs && npx -y -p node@22 node tests/e2e/packaged.mjs"
   },

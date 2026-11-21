@@ -56,14 +56,14 @@
       "editor/title": [
         {
           "command": "robotPreviewUrdf.open",
-          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/",
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
           "command": "robotPreviewUrdf.open",
-          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/"
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/"
         },
         {
           "command": "robotPreviewUrdf.setXacroArgs",
@@ -73,7 +73,7 @@
       "commandPalette": [
         {
           "command": "robotPreviewUrdf.open",
-          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml)$/"
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/"
         },
         {
           "command": "robotPreviewUrdf.setXacroArgs",

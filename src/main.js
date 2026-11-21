@@ -29,7 +29,7 @@ const SETTING_BUTTONS = [
     'toggle-shadow', 'toggle-lighting', 'toggle-grid', 'toggle-joints-panel', 'toggle-model-tree', 'ignore-limits'
 ];
 const PANEL_BUTTONS = { 'toggle-joints-panel': 'floating-joints-panel', 'toggle-model-tree': 'floating-model-tree' };
-const MODEL_FILE_RE = /\.(urdf|xacro|xml)$/i;
+const MODEL_FILE_RE = /\.(urdf|xacro|xml|sdf|world)$/i;
 
 function syntaxErrorsOf(entries) {
     const result = {};
@@ -339,7 +339,8 @@ class App {
         const model = this.currentModel;
         if (!pattern || !model?.links) return;
 
-        const regex = new RegExp(`^(?:${pattern})$`);
+        // An SDF nested model scopes its link names ("arm::link1"); the source says "link1".
+        const regex = new RegExp(`^(?:.*::)?(?:${pattern})$`);
         const linkName = kind === 'joint'
             ? Array.from(model.joints.values()).find(joint => regex.test(joint.name))?.child
             : Array.from(model.links.keys()).find(name => regex.test(name));

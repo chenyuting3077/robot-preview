@@ -6,17 +6,17 @@ const fs = require('fs/promises');
 const schema = require('./urdf-schema');
 
 // .gazebo and .trans are xacro fragments fusion2urdf writes and includes.
-const ASSET_RE = /\.(urdf|xacro|xml|gazebo|trans|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|bmp|tga|tiff?|webp|msh|ya?ml)$/i;
+const ASSET_RE = /\.(urdf|xacro|xml|sdf|world|gazebo|trans|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|bmp|tga|tiff?|webp|msh|ya?ml)$|(^|[\\/])model\.config$/i;
 // Files a mesh names internally, where the URDF cannot see them.
 const SIDECAR_REFS = {
     obj: /^\s*mtllib\s+(.+?)\s*$/gm,
     mtl: /^\s*(?:map_\w+|bump|disp|decal|refl)\s+(?:.*\s)?(\S+)\s*$/gm,
     dae: /<init_from>\s*([^<]+?)\s*<\/init_from>/g
 };
-const MODEL_RE = /\.(urdf|xacro|xml|gazebo|trans)$/i;
+const MODEL_RE = /\.(urdf|xacro|xml|sdf|world|gazebo|trans)$/i;
 const REF_RE = /(package|model):\/\/([^/\s"'<>]+)|\$\(find\s+([^)\s]+)\)/g;
 const ENV_REF_RE = /\$\((?:env|optenv)\s+(\w+)/g;
-const FILE_REF_RE = /\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;
+const FILE_REF_RE = /\b(?:filename|file)\s*=\s*["']([^"']+)["']|<uri>\s*([^<\s]+)\s*<\/uri>/g;
 const INCLUDE_RE = /<(?:xacro:include|include)\b[^>]*?\b(?:filename|file)\s*=\s*["']([^"']+)["']/g;
 const ELEMENT_RE = /<(link|joint|body)\b[^>]*?\bname\s*=\s*["']([^"']+)["'][^>]*?(\/?)>/g;
 const PROPERTY_RE = /<xacro:property\s+name\s*=\s*["']([\w-]+)["']\s+value\s*=\s*["']([^"']*)["']/g;
@@ -269,7 +269,7 @@ async function modelInfo(fsPath, version, live = true) {
         version,
         text,
         refs: Array.from(text.matchAll(REF_RE), m => ({ name: m[2] || m[3], isModel: m[1] === 'model' })),
-        files: Array.from(text.matchAll(FILE_REF_RE), m => m[1]),
+        files: Array.from(text.matchAll(FILE_REF_RE), m => m[1] ?? m[2]),
         env: Array.from(text.matchAll(ENV_REF_RE), m => m[1]),
         includes: Array.from(text.matchAll(INCLUDE_RE), m => path.basename(m[1]))
     };
@@ -412,7 +412,7 @@ function missingPackageMessage(name, isModel) {
         + (sourced ? '' : ' VS Code sees ROS variables only when started from a sourced shell.');
 }
 
-const modelStem = fsPath => fsPath.replace(/(\.urdf)?\.(xacro|urdf|xml)$/i, '');
+const modelStem = fsPath => fsPath.replace(/(\.urdf)?\.(xacro|urdf|xml|sdf|world)$/i, '');
 
 const attributeOf = (tag, name) => attributeRange(tag, name)?.value;
 
@@ -524,6 +524,8 @@ function elementAt(text, offset) {
 function isRobotModel(doc) {
     if (doc.uri.scheme !== 'file') return false;
     if (/\.(urdf|xacro)$/i.test(doc.fileName)) return true;
+    // .sdf is also a chemistry and a SQL Server Compact extension.
+    if (/\.(sdf|world)$/i.test(doc.fileName)) return /<sdf\b/.test(doc.getText(new vscode.Range(0, 0, 50, 0)));
     return /\.xml$/i.test(doc.fileName) && /<(mujoco|robot)\b/.test(doc.getText(new vscode.Range(0, 0, 50, 0)));
 }
 
@@ -1146,13 +1148,14 @@ class Preview {
             // A relative reference is compared as resolved from its file's key,
             // since the webview reports '../parts/a.stl' as 'pkg/parts/a.stl'.
             const key = keyOf.get(fsPath) ?? '';
-            for (const match of text.matchAll(/\bfilename\s*=\s*["']([^"']+)["']/g)) {
-                const forms = [normalize(match[1])];
-                if (!/^[a-z]+:\/\/|^[/\\$]/i.test(match[1])) forms.push(normalize(path.posix.join(path.posix.dirname(key), match[1])));
-                if (!forms.some(value => value === target || target.endsWith(`/${value}`) || value.endsWith(`/${target}`))) continue;
+            for (const match of text.matchAll(/\bfilename\s*=\s*["']([^"']+)["']|<uri>\s*([^<\s]+)\s*<\/uri>/g)) {
+                const value = match[1] ?? match[2];
+                const forms = [normalize(value)];
+                if (!/^[a-z]+:\/\/|^[/\\$]/i.test(value)) forms.push(normalize(path.posix.join(path.posix.dirname(key), value)));
+                if (!forms.some(form => form === target || target.endsWith(`/${form}`) || form.endsWith(`/${target}`))) continue;
                 const doc = await vscode.workspace.openTextDocument(fsPath);
-                const start = match.index + match[0].indexOf(match[1]);
-                found.push({ fsPath, value: match[1], range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + match[1].length)) });
+                const start = match.index + match[0].indexOf(value);
+                found.push({ fsPath, value, range: new vscode.Range(doc.positionAt(start), doc.positionAt(start + value.length)) });
             }
         }
         return found;
@@ -1329,6 +1332,8 @@ class Preview {
     }
 
     async findDefinitions(kind, name) {
+        // SDF nested models scope names ("arm::link1"); the source says "link1".
+        const local = name.split('::').pop();
         const tags = kind === 'joint' ? 'joint' : 'link|body';
         const re = new RegExp(`<(?:${tags})\\b[^>]*?\\bname\\s*=\\s*["']([^"']+)["'][^>]*>`, 'g');
         const files = [this.primary.fsPath, ...Array.from(this.listing.paths).filter(p => p !== this.primary.fsPath && MODEL_RE.test(p))];
@@ -1340,7 +1345,7 @@ class Preview {
             if (text === null) continue;
             for (const match of text.matchAll(re)) {
                 const candidate = { fsPath, index: match.index, length: match[0].length, name: match[1], tag: match[0] };
-                if (match[1] === name) {
+                if (match[1] === name || match[1] === local) {
                     exact.push(candidate);
                 } else if (/\$[{(]/.test(match[1])) {
                     const expanded = expandProperties(text, match[1]);
@@ -1359,7 +1364,7 @@ class Preview {
     async editLimits(jointName, limits) {
         if (!this.listing) return;
         const target = (await this.findDefinitions('joint', jointName)).exact[0];
-        if (!target || target.tag.endsWith('/>')) {
+        if (!target || target.tag.endsWith('/>') || /\.(sdf|world)$/i.test(target.fsPath)) {
             vscode.window.setStatusBarMessage(`Robot Preview: cannot write limits of "${jointName}" (not a literal URDF joint in source)`, 5000);
             return;
         }
@@ -1486,7 +1491,7 @@ exports.activate = context => {
     packageWatcher.onDidDelete(resetIndex);
 
     const xacroFiles = [{ scheme: 'file', pattern: '**/*.{urdf,xacro}' }];
-    const modelWatcher = vscode.workspace.createFileSystemWatcher('**/*.{urdf,xacro,xml,gazebo,trans}');
+    const modelWatcher = vscode.workspace.createFileSystemWatcher('**/*.{urdf,xacro,xml,sdf,world,gazebo,trans}');
     for (const event of ['onDidChange', 'onDidCreate', 'onDidDelete']) modelWatcher[event](() => navigator.invalidate());
     context.subscriptions.push(
         packageWatcher,
@@ -1496,7 +1501,7 @@ exports.activate = context => {
         vscode.languages.registerCompletionItemProvider(xacroFiles, { provideCompletionItems: (doc, position) => navigator.provideCompletionItems(doc, position) }, '{', ':', ' ', '<', '"'),
         vscode.languages.registerDocumentLinkProvider(xacroFiles, { provideDocumentLinks: doc => navigator.provideDocumentLinks(doc) }),
         vscode.languages.registerCodeActionsProvider(
-            [{ scheme: 'file', pattern: '**/*.{urdf,xacro,xml}' }],
+            [{ scheme: 'file', pattern: '**/*.{urdf,xacro,xml,sdf,world}' }],
             { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context) },
             { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
         ),
