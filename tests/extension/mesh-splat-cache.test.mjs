@@ -117,7 +117,7 @@ test('a save that renames a new file over the old one re-renders with a new cach
     const before = panel.webview.html.match(/data-key="([^"]+)"/)[1];
     fs.writeFileSync(`${step}.tmp`, 'ISO-10303-21; changed');
     fs.renameSync(`${step}.tmp`, step);
-    await env.state.watched.create();
+    await env.state.watched.create({ fsPath: step });
     assert.notEqual(panel.webview.html.match(/data-key="([^"]+)"/)[1], before);
     fs.rmSync(root, { recursive: true, force: true });
 });

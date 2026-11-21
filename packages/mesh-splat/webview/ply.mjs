@@ -1,5 +1,6 @@
 import { linearByte, linearByteTable } from './color.mjs';
 import { writeFace } from './geometry.mjs';
+import { recentering } from './recenter.mjs';
 
 // Binary property types by PLY name (`float`, `uchar`, ...) and by size (`float32`, `uint8`, ...).
 export const TYPES = {};
@@ -114,7 +115,7 @@ const ATTRIBUTES = {
 // Point clouds keep up to this many extra numeric properties (confidence, curvature, ...) to color by.
 export const MAX_SCALAR_FIELDS = 16;
 
-function readAsciiPoints(bytes, vertex, layout, points) {
+function readAsciiPoints(bytes, vertex, layout, points, placing) {
     // PLYLoader starts the body after the first "end_header" plus whitespace.
     const text = new TextDecoder().decode(bytes);
     const parsers = vertex.properties.map(property => (TYPES[property.type].float ? parseFloat : parseInt));
@@ -137,9 +138,12 @@ function readAsciiPoints(bytes, vertex, layout, points) {
             }
         }
         if (filled < values.length) return null;
-        positions[i * 3] = values[x];
-        positions[i * 3 + 1] = values[y];
-        positions[i * 3 + 2] = values[z];
+        if (placing) placing.write(positions, i, values[x], values[y], values[z]);
+        else {
+            positions[i * 3] = values[x];
+            positions[i * 3 + 1] = values[y];
+            positions[i * 3 + 2] = values[z];
+        }
         if (normals) for (let c = 0; c < 3; c++) normals[i * 3 + c] = values[layout.normals[c]];
         if (uvs) for (let c = 0; c < 2; c++) uvs[i * 2 + c] = values[layout.uvs[c]];
         for (const [field, target] of layout.scalars) target[i] = values[field];
@@ -156,7 +160,7 @@ function readAsciiPoints(bytes, vertex, layout, points) {
 
 // `scalars` also reads every vertex property that is not a position, normal, uv, color or alpha into
 // `points.scalars` (name to Float32Array), for coloring a point cloud by it.
-export function readPlyPoints(bytes, header, { scalars = false } = {}) {
+export function readPlyPoints(bytes, header, { scalars = false, recenter = false } = {}) {
     const vertex = header.elements[0];
     if (vertex?.name !== 'vertex' || !(vertex.count >= 0) || vertex.properties.some(property => property.list || !TYPES[property.type])) return null;
     const indexOf = names => {
@@ -186,8 +190,10 @@ export function readPlyPoints(bytes, header, { scalars = false } = {}) {
     // PLYLoader adds an attribute only when it has values, typed like its first property.
     const allocate = (key, size) => (layout[key] && vertex.count > 0
         ? new TYPES[vertex.properties[layout[key][0]].type].ArrayType(vertex.count * size) : null);
+    const PositionArray = recenter ? Float32Array : TYPES[vertex.properties[layout.positions[0]].type].ArrayType;
+    const placing = recenter && recentering();
     const points = {
-        positions: new TYPES[vertex.properties[layout.positions[0]].type].ArrayType(vertex.count * 3),
+        positions: new PositionArray(vertex.count * 3),
         normals: allocate('normals', 3),
         uvs: allocate('uvs', 2),
         colors: allocate('colors', 3),
@@ -199,7 +205,8 @@ export function readPlyPoints(bytes, header, { scalars = false } = {}) {
         : [];
     layout.scalars = fields.map(i => [i, new Float32Array(vertex.count)]);
     if (fields.length) points.scalars = Object.fromEntries(layout.scalars.map(([i, target]) => [vertex.properties[i].name, target]));
-    if (!binary) return readAsciiPoints(bytes, vertex, layout, points);
+    const done = read => (read && recenter ? Object.assign(read, { offset: placing.finish(read.positions) }) : read);
+    if (!binary) return done(readAsciiPoints(bytes, vertex, layout, points, placing));
 
     const little = header.format === 'binary_little_endian';
     const offsets = [];
@@ -216,13 +223,19 @@ export function readPlyPoints(bytes, header, { scalars = false } = {}) {
     const colored = colors !== null;
     const rgb = layout.colors;
     const table = colored ? linearByteTable() : null;
+    // The offset is decided from the leading rows first, so the loop below stays inline: writing every point
+    // through recentering took 10M points 129 -> 212 ms (Node 22, Apple M2, median of 5).
+    for (let i = 0, row = 0; placing?.deciding && i < vertex.count; i++, row += stride) {
+        placing.write(positions, i, view[getX](row + offsets[x], little), view[getY](row + offsets[y], little), view[getZ](row + offsets[z], little));
+    }
+    const [ox, oy, oz] = (placing ? placing.finish(positions) : null) ?? [0, 0, 0];
     // Positions and colours in this one inline loop: split into a function of
     // its own, 10M uncoloured points took 77 -> 101 ms (Node 22, Apple M2, run
     // after PLYLoader in one process, median of 3).
     for (let i = 0, row = 0; i < vertex.count; i++, row += stride) {
-        positions[i * 3] = view[getX](row + offsets[x], little);
-        positions[i * 3 + 1] = view[getY](row + offsets[y], little);
-        positions[i * 3 + 2] = view[getZ](row + offsets[z], little);
+        positions[i * 3] = view[getX](row + offsets[x], little) - ox;
+        positions[i * 3 + 1] = view[getY](row + offsets[y], little) - oy;
+        positions[i * 3 + 2] = view[getZ](row + offsets[z], little) - oz;
         if (colored) {
             colors[i * 3] = table[view.getUint8(row + offsets[rgb[0]])];
             colors[i * 3 + 1] = table[view.getUint8(row + offsets[rgb[1]])];
@@ -243,7 +256,7 @@ export function readPlyPoints(bytes, header, { scalars = false } = {}) {
             for (let c = 0; c < fields.length; c++) target[out++] = view[getters[c]](row + offsets[fields[c]], little);
         }
     }
-    return points;
+    return done(points);
 }
 
 // Binary meshes whose faces hold only the index list, read like readPlyPoints: PLYLoader takes 1.79 s

@@ -5,18 +5,36 @@ const crypto = require('crypto');
 const { cacheWriter, fileReader, READ_PIECE } = require('./io');
 
 const escapeAttr = text => String(text).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const CAD = /\.(ste?p|ige?s)$/i;
+const IMAGE = /\.(pgm|png|jpe?g|bmp|gif|webp)$/i;
+const extensionOf = file => path.extname(file).slice(1).toLowerCase();
+const inside = (dir, file) => {
+    const relative = path.relative(dir, file);
+    return !!relative && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
+};
+// macOS and Windows disks ignore case by default, so map.pcd and MAP.PCD are one file there.
+const samePath = (a, b) => (['darwin', 'win32'].includes(process.platform) ? a.toLowerCase() === b.toLowerCase() : a === b);
+// A link to a file in the view is that file too. Some file systems report no inode (0); then only the path tells.
+const sameFile = (a, b) => {
+    if (samePath(a, b)) return true;
+    const [x, y] = [a, b].map(file => fs.statSync(file, { throwIfNoEntry: false }));
+    return Boolean(x?.ino && x.ino === y?.ino && x.dev === y.dev);
+};
+// VS Code's glob cannot escape ']' (it always ends a range), so glob characters match any one character and the
+// event's path decides.
+const globSafe = name => name.replace(/[[\]{}*?]/g, '?');
 
 // Tessellating a STEP assembly takes seconds (foxtrot) to minutes (OpenCascade), so the webview sends back
 // its tessellation (meshopt-encoded, see webview/step-cache.mjs) and later opens of the same file (path, mtime,
 // size, `build`) load that instead. `build` names the extension version and the tessellators' WASM, so a
 // rebuilt foxtrot or OpenCascade drops old entries even without a version bump.
 function stepCache(cacheDir, fileUri, stat, build) {
-    if (!cacheDir || !/\.(ste?p|ige?s)$/i.test(fileUri.path)) return null;
+    if (!cacheDir || !CAD.test(fileUri.path)) return null;
     const prefix = crypto.createHash('sha1').update(fileUri.path).digest('hex').slice(0, 16);
     return { prefix, uri: vscode.Uri.joinPath(cacheDir, `${prefix}-${stat.mtime}-${stat.size}-${build}.meshopt`) };
 }
 
-// The Display menu's grid / axes / bounds, as last left for point clouds and for other models, open the next file.
+// The Display menu's grid / axes / bounds, as last left for each kind of model, open the next file.
 const HELPERS_KEY = 'displayHelpers';
 const HELPER_NAMES = ['grid', 'axes', 'bounds'];
 // Whether a USD view picks parts under the pointer, as last left.
@@ -37,10 +55,12 @@ function mergeSettings(saved = {}, message, file) {
     }
     return next;
 }
-const validHelpers = helpers => Object.fromEntries(['cloud', 'model'].filter(kind => Array.isArray(helpers?.[kind]))
+const validHelpers = helpers => Object.fromEntries(['cloud', 'map', 'model'].filter(kind => Array.isArray(helpers?.[kind]))
     .map(kind => [kind, helpers[kind].filter(name => HELPER_NAMES.includes(name))]));
 
-async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn, helpers, pick, settings) {
+// A file that is gone stays listed (with no stat), so its row can say so. `keep` is only for a render after a file
+// was added or removed: a changed file resets the view, as it did before views held several files.
+async function renderHtml(template, webview, distUri, files, cache, turn, keep, helpers, pick, settings) {
     const source = webview.cspSource;
     const csp = [
         "default-src 'none'",
@@ -50,23 +70,37 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn
         `connect-src ${source} blob: data:`,
         'worker-src blob: data:'
     ].join('; ');
+    const list = files.map(({ id, uri, stat }) => ({
+        id,
+        src: `${webview.asWebviewUri(uri)}?v=${stat?.mtime}`,
+        name: path.basename(uri.path),
+        bytes: stat?.size ?? 0,
+        mtime: stat?.mtime ?? 0,
+        ...(stat ? {} : { missing: true })
+    }));
+    const [opened] = list;
     const data = {
-        src: `${webview.asWebviewUri(fileUri)}?v=${stat.mtime}`,
-        name: path.basename(fileUri.path),
-        bytes: stat.size,
-        mtime: stat.mtime,
+        src: opened.src,
+        name: opened.name,
+        bytes: opened.bytes,
+        mtime: opened.mtime,
+        file: opened.id,
+        files: JSON.stringify(list),
+        adds: files[0].takesFiles ? 1 : '',
+        keep: keep ? 1 : '',
         key: cache ? path.basename(cache.uri.fsPath) : '',
         piece: READ_PIECE,
         render: turn,
         cached: cache ? await vscode.workspace.fs.stat(cache.uri).then(() => webview.asWebviewUri(cache.uri), () => '') : '',
         helpers: JSON.stringify(helpers),
         pick: String(pick),
-        settings: JSON.stringify({ pointSize: settings.pointSize, colorMode: settings.colorMode, up: settings.upByFile?.[fileUri.fsPath] })
+        settings: JSON.stringify({ pointSize: settings.pointSize, colorMode: settings.colorMode, up: settings.upByFile?.[files[0].uri.fsPath] })
     };
     return template
         .replace(/<html lang="[^"]*">/, `<html lang="${vscode.env.language}">`)
-        .replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><base href="${webview.asWebviewUri(distUri)}/">`)
-        .replace('<body>', `<body ${Object.entries(data).map(([key, value]) => `data-${key}="${escapeAttr(value)}"`).join(' ')}>`);
+        .replace('<head>', () => `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><base href="${webview.asWebviewUri(distUri)}/">`)
+        // A function, so a `$'` or `$&` in a file name is not read as a replacement pattern.
+        .replace('<body>', () => `<body ${Object.entries(data).map(([key, value]) => `data-${key}="${escapeAttr(value)}"`).join(' ')}>`);
 }
 
 async function saveScreenshot(fileUri, data) {
@@ -92,55 +126,161 @@ function activate(context) {
         if (fs.existsSync(file)) tessellators.update(fs.readFileSync(file));
     }
     const build = `${manifest.version}-${tessellators.digest('hex').slice(0, 8)}`;
+    const { customEditors } = manifest.contributes;
+    // Files can be added from the types this extension opens, less STEP and IGES, which start +Y and keep
+    // their own cache path; a STEP or IGES view takes no added files for the same reason.
+    const extensions = [...new Set(customEditors.flatMap(editor => editor.selector)
+        .map(({ filenamePattern }) => filenamePattern?.match(/^\*\.(\w+)$/)?.[1]?.toLowerCase())
+        .filter(ext => ext && !CAD.test(`.${ext}`)))];
+    // The USD extension ships this file too; its views take no added files until its docs say they do.
+    const addsFiles = customEditors.some(({ viewType }) => viewType.startsWith('robotPreviewMeshSplat.'));
     const provider = {
         openCustomDocument: uri => ({ uri, dispose() {} }),
         async resolveCustomEditor(document, panel) {
             const dir = vscode.Uri.joinPath(document.uri, '..');
             const folder = vscode.workspace.getWorkspaceFolder(document.uri)?.uri;
-            panel.webview.options = { enableScripts: true, localResourceRoots: [distUri, dir, ...(folder ? [folder] : []), ...(cacheDir ? [cacheDir] : [])] };
+            const baseRoots = [distUri, dir, ...(folder ? [folder] : []), ...(cacheDir ? [cacheDir] : [])];
+            panel.webview.options = { enableScripts: true, localResourceRoots: baseRoots };
+            // A file outside the base roots brings its folder in for as long as it is in the view.
+            const updateRoots = () => {
+                const roots = [...baseRoots];
+                for (const { uri } of files) if (!roots.some(root => inside(root.fsPath, uri.fsPath))) roots.push(vscode.Uri.joinPath(uri, '..'));
+                panel.webview.options = { ...panel.webview.options, localResourceRoots: roots };
+            };
+            const takesFiles = addsFiles && !CAD.test(document.uri.path);
             // The page names the cache key it was rendered with: a save during tessellation re-renders with a
             // new key, and the old page's model must not be filed under it.
             const keys = new Map();
+            const post = message => panel.webview.postMessage(message);
+            const files = [];
+            let nextId = 0;
             // A save can fire two events whose renders finish out of order; only the latest one writes the page.
+            // It keeps the view only if no render since the last page was for a change.
             let renders = 0;
-            const render = async () => {
+            let keeps = true;
+            // While the opened file is gone no page can be rendered, so the list stays as the page shows it.
+            let openedGone = false;
+            const render = async (keep = false) => {
                 const turn = ++renders;
+                keeps &&= keep;
+                const stats = await Promise.all(files.map(file => vscode.workspace.fs.stat(file.uri).catch(() => null)));
                 // A rename-style save removes the file for a moment; the create that follows renders again.
-                const stat = await vscode.workspace.fs.stat(document.uri).catch(() => null);
-                if (!stat) return;
-                const cache = stepCache(cacheDir, document.uri, stat, build);
-                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache, turn, context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true, context.globalState.get(SETTINGS_KEY) ?? {});
+                if (!stats[0]) {
+                    openedGone = true;
+                    return;
+                }
+                const cache = stepCache(cacheDir, document.uri, stats[0], build);
+                const html = await renderHtml(template, panel.webview, distUri, files.map((file, i) => ({ ...file, stat: stats[i], takesFiles })), cache, turn, keeps,
+                    context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true, context.globalState.get(SETTINGS_KEY) ?? {});
                 if (turn !== renders) return;
+                keeps = true;
+                openedGone = false;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
+                // The old page goes without saying its reads are done; their handles would stay open until the tab
+                // closes. Its read ids restart at 1 on the new page, so a reply to it must not reach the new one: each
+                // page gets fresh readers, and reads naming another render are dropped.
+                for (const file of files) startReader(file);
+                pageRender = String(turn);
+                // Roots and page change together: roots changed first might reload the old page before the new
+                // one lands (VS Code compares the options; not checked in a real window), and its reads are dropped.
+                updateRoots();
                 panel.webview.html = html;
             };
-            const post = message => panel.webview.postMessage(message);
-            const writer = cacheWriter(cacheDir?.fsPath, keys, post);
-            const reader = fileReader(document.uri.fsPath, post);
+            let pageRender = null;
+            const startReader = file => {
+                file.reader?.dispose();
+                const reader = fileReader(file.uri.fsPath, message => file.reader === reader && post({ ...message, file: file.id }));
+                file.reader = reader;
+            };
+            const add = uri => {
+                const id = String(nextId++);
+                const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.joinPath(uri, '..'), globSafe(path.basename(uri.path))));
+                const changed = event => event && samePath(event.fsPath, uri.fsPath) && render();
+                // Editors that save by writing a new file and renaming it over the old one fire create, not change.
+                watcher.onDidChange(changed);
+                watcher.onDidCreate(changed);
+                if (!files.length) watcher.onDidDelete(event => event && samePath(event.fsPath, uri.fsPath) && (openedGone = true));
+                const file = { id, uri, watcher, reader: null };
+                startReader(file);
+                files.push(file);
+            };
+            const drop = file => {
+                file.reader.dispose();
+                file.watcher.dispose();
+                files.splice(files.indexOf(file), 1);
+            };
+            add(document.uri);
+            const addUris = async uris => {
+                const fresh = uris.filter((uri, i) => takesFiles && extensions.includes(extensionOf(uri.path))
+                    && !files.some(file => sameFile(file.uri.fsPath, uri.fsPath)) && uris.findIndex(other => sameFile(other.fsPath, uri.fsPath)) === i);
+                if (!fresh.length || openedGone) return;
+                fresh.forEach(add);
+                await render(true);
+            };
+            // A read without a file id is for the opened file (a page rendered before files had ids).
+            const fileOf = id => files.find(file => file.id === String(id ?? files[0].id));
             const handlers = {
-                read: message => reader.read(message.id, message.at, message.mtime),
-                readDone: message => reader.done(message.id),
+                read: message => {
+                    if (message.render !== undefined && String(message.render) !== pageRender) return;
+                    const file = fileOf(message.file);
+                    if (file) return file.reader.read(message.id, message.at, message.mtime);
+                    post({ type: 'readReply', file: message.file, id: message.id, at: message.at, error: `no file ${message.file} in this view` });
+                },
+                readDone: message => (message.render === undefined || String(message.render) === pageRender) && fileOf(message.file)?.reader.done(message.id),
                 stepCache: message => writer.receive(message),
                 screenshot: message => saveScreenshot(document.uri, message.data),
                 pick: message => context.globalState.update(PICK_KEY, message.on !== false),
                 settings: message => context.globalState.update(SETTINGS_KEY, mergeSettings(context.globalState.get(SETTINGS_KEY), message, document.uri.fsPath)),
-                helpers: message => context.globalState.update(HELPERS_KEY, { ...context.globalState.get(HELPERS_KEY), ...validHelpers(message.helpers) })
+                helpers: message => context.globalState.update(HELPERS_KEY, { ...context.globalState.get(HELPERS_KEY), ...validHelpers(message.helpers) }),
+                addFiles: async () => takesFiles && addUris(await vscode.window.showOpenDialog({
+                    canSelectMany: true,
+                    defaultUri: dir,
+                    filters: { 'Mesh & Splat': extensions }
+                }) ?? []),
+                // Files are read by fsPath, which names a file on this extension host only for the opened file's
+                // scheme; a bare path (Uri.parse would make it a file URI) or another scheme is skipped.
+                addPaths: message => addUris((Array.isArray(message.uris) ? message.uris : [])
+                    .filter(text => typeof text === 'string' && /^[a-z][\w+.-]+:/i.test(text))
+                    .map(text => vscode.Uri.parse(text)).filter(uri => uri.scheme === document.uri.scheme)),
+                // A map's image named by absolute path (Nav2's map_saver may write one) or relative to a YAML outside
+                // the panel's roots cannot be fetched, so the page asks for its bytes, resolved against its YAML's
+                // folder. A YAML is any text file, so only an image under the YAML's folder or a workspace folder is
+                // read: a crafted YAML cannot pull other files off the disk.
+                readImage: async message => {
+                    // Image ids restart at 1 on every page too, so the reply names the page it is for.
+                    if (message.render !== undefined && String(message.render) !== pageRender) return;
+                    const reply = data => post({ type: 'imageReply', id: message.id, render: message.render, ...data });
+                    try {
+                        const yaml = message.file === undefined ? null : fileOf(message.file);
+                        if (!yaml || typeof message.path !== 'string' || !IMAGE.test(message.path)) throw new Error('not a path to an image');
+                        const named = path.resolve(path.dirname(yaml.uri.fsPath), message.path);
+                        // Real paths, so a symlink inside cannot lead outside.
+                        const real = file => fs.promises.realpath(file).catch(() => file);
+                        const target = await real(named);
+                        const folders = await Promise.all([path.dirname(yaml.uri.fsPath), ...(vscode.workspace.workspaceFolders ?? []).map(folder => folder.uri.fsPath)].map(real));
+                        if (!folders.some(folder => inside(folder, target))) throw new Error(`${named} is outside the map's folder and the workspace`);
+                        reply({ bytes: new Uint8Array(await fs.promises.readFile(target)) });
+                    } catch (error) {
+                        reply({ error: error.message });
+                    }
+                },
+                removeFile: async message => {
+                    const file = fileOf(message.file);
+                    if (!file || file === files[0] || openedGone) return;
+                    drop(file);
+                    await render(true);
+                }
             };
+            const writer = cacheWriter(cacheDir?.fsPath, keys, post);
             panel.webview.onDidReceiveMessage(message => Object.hasOwn(handlers, message?.type) && handlers[message.type](message));
             panel.onDidDispose(() => {
-                reader.dispose();
+                [...files].forEach(drop);
                 writer.dispose();
             });
-            const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, path.basename(document.uri.path)));
-            // Editors that save by writing a new file and renaming it over the old one fire create, not change.
-            watcher.onDidChange(render);
-            watcher.onDidCreate(render);
-            panel.onDidDispose(() => watcher.dispose());
             await render();
         }
     };
     const options = { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true };
-    const { customEditors } = manifest.contributes;
     context.subscriptions.push(...customEditors.map(({ viewType }) => vscode.window.registerCustomEditorProvider(viewType, provider, options)));
 }
 

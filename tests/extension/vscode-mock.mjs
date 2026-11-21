@@ -144,6 +144,13 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
     const vscode = {
         Uri: {
             file: fsPath => ({ fsPath, path: fsPath, scheme: 'file' }),
+            parse: text => {
+                const url = new URL(text);
+                const scheme = url.protocol.slice(0, -1);
+                // As VS Code's Uri, another scheme's fsPath is its path.
+                const fsPath = scheme === 'file' ? fileURLToPath(text) : decodeURIComponent(url.pathname);
+                return { fsPath, path: fsPath, scheme };
+            },
             joinPath: (uri, ...parts) => ({ fsPath: path.join(uri.fsPath, ...parts), path: path.join(uri.fsPath, ...parts) })
         },
         Range,
@@ -203,7 +210,17 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
                 readDirectory: async uri => (await fsp.readdir(uri.fsPath)).map(name => [name, 1]),
                 delete: async uri => fsp.rm(uri.fsPath)
             },
-            createFileSystemWatcher: () => ({ onDidChange: f => { state.watched.change = f; }, onDidCreate: f => { state.watched.create = f; }, onDidDelete() {}, dispose() {} }),
+            // `watched` holds the last watcher's callbacks; `watchers` every watcher, with what it watches.
+            createFileSystemWatcher: pattern => {
+                const watcher = { pattern, disposed: false };
+                (state.watchers ||= []).push(watcher);
+                return {
+                    onDidChange: f => { state.watched.change = watcher.change = f; },
+                    onDidCreate: f => { state.watched.create = watcher.create = f; },
+                    onDidDelete: f => { watcher.delete = f; },
+                    dispose() { watcher.disposed = true; }
+                };
+            },
             onDidChangeTextDocument: on('change'),
             onDidSaveTextDocument: on('save'),
             onDidOpenTextDocument: on('open'),
@@ -262,7 +279,10 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             showQuickPick: async items => items[0],
             showInputBox: async () => state.inputBoxValue,
             showSaveDialog: async ({ defaultUri }) => defaultUri,
-            showOpenDialog: async () => state.openDialogResult
+            showOpenDialog: async options => {
+                state.openDialogOptions = options;
+                return state.openDialogResult;
+            }
         },
         commands: {
             registerCommand: (id, callback) => {

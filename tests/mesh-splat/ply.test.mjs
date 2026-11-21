@@ -248,3 +248,53 @@ test('readPlyMesh leaves ascii, face properties, truncated faces and negative in
     const negative = meshPly('binary_little_endian', [[0, -1, 2]]);
     assert.equal(readPlyMesh(negative, readPlyHeader(negative)), null);
 });
+
+// 1 mm apart at UTM coordinates (easting 5e5, northing 4e6), where float32 steps are 3 cm and 0.25 m.
+const utmRows = Array.from({ length: 5 }, (_, i) => [500000.25 + i / 1000, 4000000.5 + i / 1000, 120 + i / 1000]);
+
+for (const [format, type] of [['ascii', 'float'], ['binary_little_endian', 'double'], ['binary_big_endian', 'double']]) {
+    test(`readPlyPoints with recenter takes a UTM offset out of a ${format} ${type} cloud before float32`, () => {
+        const bytes = typedPly(format, [[type, 'x'], [type, 'y'], [type, 'z']], utmRows);
+        const { positions, offset } = readPlyPoints(bytes, readPlyHeader(bytes), { recenter: true });
+        assert.ok(positions instanceof Float32Array);
+        assert.deepEqual(offset, [500000, 4000000, 0]);
+        for (let i = 0; i < utmRows.length; i++) {
+            for (let k = 0; k < 3; k++) assert.ok(Math.abs(positions[i * 3 + k] + offset[k] - utmRows[i][k]) < 1e-5, `point ${i} axis ${k}`);
+        }
+    });
+}
+
+test('readPlyPoints with recenter leaves a cloud near the origin as PLYLoader reads it, with no offset', () => {
+    const bytes = typedPly('ascii', [['float', 'x'], ['float', 'y'], ['float', 'z']], [[1, 2, 3], [-900.5, 9000, 4]]);
+    const { positions, offset } = readPlyPoints(bytes, readPlyHeader(bytes), { recenter: true });
+    assert.equal(offset, null);
+    assert.deepEqual(Array.from(positions), [1, 2, 3, -900.5, 9000, 4]);
+});
+
+test('readPlyPoints with recenter keeps an infinite coordinate from spoiling the other points', () => {
+    const bytes = typedPly('binary_little_endian', [['float', 'x'], ['float', 'y'], ['float', 'z']], [...utmRows, [Infinity, 4000000, 0]]);
+    const { positions, offset } = readPlyPoints(bytes, readPlyHeader(bytes), { recenter: true });
+    assert.deepEqual(offset, [500000, 4000000, 0]);
+    assert.ok(Array.from(positions.subarray(0, utmRows.length * 3)).every(Number.isFinite));
+});
+
+test('readPlyPoints with recenter takes the offset out of X and Z of a Y-up cloud', () => {
+    const rows = utmRows.map(([x, y, z]) => [x, z, y]);
+    const bytes = typedPly('binary_little_endian', [['double', 'x'], ['double', 'y'], ['double', 'z']], rows);
+    const { positions, offset } = readPlyPoints(bytes, readPlyHeader(bytes), { recenter: true });
+    assert.deepEqual(offset, [500000, 0, 4000000]);
+    for (let i = 0; i < rows.length; i++) {
+        for (let k = 0; k < 3; k++) assert.ok(Math.abs(positions[i * 3 + k] + offset[k] - rows[i][k]) < 1e-5, `point ${i} axis ${k}`);
+    }
+});
+
+test('readPlyPoints with recenter takes the offset from the real points after 0 0 0 placeholder rows', () => {
+    const rows = [...Array.from({ length: 70000 }, () => [0, 0, 0]), ...utmRows];
+    const bytes = typedPly('binary_little_endian', [['double', 'x'], ['double', 'y'], ['double', 'z']], rows);
+    const { positions, offset } = readPlyPoints(bytes, readPlyHeader(bytes), { recenter: true });
+    assert.deepEqual(offset, [500000, 4000000, 0]);
+    for (let i = 70000; i < rows.length; i++) {
+        for (let k = 0; k < 3; k++) assert.ok(Math.abs(positions[i * 3 + k] + offset[k] - rows[i][k]) < 1e-5, `point ${i} axis ${k}`);
+    }
+    assert.deepEqual(Array.from(positions.subarray(0, 3)), [-500000, -4000000, 0]);
+});

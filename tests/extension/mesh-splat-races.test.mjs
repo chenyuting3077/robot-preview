@@ -23,8 +23,8 @@ test('two saves whose renders finish out of order leave the page for the newer f
         return result;
     };
     fs.writeFileSync(step, 'ISO-10303-21; saved');
-    const late = env.state.watched.change();
-    const prompt = env.state.watched.create();
+    const late = env.state.watched.change({ fsPath: step });
+    const prompt = env.state.watched.create({ fsPath: step });
     await Promise.all([late, prompt]);
     assert.equal(panel.webview.html.match(/data-bytes="(\d+)"/)[1], String(fs.statSync(step).size));
     fs.rmSync(root, { recursive: true, force: true });
@@ -55,7 +55,7 @@ test('a save that removes the file for a moment does not leave a failed render',
     fs.writeFileSync(step, 'ISO-10303-21;');
     const { env } = await openMeshSplat(root, step);
     fs.rmSync(step);
-    await env.state.watched.change();
+    await env.state.watched.change({ fsPath: step });
     fs.rmSync(root, { recursive: true, force: true });
 });
 

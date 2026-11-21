@@ -57,6 +57,16 @@ canvas { display: block; }
 .prim-eye svg, .stage-head svg { width: 14px; height: 14px; }
 .prim-row.off .prim-eye, .prim-row.inherited .prim-eye { color: var(--text-tertiary); opacity: 0.6; }
 .prim-row.inherited .prim-name, .prim-row.inherited .prim-type, .prim-row.off .prim-name, .prim-row.off .prim-type { opacity: 0.45; }
+#stage-panel.files .stage-head, #stage-panel.files .prim-row { grid-template-columns: minmax(0, 1fr) 104px 24px 24px; }
+.prim-row.failed .prim-type { color: #ff6b6b; }
+.prim-remove { width: 24px; height: 22px; padding: 0; border: none; border-radius: 6px; background: none; color: var(--text-tertiary); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+.prim-remove:hover:enabled { background: var(--hover); color: var(--text-primary); }
+.prim-remove:disabled { cursor: default; }
+.prim-remove svg { width: 12px; height: 12px; }
+.prim-color { width: 100%; padding: 1px 4px; border: none; border-left: 4px solid transparent; border-radius: 4px; background: var(--hover); color: var(--text-primary); font-size: 11px; font-family: inherit; cursor: pointer; }
+[data-theme="dark"] .prim-color option { background-color: #2a2a2a; }
+#info-panel tr.info-gap { height: 8px; }
+#info-panel tr.info-file td { font-weight: 600; }
 .prim-row.selected { background: var(--accent); color: white; }
 .prim-row.selected .prim-type, .prim-row.selected .prim-toggle, .prim-row.selected .prim-eye { color: white; }
 .prim-name span { cursor: pointer; }
@@ -85,10 +95,10 @@ canvas { display: block; }
 #info-panel td:last-child { color: var(--text-primary); overflow-wrap: anywhere; }
 #loading-indicator { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 8px 18px; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass-bg); color: var(--text-primary); font-size: 12px; pointer-events: none; z-index: 10000; }
 #color-fields { display: contents; }
-#color-legend { position: fixed; right: 20px; bottom: 20px; width: 200px; max-width: calc(100vw - 40px); padding: 8px 12px; border-radius: 12px; font-size: 11px; z-index: 100; }
+#color-legend { position: fixed; right: 20px; bottom: 20px; min-width: 200px; max-width: min(320px, calc(100vw - 40px)); padding: 8px 12px; border-radius: 12px; font-size: 11px; z-index: 100; }
 #legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #legend-bar { height: 8px; margin: 5px 0 3px; border-radius: 4px; }
-.legend-ticks { display: flex; justify-content: space-between; color: var(--text-tertiary); }
+.legend-ticks { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; color: var(--text-tertiary); }
 #load-error { position: fixed; left: 16px; bottom: 16px; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 8px; background: rgba(200, 40, 40, 0.9); color: #fff; font: 12px/1.4 monospace; white-space: pre-wrap; z-index: 10000; }
 [hidden] { display: none !important; }
 </style>
@@ -111,6 +121,7 @@ canvas { display: block; }
       <button class="control-button" data-color="rgb" data-t="colorRgb"></button>
       <button class="control-button" data-color="height" id="color-height" data-t="colorHeight"></button>
       <div id="color-fields"></div>
+      <button class="control-button" data-color="solid" id="color-solid" data-t="colorSolid"></button>
       <button class="control-button" id="detail-btn" data-t="detailInView" hidden></button>
       <div class="display-menu-separator" id="helper-separator"></div>
       <button class="control-button" data-helper="grid" data-t="grid"></button>
@@ -144,6 +155,9 @@ canvas { display: block; }
   </div>
   <div class="control-bar-section" id="pick-section" hidden>
     <button class="tool-button" id="pick-btn" data-title="pickParts"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg></button>
+  </div>
+  <div class="control-bar-section">
+    <button class="tool-button" id="add-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
   </div>
   <div class="control-bar-section">
     <button class="tool-button" id="screenshot-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>

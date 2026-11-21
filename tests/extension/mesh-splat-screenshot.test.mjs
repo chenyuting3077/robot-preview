@@ -50,9 +50,10 @@ test('Display helpers left on for a kind of model open the next file, and unknow
     assert.deepEqual(helpersOf(panel.webview.html), {});
     await panel.listener({ type: 'helpers', helpers: { cloud: ['grid', 'script'] } });
     await panel.listener({ type: 'helpers', helpers: { model: [] } });
+    await panel.listener({ type: 'helpers', helpers: { map: ['axes', 'grid'] } });
     const next = fakePanel();
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(second) }, next);
-    assert.deepEqual(helpersOf(next.webview.html), { cloud: ['grid'], model: [] });
+    assert.deepEqual(helpersOf(next.webview.html), { cloud: ['grid'], model: [], map: ['axes', 'grid'] });
 });
 
 test('turning part picking off is kept for the next file opened', async () => {

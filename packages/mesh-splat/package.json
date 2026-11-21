@@ -95,6 +95,9 @@
           },
           {
             "filenamePattern": "*.iges"
+          },
+          {
+            "filenamePattern": "*.pgm"
           }
         ],
         "priority": "default"
@@ -105,6 +108,15 @@
         "selector": [
           {
             "filenamePattern": "*.asc"
+          },
+          {
+            "filenamePattern": "*.bin"
+          },
+          {
+            "filenamePattern": "*.yaml"
+          },
+          {
+            "filenamePattern": "*.yml"
           }
         ],
         "priority": "option"
@@ -150,6 +162,7 @@
   ],
   "dependencies": {
     "@sparkjsdev/spark": "2.4.0",
+    "js-yaml": "4.3.2",
     "meshoptimizer": "1.3.0",
     "three": "0.187.0"
   },

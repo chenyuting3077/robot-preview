@@ -17,14 +17,16 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 - Meshes: `.stl` `.ply` `.obj` (+ `.mtl`) `.off` `.dae` `.gltf` `.glb` (including Draco and meshopt compression) `.3mf` `.wrl` `.3ds`
 - CAD: `.stp` `.step` with part and face colors, `.igs` `.iges`
-- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.xyz` `.pts`, and `.asc` through *Reopen Editor With…*
+- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.xyz` `.pts`, and `.asc` and KITTI / nuScenes LiDAR `.bin` through *Reopen Editor With…*
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
+- ROS occupancy grid maps: `.pgm` with its `.yaml`, and `.yaml` / `.yml` (PGM or PNG image) through *Reopen Editor With…*
 
 ## Viewing
 
 - Solid, wireframe and point display, point size, up-axis selection, and vertex / face / splat counts.
 - Color point clouds by their original color, height, intensity or any other PLY property (confidence, curvature, ...), with a legend.
-- Grid, axes and bounding box from the Display menu, kept as last left for point clouds and for other models.
+- Grid, axes and bounding box from the Display menu, kept as last left for point clouds, maps and other models.
+- Add files to a view, such as a scan over its map, and show, hide or color each one.
 - Save the view as a PNG screenshot.
 - Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls.
 - Draws only while the view changes, so a large model left open does not keep the GPU busy.

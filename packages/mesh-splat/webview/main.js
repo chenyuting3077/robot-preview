@@ -12,18 +12,22 @@ import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
 import { flatNormals, percentile, grown } from './geometry.mjs';
-import { createCloudColors } from './cloud-colors.mjs';
+import { createCloudColors, assignHues } from './cloud-colors.mjs';
+import { UP, relativeUp } from './up.mjs';
 import { turboGradient } from './color.mjs';
 import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { pcdReader, dropNaNPoints } from './pcd.mjs';
+import { binReader, binLayout } from './kitti.mjs';
 import { createTransport } from './transport.mjs';
+import { recentering } from './recenter.mjs';
+import { legendLabels } from './legend-format.mjs';
 
 const STRINGS = {
-    en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', missingMaterials: 'Missing materials', notShown: 'Not shown', unit: 'Unit', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element', screenshot: 'Save screenshot', upAxis: 'Up axis', pickParts: 'Pick parts in the view', grid: 'Grid', axes: 'Axes', bounds: 'Bounds' },
-    'zh-TW': { detailInView: '載入視野內細節', colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', missingMaterials: '缺少的材質', notShown: '未顯示', unit: '單位', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element', screenshot: '儲存截圖', upAxis: '上方軸', pickParts: '在畫面上點選零件', grid: '格線', axes: '座標軸', bounds: '包圍盒' },
-    'zh-CN': { detailInView: '加载视野内细节', colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', missingMaterials: '缺少的材质', notShown: '未显示', unit: '单位', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element', screenshot: '保存截图', upAxis: '上方轴', pickParts: '在画面上点选零件', grid: '网格线', axes: '坐标轴', bounds: '包围盒' }
+    en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', missingMaterials: 'Missing materials', notShown: 'Not shown', unit: 'Unit', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element', screenshot: 'Save screenshot', upAxis: 'Up axis', pickParts: 'Pick parts in the view', grid: 'Grid', axes: 'Axes', bounds: 'Bounds', layout: 'Layout', notAScan: 'the file is {0} bytes, not a multiple of the {1}-byte {2} point ({3}): it does not look like a {2} scan', occupancyMap: 'Occupancy grid map', greyImage: 'Greyscale image', cells: 'Cells', resolution: 'Resolution', perCell: 'm/cell', origin: 'Origin', mapMode: 'Mode', mapYaml: 'Map YAML', mapImage: 'Map image', noMapYaml: 'Not found, shown at 1 unit per pixel', notMapYaml: 'shown at 1 unit per pixel', mapImageMissing: 'Cannot read the map image', mapTooLarge: 'cells is more than this GPU can show as one texture', addFile: 'Add file…', offset: 'Offset taken out', detailFailed: 'Could not read', colorSolid: 'Solid color', remove: 'Remove from the view', notFound: 'File not found' },
+    'zh-TW': { detailInView: '載入視野內細節', colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', missingMaterials: '缺少的材質', notShown: '未顯示', unit: '單位', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element', screenshot: '儲存截圖', upAxis: '上方軸', pickParts: '在畫面上點選零件', grid: '格線', axes: '座標軸', bounds: '包圍盒', layout: '欄位配置', notAScan: '檔案大小 {0} bytes，不是 {2} 每點 {1} bytes（{3}）的倍數，看起來不是 {2} 掃描檔', occupancyMap: '佔據網格地圖', greyImage: '灰階影像', cells: '格數', resolution: '解析度', perCell: 'm/格', origin: '原點', mapMode: '模式', mapYaml: '地圖 YAML', mapImage: '地圖影像', noMapYaml: '找不到，以每像素 1 單位顯示', notMapYaml: '以每像素 1 單位顯示', mapImageMissing: '無法讀取地圖影像', mapTooLarge: '格超過這張顯示卡單張貼圖的上限', addFile: '加入檔案…', offset: '已扣除的偏移', detailFailed: '無法讀取', colorSolid: '單色', remove: '從檢視移除', notFound: '找不到檔案' },
+    'zh-CN': { detailInView: '加载视野内细节', colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', missingMaterials: '缺少的材质', notShown: '未显示', unit: '单位', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element', screenshot: '保存截图', upAxis: '上方轴', pickParts: '在画面上点选零件', grid: '网格线', axes: '坐标轴', bounds: '包围盒', layout: '字段布局', notAScan: '文件大小 {0} 字节，不是 {2} 每点 {1} 字节（{3}）的整数倍，看起来不是 {2} 扫描文件', occupancyMap: '占据栅格地图', greyImage: '灰度图像', cells: '栅格数', resolution: '分辨率', perCell: 'm/格', origin: '原点', mapMode: '模式', mapYaml: '地图 YAML', mapImage: '地图图像', noMapYaml: '未找到，以每像素 1 单位显示', notMapYaml: '以每像素 1 单位显示', mapImageMissing: '无法读取地图图像', mapTooLarge: '格超过这块显卡单张纹理的上限', addFile: '添加文件…', offset: '已扣除的偏移', detailFailed: '无法读取', colorSolid: '单色', remove: '从视图移除', notFound: '找不到文件' }
 };
 const lang = document.documentElement.lang.toLowerCase();
 const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.startsWith('zh') ? 'zh-CN' : 'en'];
@@ -31,10 +35,31 @@ const t = key => strings[key] ?? STRINGS.en[key];
 const $ = id => document.getElementById(id);
 
 const page = document.body.dataset;
-const { src, name, bytes: fileSize, cached } = page;
+const { cached } = page;
 const vscodeApi = globalThis.acquireVsCodeApi?.();
-const transport = createTransport(vscodeApi, page);
-const ext = name.split('.').pop().toLowerCase();
+// A page without a list is one rendered before views held several files.
+const listed = page.files ? JSON.parse(page.files) : [{ id: page.file, src: page.src, name: page.name, bytes: page.bytes, mtime: page.mtime }];
+const files = listed.map((file, index) => {
+    const entry = {
+        ...file,
+        size: Number(file.bytes),
+        index,
+        hue: index,
+        ext: file.name.split('.').pop().toLowerCase(),
+        transport: createTransport(vscodeApi, page, file),
+        group: new THREE.Group(),
+        info: {},
+        object: null,
+        error: null
+    };
+    entry.bytes = async () => new Uint8Array(await (await fetch(file.src)).arrayBuffer());
+    entry.text = async () => (await fetch(file.src)).text();
+    entry.group.name = file.name;
+    entry.group.userData.file = entry;
+    return entry;
+});
+const opened = files[0];
+const fileOf = object => (object ? object.userData.file ?? fileOf(object.parent) : null);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -60,10 +85,21 @@ sun.position.set(1, 2, 3);
 camera.add(sun);
 const root = new THREE.Group();
 scene.add(root);
-const UP = { '+Y': [0, 0, 0], '-Y': [Math.PI, 0, 0], '+Z': [-Math.PI / 2, 0, 0], '-Z': [Math.PI / 2, 0, 0], '+X': [0, 0, Math.PI / 2], '-X': [0, 0, -Math.PI / 2] };
+// In list order, so walking the scene meets the files in the order of their rows.
+for (const file of files) root.add(file.group);
 let localBox = null;
 const fieldLabel = name => (name === 'intensity' ? t('colorIntensity') : name);
-const cloudColors = createCloudColors({ root, upAxis: () => $('up-select').value, label: fieldLabel, onChange: showLegend });
+const cloudColors = createCloudColors({
+    root,
+    upAxis: () => $('up-select').value,
+    label: fieldLabel,
+    // By id, which a file keeps when one before it is removed, so its solid color stays.
+    fileOf: cloud => fileOf(cloud).hue,
+    onChange: (mode, range) => {
+        showLegend(mode, range);
+        syncColorRows();
+    }
+});
 
 function syncTheme() {
     const theme = /\bvscode-(high-contrast-)?light\b/.test(document.body.className) ? 'light' : 'dark';
@@ -177,7 +213,7 @@ function selectPrim(prim) {
     selectionBox = dropBox(selectionBox);
     if (prim) selectionBox = primBox(prim, 0x0a84ff);
     if (hovered === prim) hoverBox = dropBox(hoverBox);
-    usdStage?.panel.select(prim);
+    usdStage?.panel?.select(prim);
     wake();
 }
 let pressedAt = null;
@@ -215,11 +251,47 @@ controls.addEventListener('change', wake);
 renderer.setAnimationLoop(() => {
     if (cameraKeys()) wake();
     controls.update();
-    if (performance.now() < awakeUntil) renderer.render(scene, camera);
+    if (performance.now() < awakeUntil) {
+        renderer.render(scene, camera);
+        if (localBox) saveSoon();
+    }
 });
+// Saved once the view has been still for a moment: on every frame it was ~60 state messages a second while moving.
+// An add or remove saves first, so the page it asks for takes the view as it is.
+let saveTimer = 0;
+let seenView = '';
+const saveSoon = () => {
+    const view = viewJson();
+    if (!view || view === seenView) return;
+    seenView = view;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveView, 300);
+};
 
-const fetchBytes = async () => new Uint8Array(await (await fetch(src)).arrayBuffer());
-const fetchText = async () => (await fetch(src)).text();
+// A re-render for an added or removed file would reset the view; webview state outlives it.
+const savedView = (page.keep && vscodeApi?.getState?.()) || null;
+// A page for a changed file starts afresh; a file added before it is up must not bring back the page before it.
+if (!page.keep) vscodeApi?.setState?.(null);
+let lastView = '';
+// A view where nothing loaded has no camera of its own to hand on to the next page.
+const viewJson = () => files.some(file => file.object) && JSON.stringify({
+    camera: [...camera.position.toArray(), ...controls.target.toArray(), camera.near, camera.far],
+    hidden: files.filter(file => !file.group.visible).map(file => file.id),
+    helpers: Object.keys(HELPERS).filter(kind => helpers[kind] || (kind === 'axes' && axesHeldBack)),
+    mode: displayMode,
+    hues: Object.fromEntries(files.map(file => [file.id, file.hue])),
+    colors: Object.fromEntries(files.filter(file => file.clouds?.length).map(file => [file.id, cloudColors.modeOf(file.clouds[0])]))
+});
+// Saved only once the view is set up: a half-made one (default camera, no helpers) would be taken back by the
+// page an early Add file… brings.
+let viewReady = false;
+function saveView() {
+    if (!viewReady) return;
+    const view = viewJson();
+    if (!view || view === lastView) return;
+    lastView = view;
+    vscodeApi?.setState?.(JSON.parse(view));
+}
 
 // PLY doubles arrive as Float64Array, which WebGL cannot take: the first draw throws and nothing renders.
 function float32Attributes(geometry) {
@@ -240,6 +312,32 @@ const pointsOf = geometry => new THREE.Points(float32Attributes(geometry), new T
     size: pointSize, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : POINT_GREY, vertexColors: hasColor(geometry)
 }));
 
+// A far cloud's points are stored relative to the offset its reader took out (recenter.mjs), and the cloud is put
+// back there, so the file's origin, the grid's lines and other files stay at real coordinates. three.js composes
+// each object's model-view matrix in float64, so the GPU gets only the small step from the camera to the cloud.
+function placed(cloud, offset, info) {
+    if (!offset) return cloud;
+    cloud.position.fromArray(offset);
+    cloud.userData.offset = offset;
+    info.offset = offset;
+    return cloud;
+}
+// PLYLoader and PCDLoader already stored float32: the offset cannot bring back what that rounded off, but the
+// cloud is placed like the others. Their bounding sphere, at the file's coordinates, would cull it.
+function placedLoaded(cloud, info) {
+    const { geometry } = cloud;
+    if (!geometry.attributes.position) return cloud;
+    const positions = geometry.attributes.position.array;
+    const placing = recentering();
+    for (let i = 0; i < positions.length / 3; i++) placing.write(positions, i, positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]);
+    const offset = placing.finish(positions);
+    if (offset) {
+        geometry.attributes.position.needsUpdate = true;
+        geometry.boundingSphere = geometry.boundingBox = null;
+    }
+    return placed(cloud, offset, info);
+}
+
 // Typed arrays are used as they are; Uint8 colors are read as 0-255.
 function geometryFrom({ positions, normals, uvs, colors, indices }) {
     const geometry = new THREE.BufferGeometry();
@@ -252,12 +350,12 @@ function geometryFrom({ positions, normals, uvs, colors, indices }) {
     return geometry;
 }
 
-async function loadObj() {
-    const text = await fetchText();
+async function loadObj(info, file) {
+    const text = await file.text();
     const loader = new OBJLoader();
     const mtl = text.match(/^mtllib\s+(.+)$/m)?.[1].trim();
     if (mtl) {
-        const materials = await new MTLLoader().loadAsync(new URL(mtl, new URL(src, location.href)).href).catch(() => null);
+        const materials = await new MTLLoader().loadAsync(new URL(mtl, new URL(file.src, location.href)).href).catch(() => null);
         if (materials) loader.setMaterials((materials.preload(), materials));
     }
     return loader.parse(text);
@@ -266,7 +364,7 @@ async function loadObj() {
 // Spark is 2.4 MB of inlined WASM, loaded only when a splat opens; splats are marked so code that only
 // needs to recognise them never imports it.
 let sparkRenderer = null;
-async function loadSplat(bytes, info, fileName = name) {
+async function loadSplat(bytes, info, fileName) {
     const { SparkRenderer, SplatMesh } = await import('@sparkjsdev/spark');
     if (!sparkRenderer) root.add(sparkRenderer = new SparkRenderer({ renderer }));
     const splat = new SplatMesh({ fileBytes: bytes, fileName });
@@ -277,25 +375,25 @@ async function loadSplat(bytes, info, fileName = name) {
     return splat;
 }
 
-async function loadPly(info) {
-    const bytes = await fetchBytes();
+async function loadPly(info, file) {
+    const bytes = await file.bytes();
     const header = readPlyHeader(bytes);
     const kind = header && plyKind(header);
     if (kind === 'splat') {
         const patched = addMissingScale(bytes, header);
         if (!patched) throw new Error(t('flatUnsupported'));
         if (patched !== bytes) info.format = t('flat');
-        return loadSplat(patched, info);
+        return loadSplat(patched, info, file.name);
     }
-    const points = kind === 'points' ? readPlyPoints(bytes, header, { scalars: true }) : kind === 'mesh' && readPlyMesh(bytes, header);
+    const points = kind === 'points' ? readPlyPoints(bytes, header, { scalars: true, recenter: true }) : kind === 'mesh' && readPlyMesh(bytes, header);
     if (points?.indices) return meshOf(geometryFrom(points));
     if (points) {
         const geometry = geometryFrom(points);
         geometry.userData.scalars = points.scalars;
-        return pointsOf(geometry);
+        return placed(pointsOf(geometry), points.offset, info);
     }
     const geometry = new PLYLoader().parse(bytes.buffer);
-    return kind === 'mesh' ? meshOf(geometry) : pointsOf(geometry);
+    return kind === 'mesh' ? meshOf(geometry) : placedLoaded(pointsOf(geometry), info);
 }
 
 // The up menu shows the file's own up axis. Files that do not declare one start +Z (ROS REP 103), splats
@@ -306,14 +404,14 @@ function withUp(object, up) {
 }
 // The Draco and meshopt decoders load only when a glTF opens, and Draco's workers start only for a file
 // that uses KHR_draco_mesh_compression.
-async function loadGltf() {
+async function loadGltf(info, file) {
     const [{ DRACOLoader, DRACO_GLTF_CONFIG }, { MeshoptDecoder }] = await Promise.all([
         import('three/examples/jsm/loaders/DRACOLoader.js'),
         import('meshoptimizer/decoder')
     ]);
     const draco = new DRACOLoader().setDecoderPath(DRACO_GLTF_CONFIG);
     try {
-        const gltf = await new GLTFLoader().setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder).loadAsync(src);
+        const gltf = await new GLTFLoader().setDRACOLoader(draco).setMeshoptDecoder(MeshoptDecoder).loadAsync(file.src);
         return withUp(gltf.scene, '+Y');
     } finally {
         draco.dispose();
@@ -324,16 +422,25 @@ async function loadGltf() {
 const POINT_LIMIT = 10_000_000;
 const cloudOf = points => {
     const geometry = geometryFrom(points);
-    geometry.userData.scalars = points.intensity && { intensity: points.intensity };
+    geometry.userData.scalars = points.scalars ?? (points.intensity && { intensity: points.intensity });
     return pointsOf(geometry);
 };
-async function loadPcd(info) {
+// Clouds shown as a sample, with their file's point count and `readerOf(limit, region)` (a pcdReader or
+// binReader); Load detail in view reads each of them again.
+const sampled = [];
+function streamedCloud(points, info, readerOf, file) {
+    info.pointsTotal = points.total;
+    const cloud = placed(cloudOf(points), points.offset, info);
+    if (points.total > cloud.geometry.attributes.position.count) sampled.push({ cloud, total: points.total, file, readerOf });
+    return cloud;
+}
+async function loadPcd(info, file) {
     const reader = pcdReader(POINT_LIMIT);
-    for await (const chunk of transport.fileChunks()) if (!reader.push(chunk)) break;
+    for await (const chunk of file.transport.fileChunks()) if (!reader.push(chunk)) break;
     const points = reader.finish();
     // Only a header the reader does not know (no numeric x y z) reaches PCDLoader, whole.
     if (!points) {
-        const geometry = new PCDLoader().parse((await fetchBytes()).buffer).geometry;
+        const geometry = new PCDLoader().parse((await file.bytes()).buffer).geometry;
         const kept = dropNaNPoints(geometry.attributes);
         if (kept) for (const [name, array] of Object.entries(kept)) {
             const { itemSize, normalized } = geometry.attributes[name];
@@ -341,15 +448,24 @@ async function loadPcd(info) {
         }
         const intensity = geometry.attributes.intensity?.array;
         geometry.userData.scalars = intensity && { intensity };
-        return pointsOf(geometry);
+        return placedLoaded(pointsOf(geometry), info);
     }
-    info.pointsTotal = points.total;
-    const cloud = cloudOf(points);
-    if (points.total > cloud.geometry.attributes.position.count) {
-        $('detail-btn').hidden = false;
-        $('detail-btn').addEventListener('click', () => loadDetail(cloud, points.total));
+    return streamedCloud(points, info, pcdReader, file);
+}
+
+async function loadBin(info, file) {
+    const layout = binLayout(file.name);
+    const readerOf = (limit, region) => binReader(file.size, layout, limit, region);
+    let reader;
+    try {
+        reader = readerOf(POINT_LIMIT);
+    } catch (error) {
+        if (error.name !== 'NotAScan') throw error;
+        throw new Error(t('notAScan').replace('{0}', error.bytes).replace('{1}', error.stride).replaceAll('{2}', error.format).replace('{3}', error.record));
     }
-    return cloud;
+    for await (const chunk of file.transport.fileChunks()) reader.push(chunk);
+    info.layout = layout.name;
+    return streamedCloud(reader.finish(), info, readerOf, file);
 }
 
 // The extension re-renders the page after a save, and the new one loads the file, so that is no error.
@@ -360,70 +476,93 @@ function showError(error) {
     return true;
 }
 
-let detail = null;
-async function loadDetail(base, total) {
+// Every sampled cloud shown and in view gets its detail, one cloud at a time: each read takes the whole file.
+async function loadDetailInView() {
     $('detail-btn').disabled = true;
     $('loading-indicator').hidden = false;
+    for (const file of files) delete file.info.detailError;
     try {
-        base.updateMatrixWorld(true);
-        const toBase = base.matrixWorld.clone().invert();
         const view = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-        const p = view.planes.flatMap(plane => {
-            const { normal, constant } = plane.clone().applyMatrix4(toBase);
-            return [normal.x, normal.y, normal.z, constant];
-        });
-        const inside = (x, y, z) => {
-            for (let i = 0; i < 24; i += 4) if (p[i] * x + p[i + 1] * y + p[i + 2] * z + p[i + 3] < 0) return false;
-            return true;
-        };
-        // The shown sample is even over the file, so its share in the view estimates the file's; the margin
-        // keeps a view a little denser than estimated from losing the end of the file.
-        const sample = base.geometry.attributes.position.array;
-        let seen = 0;
-        for (let i = 0; i < sample.length; i += 3) if (inside(sample[i], sample[i + 1], sample[i + 2])) seen++;
-        const reader = pcdReader(POINT_LIMIT, { inside, expected: 1.25 * total * seen / (sample.length / 3) + 1000 });
-        for await (const chunk of transport.fileChunks()) reader.push(chunk);
-        const points = reader.finish();
-        if (detail) {
-            cloudColors.remove(detail);
-            detail.removeFromParent();
-            detail.geometry.dispose();
+        for (const { cloud, total, file, readerOf } of sampled) {
+            if (!visibleInScene(cloud)) continue;
+            cloud.geometry.computeBoundingBox();
+            cloud.updateMatrixWorld(true);
+            if (!view.intersectsBox(cloud.geometry.boundingBox.clone().applyMatrix4(cloud.matrixWorld))) continue;
+            // One file's failed read (changed on disk, or gone) leaves the others' detail coming, and says so in its
+            // own Info; a view of one file shows it as before.
+            try {
+                await loadDetail(cloud, total, file, view, readerOf);
+            } catch (error) {
+                if (files.length < 2) showError(error);
+                else if (error?.name !== 'FileChanged') file.info.detailError = error?.message ?? String(error);
+            }
         }
-        detail = cloudOf(points);
-        base.add(detail);
-        cloudColors.add(detail);
-    } catch (error) {
-        showError(error);
+        showInfo();
     } finally {
         $('detail-btn').disabled = false;
         $('loading-indicator').hidden = true;
         wake();
     }
 }
-const loadTextPoints = async () => pointsOf(geometryFrom(parsePointsText(await fetchText())));
-const loadSplatFile = async info => loadSplat(await fetchBytes(), info);
 
-async function loadUsd(info) {
-    const [{ composeUsd }, { buildStage }] = await Promise.all([import('./usd.mjs'), import('./stage.mjs')]);
+async function loadDetail(base, total, file, view, readerOf) {
+    const toBase = base.matrixWorld.clone().invert();
+    const p = view.planes.flatMap(plane => {
+        const { normal, constant } = plane.clone().applyMatrix4(toBase);
+        return [normal.x, normal.y, normal.z, constant];
+    });
+    const inside = (x, y, z) => {
+        for (let i = 0; i < 24; i += 4) if (p[i] * x + p[i + 1] * y + p[i + 2] * z + p[i + 3] < 0) return false;
+        return true;
+    };
+    // The shown sample is even over the file, so its share in the view estimates the file's; the margin
+    // keeps a view a little denser than estimated from losing the end of the file.
+    const sample = base.geometry.attributes.position.array;
+    let seen = 0;
+    for (let i = 0; i < sample.length; i += 3) if (inside(sample[i], sample[i + 1], sample[i + 2])) seen++;
+    // The detail is stored less the sample's offset, since it is drawn as the sample's child.
+    const reader = readerOf(POINT_LIMIT, { inside, expected: 1.25 * total * seen / (sample.length / 3) + 1000, offset: base.userData.offset ?? [0, 0, 0] });
+    for await (const chunk of file.transport.fileChunks()) reader.push(chunk);
+    const points = reader.finish();
+    const old = base.userData.detailCloud;
+    if (old) {
+        cloudColors.remove(old);
+        old.removeFromParent();
+        old.geometry.dispose();
+    }
+    const detail = base.userData.detailCloud = cloudOf(points);
+    base.add(detail);
+    cloudColors.add(detail);
+}
+const loadTextPoints = async (info, file) => {
+    const points = parsePointsText(await file.text());
+    return placed(pointsOf(geometryFrom(points)), points.offset, info);
+};
+const loadSplatFile = async (info, file) => loadSplat(await file.bytes(), info, file.name);
+
+async function loadUsd(info, file) {
+    const { composeUsd } = await import('./usd.mjs');
     const read = async url => {
         const response = await fetch(url);
         if (!response.ok) throw new Error(response.statusText);
         return new Uint8Array(await response.arrayBuffer());
     };
-    const { group, gaussians, missing, missingMaterials, notShown, upAxis, metersPerUnit } = await composeUsd(await fetchBytes(), new URL('.', new URL(src, location.href)).href, read);
+    const { group, gaussians, missing, missingMaterials, notShown, upAxis, metersPerUnit } = await composeUsd(await file.bytes(), new URL('.', new URL(file.src, location.href)).href, read);
     info.format = 'USD';
     info.notLoaded = missing.join(', ');
     info.missingMaterials = missingMaterials.join(', ');
     info.notShown = notShown.map(([type, count]) => `${type} ×${count}`).join(', ');
     info.unit = metersPerUnit && ({ 1: 'm', 0.01: 'cm', 0.001: 'mm' }[metersPerUnit] ?? `${metersPerUnit} m`);
     for (const { object, ply } of gaussians) object.add(await loadSplat(ply, info, 'gaussians.ply'));
+    // Its prims are rows of the Stage panel, which setupStage builds once every file has loaded.
+    group.userData.stage = true;
     const pickable = [];
     group.traverse(object => {
         let splat = false;
         for (let level = object; level && level !== group; level = level.parent) splat ||= Boolean(level.userData.splat);
         if ((object.isMesh || object.isPoints) && !splat) pickable.push(object);
     });
-    usdStage = { group, pickable, panel: buildStage(group, { onSelect: selectPrim, onVisibility: refitBoxes }) };
+    usdStage = { group, pickable, panel: null };
     $('pick-section').hidden = false;
     setPicking(picking);
     $('pick-btn').addEventListener('click', () => {
@@ -433,36 +572,151 @@ async function loadUsd(info) {
     return withUp(group, upAxis === 'Y' ? '+Y' : '+Z');
 }
 
+// A ROS map_server map is a plane in the map frame, one texel per cell: its lower-left corner at origin (x, y),
+// turned by yaw about that corner. Drawn unlit so the cells keep RViz's colors exactly.
+function mapPlane(colors, width, height, resolution = 1, [x, y, yaw] = [0, 0, 0]) {
+    const limit = renderer.capabilities.maxTextureSize;
+    if (width > limit || height > limit) throw new Error(`${width} × ${height} ${t('mapTooLarge')} (${limit})`);
+    const texture = new THREE.DataTexture(colors, width, height, THREE.RGBAFormat);
+    texture.magFilter = texture.minFilter = THREE.NearestFilter;
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.needsUpdate = true;
+    const geometry = new THREE.PlaneGeometry(width * resolution, height * resolution).translate(width * resolution / 2, height * resolution / 2, 0);
+    // Pushed back in depth: the axes (and the grid, if turned on) lie in the map's plane and would flicker with it.
+    const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const plane = new THREE.Mesh(geometry, material);
+    plane.position.set(x, y, 0);
+    plane.rotation.z = yaw;
+    plane.userData.map = true;
+    return plane;
+}
+
+const relativeUrl = (path, file) => new URL(path.split('/').map(encodeURIComponent).join('/'), new URL(file.src, location.href));
+
+async function occupancyMap(image, map, info) {
+    const { occupancyCells, mapColors, mapModeText } = await import('./occupancy.mjs');
+    const round = value => +value.toPrecision(6);
+    const [x, y, yaw] = map.origin;
+    info.format = t('occupancyMap');
+    info.cells = `${image.width} × ${image.height}`;
+    info.mapSize = `${round(image.width * map.resolution)} × ${round(image.height * map.resolution)} m`;
+    info.resolution = `${map.resolution} ${t('perCell')}`;
+    info.origin = `${round(x)}, ${round(y)}, ${round(THREE.MathUtils.radToDeg(yaw))}°`;
+    info.mapMode = mapModeText(map);
+    return mapPlane(mapColors(occupancyCells(image, map)), image.width, image.height, map.resolution, map.origin);
+}
+
+// PNG and other browser formats are decoded by the browser; only PGM needs our own reader.
+async function mapImage(bytes, label) {
+    const { readPgm, rgbaImage } = await import('./occupancy.mjs');
+    try {
+        if (bytes[0] === 0x50 && (bytes[1] === 0x32 || bytes[1] === 0x35)) return readPgm(bytes);
+        const bitmap = await createImageBitmap(new Blob([bytes]), { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
+        const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d');
+        context.drawImage(bitmap, 0, 0);
+        return rgbaImage(context.getImageData(0, 0, bitmap.width, bitmap.height).data, bitmap.width, bitmap.height);
+    } catch (error) {
+        throw new Error(`${t('mapImageMissing')}: ${label}: ${error.message}`);
+    }
+}
+
+// An absolute image path (Nav2's map_saver can write one), or a relative one that leaves the webview's roots,
+// cannot be fetched: in VS Code the extension reads it.
+let imageReads = 0;
+const imageOfExtension = (path, file) => new Promise((resolve, reject) => {
+    const id = ++imageReads;
+    const listen = ({ data }) => {
+        if (data?.type !== 'imageReply' || data.id !== id || String(data.render) !== String(page.render)) return;
+        window.removeEventListener('message', listen);
+        if (data.error) return reject(new Error(data.error));
+        const { bytes } = data;
+        resolve(new Uint8Array(bytes.buffer ?? bytes, bytes.byteOffset ?? 0, bytes.byteLength));
+    };
+    window.addEventListener('message', listen);
+    vscodeApi.postMessage({ type: 'readImage', id, file: file.id, path, render: page.render });
+});
+
+async function mapImageNamed(image, file) {
+    const missing = reason => new Error(`${t('mapImageMissing')}: ${image} (${reason})`);
+    const viaExtension = () => imageOfExtension(image, file).catch(error => { throw missing(error.message); });
+    if (vscodeApi && /^([a-z]:)?[\\/]/i.test(image)) return viaExtension();
+    const response = await fetch(relativeUrl(image, file)).catch(error => ({ ok: false, statusText: error.message }));
+    if (response.ok) return new Uint8Array(await response.arrayBuffer());
+    if (vscodeApi) return viaExtension();
+    throw missing(response.status || response.statusText);
+}
+
+async function mapImageBytes(image, file) {
+    try {
+        return await mapImageNamed(image, file);
+    } catch (error) {
+        const { imageBeside } = await import('./occupancy.mjs');
+        const beside = imageBeside(image);
+        const response = beside && await fetch(relativeUrl(beside, file)).catch(() => null);
+        if (response?.ok) return new Uint8Array(await response.arrayBuffer());
+        throw error;
+    }
+}
+
+async function loadMapYaml(info, file) {
+    const { readMapYaml } = await import('./occupancy.mjs');
+    const map = readMapYaml(await file.text());
+    const image = await mapImage(await mapImageBytes(map.image, file), map.image);
+    info.mapImage = map.image;
+    return occupancyMap(image, map, info);
+}
+
+// A PGM is a map when a YAML of the same name sits beside it; otherwise it shows as a picture, one unit per
+// pixel, so nothing reads as meters.
+async function loadPgm(info, file) {
+    const { readPgm, companionMap, greyColors } = await import('./occupancy.mjs');
+    const image = readPgm(await file.bytes());
+    const { name, map, rejected } = await companionMap(file.name, async yaml => {
+        const response = await fetch(relativeUrl(yaml, file)).catch(() => null);
+        return response?.ok ? response.text() : null;
+    // macOS and Windows disks ignore case, as the extension does when it compares paths.
+    }, { ignoreCase: /^(Mac|Win)/i.test(navigator.platform) });
+    if (map) {
+        info.mapYaml = name;
+        return occupancyMap(image, map, info);
+    }
+    info.format = t('greyImage');
+    info.cells = `${image.width} × ${image.height}`;
+    info.mapYaml = rejected.length ? `${rejected.join('; ')}; ${t('notMapYaml')}` : t('noMapYaml');
+    return mapPlane(greyColors(image), image.width, image.height);
+}
+
 // IGES declares no up axis either and starts +Y like STEP.
-const cadLoader = format => async info => {
+const cadLoader = format => async (info, file) => {
     info.format = format;
-    return withUp(await (await import('./step-load.mjs')).stepModel(cached, transport, format), '+Y');
+    return withUp(await (await import('./step-load.mjs')).stepModel(cached, file.transport, format), '+Y');
 };
 const loadStep = cadLoader('STEP');
 const loadIges = cadLoader('IGES');
 
 const LOADERS = {
-    stl: async () => {
-        const geometry = new STLLoader().parse((await fetchBytes()).buffer);
+    stl: async (info, file) => {
+        const geometry = new STLLoader().parse((await file.bytes()).buffer);
         geometry.setAttribute('normal', new THREE.BufferAttribute(flatNormals(geometry.attributes.position.array), 3));
         return meshOf(geometry);
     },
     ply: loadPly,
     obj: loadObj,
-    off: async () => meshOf(geometryFrom(parseOff(await fetchText()))),
-    dae: async () => {
+    off: async (info, file) => meshOf(geometryFrom(parseOff(await file.text()))),
+    dae: async (info, file) => {
         // ColladaLoader rotates Z_UP files to Y-up and reads a missing <up_axis> as Y_UP; both are undone here.
-        const text = await fetchText();
-        const { scene } = new ColladaLoader().parse(text, new URL('.', new URL(src, location.href)).href);
+        const text = await file.text();
+        const { scene } = new ColladaLoader().parse(text, new URL('.', new URL(file.src, location.href)).href);
         scene.rotation.set(0, 0, 0);
         return withUp(scene, `+${text.match(/<up_axis>\s*([XYZ])_UP/)?.[1] ?? 'Z'}`);
     },
     gltf: loadGltf,
     glb: loadGltf,
-    '3mf': () => new ThreeMFLoader().loadAsync(src),
-    wrl: async () => withUp(await new VRMLLoader().loadAsync(src), '+Y'),
-    '3ds': () => new TDSLoader().loadAsync(src),
+    '3mf': (info, file) => new ThreeMFLoader().loadAsync(file.src),
+    wrl: async (info, file) => withUp(await new VRMLLoader().loadAsync(file.src), '+Y'),
+    '3ds': (info, file) => new TDSLoader().loadAsync(file.src),
     pcd: loadPcd,
+    bin: loadBin,
     xyz: loadTextPoints,
     pts: loadTextPoints,
     asc: loadTextPoints,
@@ -477,7 +731,10 @@ const LOADERS = {
     stp: loadStep,
     step: loadStep,
     igs: loadIges,
-    iges: loadIges
+    iges: loadIges,
+    pgm: loadPgm,
+    yaml: loadMapYaml,
+    yml: loadMapYaml
 };
 
 function splatBox(splat) {
@@ -516,25 +773,36 @@ function frame() {
     camera.near = distance / 1000;
     camera.far = distance * 100;
     camera.updateProjectionMatrix();
-    camera.position.copy(center).add(new THREE.Vector3(1, 0.7, 1).normalize().multiplyScalar(distance));
+    if (isMap) {
+        // A map is seen from above as a floor plan, its +Y (the scene's -Z under +Z up) up the screen; the small
+        // offset keeps the orbit off its pole, where the view's roll is undefined.
+        camera.position.copy(center).add(new THREE.Vector3(0, 1, 1e-3).normalize().multiplyScalar(distance));
+    } else {
+        // Over a cloud below its plane at 0, the camera rises until it sees the plane above the center at the default
+        // slope: from the default direction a 0.1 x 0.1 x 1 m pole at z = -1..0 put the camera at y = -0.02, the grid
+        // edge-on and off screen.
+        const slope = 0.7 / Math.SQRT2;
+        const below = cloudGround === 0 ? Math.min(center.y, 0) : 0;
+        const run = (slope * below + Math.sqrt(Math.max(0, (1 + slope ** 2) * distance ** 2 - below ** 2))) / (1 + slope ** 2);
+        camera.position.copy(center).add(new THREE.Vector3(run / Math.SQRT2, slope * run - below, run / Math.SQRT2));
+    }
     controls.target.copy(center);
     controls.update();
 }
 
-// Grid on the ground below the model (in the view's up frame), axes at the file's origin and the model's
-// bounds, from the Display menu. Double-click picking skips them, and framing uses viewBox().
-// A point cloud is a scan or map whose frame puts the ground at up = 0 (z = 0 for Z-up), and stray points
-// below the ground would drag a grid on the lowest point down, so its grid sits on that plane and starts shown.
-// Its origin is the sensor's or the map's, so the axes start shown too; bounds only repeat the size in Info and
-// what the grid already shows, so a cloud's menu leaves them out.
-// Within twice its largest side of that plane, the view and the grid take the plane in, so a cloud below 0 shows
-// the plane above it and a small object on a table its floor; farther (altitude or UTM heights) the plane would
-// shrink the cloud to a speck, so the grid keeps the lowest point instead.
+// A point cloud is a scan or map whose frame puts the ground at up = 0 (z = 0 for Z-up); stray points below the
+// ground would drag a grid on the lowest point down. Its origin is the sensor's or the map's, worth showing even a
+// few metres off the cloud (a wall scanned from 10 m); only past camera.far (UTM coordinates) can the axes not be
+// drawn, so only then they start hidden. Bounds would only repeat the size in Info and what the grid shows.
+// Near the plane the view takes it in with the grid hidden too, so F returns to the view the cloud opened with;
+// farther (altitude or UTM heights) the plane would shrink the cloud to a speck.
 const helpers = {};
 let isCloud = false;
-// Point clouds and other models each open with the helpers last left on for their kind, or these the first time.
-const DEFAULT_HELPERS = { cloud: ['grid', 'axes'], model: ['grid'] };
-const helperKind = () => (isCloud ? 'cloud' : 'model');
+// A map is a 2D layer at z = 0: the grid would lie in its plane and fight it, so it starts hidden.
+let isMap = false;
+// Point clouds, maps and other models each open with the helpers last left on for their kind, or these the first time.
+const DEFAULT_HELPERS = { cloud: ['grid', 'axes'], map: ['axes'], model: ['grid'] };
+const helperKind = () => (isMap ? 'map' : isCloud ? 'cloud' : 'model');
 // Point size and Original / Height colouring as last left anywhere, and this file's up axis as last chosen for it.
 const savedSettings = (() => {
     try {
@@ -552,10 +820,16 @@ const savedHelpers = (() => {
     }
 })();
 let cloudGround = null;
-// The model's box in the view's frame, with a point cloud's up = 0 plane under it when the grid sits there.
-function viewBox() {
+// Axes left off only because this cloud's origin is far stay in the saved helpers, so the next cloud still gets them.
+let axesHeldBack = false;
+const axesLength = () => localBox.getSize(new THREE.Vector3()).length() * 0.25 || 1;
+function modelBox() {
     root.updateMatrixWorld(true);
-    const box = localBox.clone().applyMatrix4(root.matrixWorld);
+    return localBox.clone().applyMatrix4(root.matrixWorld);
+}
+
+function viewBox() {
+    const box = modelBox();
     // root only rotates about the origin, so the file's up = 0 is the scene's y = 0.
     if (cloudGround === 0) box.expandByPoint(box.getCenter(new THREE.Vector3()).setY(0));
     return box;
@@ -565,12 +839,14 @@ function viewBox() {
 // major (10x) lines in powers of ten picked by the camera's distance to its target, minor lines fading out as the
 // view zooms out until the major ones take their place, and everything fading with distance. A GridHelper sized to
 // the model left a patch floating in the void when zoomed out, and its 10-100 cells jumped with the model's size.
+// Coordinates stay small on the GPU: the plane's own xz plus an offset reduced in JS doubles. World xz in float32
+// is 0.25 m coarse at UTM northings (4e6), which drew the lines as speckled noise.
 const GRID_VERTEX = `
-varying vec3 vWorld;
+uniform float size;
+varying vec2 vLocal;
 void main() {
-    vec4 world = modelMatrix * vec4(position, 1.0);
-    vWorld = world.xyz;
-    gl_Position = projectionMatrix * viewMatrix * world;
+    vLocal = position.xz * size;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 const GRID_FRAGMENT = `
 uniform float cell;
@@ -578,16 +854,19 @@ uniform float blend;
 uniform float fade;
 uniform vec3 minorColor;
 uniform vec3 majorColor;
-varying vec3 vWorld;
+uniform vec2 offset;
+uniform float height;
+varying vec2 vLocal;
 float lines(vec2 p, float size, float width) {
     vec2 coord = p / size;
     vec2 d = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
     return 1.0 - min(min(d.x, d.y) / width, 1.0);
 }
 void main() {
-    float minor = lines(vWorld.xz, cell, 1.0) * (1.0 - blend);
-    float major = lines(vWorld.xz, cell * 10.0, 1.4);
-    float alpha = max(minor * 0.55, major * 0.9) * (1.0 - smoothstep(fade * 0.25, fade, distance(vWorld, cameraPosition)));
+    vec2 p = vLocal + offset;
+    float minor = lines(p, cell, 1.0) * (1.0 - blend);
+    float major = lines(p, cell * 10.0, 1.4);
+    float alpha = max(minor * 0.55, major * 0.9) * (1.0 - smoothstep(fade * 0.25, fade, length(vec3(vLocal, height))));
     if (alpha < 0.01) discard;
     gl_FragColor = vec4(mix(minorColor, majorColor, step(minor * 0.55, major * 0.9)), alpha);
     // The colour uniforms arrive in linear space; without this the greys drew near the background's (86 on 80).
@@ -599,14 +878,14 @@ function gridHelper() {
         vertexShader: GRID_VERTEX,
         fragmentShader: GRID_FRAGMENT,
         // Mid greys stand out against both the light (white) and the dark (#505050) background.
-        uniforms: { cell: { value: 1 }, blend: { value: 0 }, fade: { value: 1 }, minorColor: { value: new THREE.Color(0x8c8c8c) }, majorColor: { value: new THREE.Color(0xa0a0a0) } },
+        uniforms: { cell: { value: 1 }, blend: { value: 0 }, fade: { value: 1 }, size: { value: 1 }, offset: { value: new THREE.Vector2() }, height: { value: 0 }, minorColor: { value: new THREE.Color(0x8c8c8c) }, majorColor: { value: new THREE.Color(0xa0a0a0) } },
         transparent: true,
         depthWrite: false,
         side: THREE.DoubleSide,
         extensions: { derivatives: true }
     });
     const grid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), material);
-    grid.position.y = cloudGround ?? box.min.y;
+    grid.position.y = cloudGround ?? (box.isEmpty() ? 0 : box.min.y);
     grid.frustumCulled = false;
     grid.onBeforeRender = (renderer, scene, viewer) => {
         // Minor cells of about a tenth of the viewing distance: G1 framed whole gets 10 cm cells and 1 m major lines.
@@ -619,6 +898,11 @@ function gridHelper() {
         grid.position.z = viewer.position.z;
         grid.scale.setScalar(viewer.far * 2);
         grid.updateMatrixWorld();
+        const period = material.uniforms.cell.value * 10;
+        const wrap = value => ((value % period) + period) % period;
+        material.uniforms.offset.value.set(wrap(grid.position.x), wrap(grid.position.z));
+        material.uniforms.size.value = viewer.far * 2;
+        material.uniforms.height.value = viewer.position.y - grid.position.y;
     };
     grid.dispose = () => {
         grid.geometry.dispose();
@@ -629,7 +913,7 @@ function gridHelper() {
 // The grid lives in the scene, already in the view's frame; the axes and bounds turn with the up axis.
 const HELPERS = {
     grid: () => [scene, gridHelper()],
-    axes: () => [root, new THREE.AxesHelper(localBox.getSize(new THREE.Vector3()).length() * 0.25 || 1)],
+    axes: () => [root, new THREE.AxesHelper(axesLength())],
     bounds: () => [root, new THREE.Box3Helper(localBox, 0xffa500)]
 };
 function setHelper(kind, on) {
@@ -645,8 +929,7 @@ function setHelper(kind, on) {
 }
 
 function nearZeroPlane() {
-    root.updateMatrixWorld(true);
-    const box = localBox.clone().applyMatrix4(root.matrixWorld);
+    const box = modelBox();
     const size = box.getSize(new THREE.Vector3());
     return Math.max(box.min.y, -box.max.y, 0) <= 2 * Math.max(size.x, size.y, size.z);
 }
@@ -666,9 +949,7 @@ function showLegend(mode, range) {
     if (!range) return;
     $('legend-bar').style.background ||= turboGradient();
     $('legend-name').textContent = mode === 'height' ? t('colorHeight') : fieldLabel(mode.slice('field:'.length));
-    const format = value => (+value.toPrecision(3)).toLocaleString();
-    $('legend-low').textContent = format(range[0]);
-    $('legend-high').textContent = format(range[1]);
+    [$('legend-low').textContent, $('legend-high').textContent] = legendLabels(range[0], range[1]);
 }
 
 function stats(object) {
@@ -688,33 +969,52 @@ function stats(object) {
     return result;
 }
 
-function showInfo(info) {
+// One section per file; a view of one file shows it as before.
+function showInfo() {
     const format = number => number.toLocaleString();
-    const rows = [
+    const sizeOf = bytes => (bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
+    const sections = files.map(({ name, size, info, error }) => [
         [t('file'), name],
         [t('format'), info.format],
-        [t('fileSize'), fileSize < 1048576 ? `${(fileSize / 1024).toFixed(1)} KB` : `${(fileSize / 1048576).toFixed(1)} MB`],
+        [t('fileSize'), sizeOf(size)],
         [t('vertices'), info.vertices && format(info.vertices)],
         [t('faces'), info.faces && format(info.faces)],
         [t('pointCount'), info.points && (info.pointsTotal > info.points ? t('pointsShown').replace('{0}', format(info.points)).replace('{1}', format(info.pointsTotal)) : format(info.points))],
         [t('splats'), info.splats && format(info.splats)],
-        [t('size'), info.size],
+        [t('layout'), info.layout],
+        [t('cells'), info.cells],
+        [t('size'), info.mapSize ?? info.size],
+        [t('offset'), info.offset?.map((value, axis) => value && `${'XYZ'[axis]} ${format(value)}`).filter(Boolean).join('  ')],
+        [t('resolution'), info.resolution],
+        [t('origin'), info.origin],
+        [t('mapMode'), info.mapMode],
+        [t('mapYaml'), info.mapYaml],
+        [t('mapImage'), info.mapImage],
         [t('unit'), info.unit],
         [t('notLoaded'), info.notLoaded],
         [t('missingMaterials'), info.missingMaterials],
-        [t('notShown'), info.notShown]
-    ].filter(([, value]) => value);
-    $('info-table').replaceChildren(...rows.map(([label, value]) => {
-        const row = document.createElement('tr');
-        row.append(...[label, value].map(text => Object.assign(document.createElement('td'), { textContent: text })));
-        return row;
-    }));
+        [t('notShown'), info.notShown],
+        [t('failed'), files.length > 1 && error],
+        [t('detailInView'), info.detailError && `${t('detailFailed')}: ${info.detailError}`]
+    ].filter(([, value]) => value));
+    $('info-table').replaceChildren(...sections.flatMap((rows, s) => [
+        ...(s ? [Object.assign(document.createElement('tr'), { className: 'info-gap' })] : []),
+        ...rows.map(([label, value], r) => {
+            const row = document.createElement('tr');
+            if (files.length > 1 && !r) row.className = 'info-file';
+            row.append(...[label, value].map(text => Object.assign(document.createElement('td'), { textContent: text })));
+            return row;
+        })
+    ]));
 }
 
+let displayMode = 'solid';
 function setMode(mode) {
+    displayMode = mode;
     document.querySelectorAll('[data-mode]').forEach(button => button.classList.toggle('active', button.dataset.mode === mode));
     const meshes = [];
-    root.traverse(child => child.isMesh && child !== sparkRenderer && meshes.push(child));
+    // A map in the view keeps its cells: the modes are for the meshes.
+    root.traverse(child => child.isMesh && child !== sparkRenderer && !child.userData.map && meshes.push(child));
     for (const mesh of meshes) {
         [].concat(mesh.material).forEach(material => {
             material.wireframe = mode === 'wireframe';
@@ -750,6 +1050,35 @@ function captureScreenshot() {
     vscodeApi.postMessage({ type: 'screenshot', data });
 }
 
+// Dropped files arrive as URIs, VS Code's own list first. A File dropped from the OS carries no path in a
+// webview (Electron removed File.path), so it cannot be added.
+function droppedUris(transfer) {
+    const list = transfer.getData('application/vnd.code.uri-list') || transfer.getData('text/uri-list');
+    return list.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+}
+
+function setupAdding() {
+    const adds = Boolean(vscodeApi && page.adds);
+    $('add-btn').hidden = !adds;
+    if (!adds) return;
+    $('add-btn').title = $('add-btn').ariaLabel = t('addFile');
+    $('add-btn').addEventListener('click', () => {
+        saveView();
+        vscodeApi.postMessage({ type: 'addFiles' });
+    });
+    document.addEventListener('dragover', event => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    });
+    document.addEventListener('drop', event => {
+        event.preventDefault();
+        const uris = droppedUris(event.dataTransfer);
+        if (!uris.length) return;
+        saveView();
+        vscodeApi.postMessage({ type: 'addPaths', uris });
+    });
+}
+
 function setupUi(hasMesh, hasPoints, up) {
     // Splats have no display modes or point sizes; the grid, axes and bounds apply to everything.
     document.querySelectorAll('[data-mode], #size-separator').forEach(element => { element.hidden = !hasMesh; });
@@ -757,7 +1086,9 @@ function setupUi(hasMesh, hasPoints, up) {
     document.querySelector('[data-helper="bounds"]').hidden = isCloud;
     document.querySelectorAll('[data-helper]').forEach(button => button.addEventListener('click', () => {
         setHelper(button.dataset.helper, !helpers[button.dataset.helper]);
-        vscodeApi?.postMessage({ type: 'helpers', helpers: { [helperKind()]: Object.keys(HELPERS).filter(kind => helpers[kind]) } });
+        if (button.dataset.helper === 'axes') axesHeldBack = false;
+        const shown = Object.keys(HELPERS).filter(kind => helpers[kind] || (kind === 'axes' && axesHeldBack));
+        vscodeApi?.postMessage({ type: 'helpers', helpers: { [helperKind()]: shown } });
     }));
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
     document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => {
@@ -797,22 +1128,107 @@ function setupUi(hasMesh, hasPoints, up) {
         showUp($('up-select').value);
         setUp($('up-select').value);
         saveSettings({ up: $('up-select').value });
-        if ($('color-height').classList.contains('active')) cloudColors.setMode('height');
+        cloudColors.refresh();
     });
+    $('detail-btn').hidden = !sampled.length;
+    $('detail-btn').addEventListener('click', loadDetailInView);
     cloudColors.setup();
     document.querySelectorAll('[data-color="rgb"], [data-color="height"]').forEach(button => button.addEventListener('click', () => saveSettings({ colorMode: button.dataset.color })));
+    // One color per file is for telling files apart.
+    $('color-solid').hidden ||= files.length < 2;
 }
 
+// Hiding every file keeps the last box for the grid and F.
+function updateBox() {
+    const box = new THREE.Box3();
+    for (const file of files) if (file.box && file.group.visible) box.union(file.box);
+    // A file with no points or faces still frames, around the origin.
+    if (!box.isEmpty() || !localBox) localBox = box;
+}
 
-function show(object, info) {
-    root.add(object);
-    const counted = stats(object);
-    Object.assign(info, counted);
-    info.format ??= counted.faces ? t('mesh') : t('pointCloud');
-    localBox = boxOf(object);
-    info.size = localBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
-    showInfo(info);
-    return counted;
+// Hiding or showing a file refits the grid, axes and bounds to what is shown; the camera stays.
+function refit() {
+    updateBox();
+    cloudGround = isCloud && nearZeroPlane() ? 0 : null;
+    for (const kind of Object.keys(helpers)) if (helpers[kind]) setHelper(kind, true);
+    wake();
+}
+
+// A file's color menu is made once and updated in place: rebuilding it on every recolor (Load detail finishing)
+// closed it under the pointer.
+function colorMenu(file) {
+    const { clouds } = file;
+    if (file.colorMenu) return file.colorMenu;
+    const fields = [...new Set(clouds.flatMap(cloud => Object.keys(cloud.geometry.userData.scalars ?? {})))];
+    const menu = file.colorMenu = Object.assign(document.createElement('select'), { className: 'prim-color' });
+    menu.append(...[['rgb', t('colorRgb')], ['height', t('colorHeight')], ...fields.map(name => [`field:${name}`, fieldLabel(name)]), ['solid', t('colorSolid')]]
+        .map(([value, text]) => Object.assign(document.createElement('option'), { value, textContent: text })));
+    menu.addEventListener('change', () => {
+        cloudColors.setMode(menu.value, clouds);
+        wake();
+    });
+    syncColorRows();
+    return menu;
+}
+function syncColorRows() {
+    for (const { colorMenu: menu, clouds } of files) {
+        if (!menu) continue;
+        menu.value = cloudColors.modeOf(clouds[0]);
+        menu.style.borderLeftColor = `#${cloudColors.solidOf(clouds[0]).getHexString()}`;
+    }
+}
+
+function fileRow(file, primRows) {
+    const type = file.clouds.length && !file.error ? colorMenu(file) : file.info.format ?? '';
+    return {
+        object: file.group,
+        name: file.name,
+        type,
+        error: file.error,
+        remove: file.index && vscodeApi ? () => {
+            saveView();
+            vscodeApi.postMessage({ type: 'removeFile', file: file.id });
+        } : null,
+        children: () => (file.object?.userData.stage ? primRows(file.object) : [])
+    };
+}
+
+// The Stage panel holds a row per file once the view has more than one, and a USD file's prims as before.
+async function setupStage() {
+    const usd = opened.object?.userData.stage;
+    if (files.length < 2 && !usd) return;
+    const { buildStage, primRows } = await import('./stage.mjs');
+    // A file's eye refits the grid, axes and framing to what is shown; a prim's, as before files, only its box.
+    const onToggle = object => {
+        if (object.userData.file) refit();
+        refitBoxes();
+    };
+    const stage = files.length < 2
+        ? buildStage(() => primRows(opened.object), { onToggle, onSelect: selectPrim })
+        : buildStage(() => files.map(file => fileRow(file, primRows)), { files: true, removeLabel: t('remove'), onToggle, onSelect: selectPrim });
+    if (usdStage) usdStage.panel = stage;
+}
+
+async function loadFile(file) {
+    try {
+        if (file.missing) throw new Error(t('notFound'));
+        const load = LOADERS[file.ext];
+        if (!load) throw new Error(`${t('unsupportedFormat')}: ${file.name}`);
+        const object = await load(file.info, file);
+        file.group.add(object);
+        file.object = object;
+        // Once, in the file's own frame: a splat's box takes a pass over every splat, and every refit would repeat it.
+        root.updateMatrixWorld(true);
+        file.ownBox = boxOf(file.group).applyMatrix4(root.matrixWorld.clone().invert());
+        // A map's plane is two triangles; its Info rows are its cells and meters.
+        if (object.userData.map) return;
+        Object.assign(file.info, stats(object));
+        file.info.format ??= file.info.faces ? t('mesh') : t('pointCloud');
+        file.info.size = file.ownBox.getSize(new THREE.Vector3()).toArray().map(value => +value.toPrecision(3)).join(' × ');
+    } catch (error) {
+        file.error = error?.message ?? String(error);
+        file.failure = error;
+    }
 }
 
 async function main() {
@@ -820,26 +1236,86 @@ async function main() {
         (element.querySelector('span') ?? element).textContent = t(element.dataset.t);
     });
     document.querySelectorAll('[data-title]').forEach(element => { element.title = element.ariaLabel = t(element.dataset.title); });
-    const info = {};
+    setupAdding();
+    // Each file loads on its own: one that fails shows its error on its row and the others stay.
+    await Promise.all(files.map(loadFile));
+    // A page whose file changed keeps showing that it loads: the extension renders the next one.
+    if (files.some(file => file.failure?.name === 'FileChanged')) return;
+    showInfo();
+    const shown = files.filter(file => file.object);
+    // A view of several files lists them all, failed ones too, so an added one can be removed.
+    if (!shown.length && files.length < 2) {
+        showError(opened.failure);
+        $('loading-indicator').hidden = true;
+        return;
+    }
+    // A throw while setting the view up would otherwise leave the spinner turning with no word.
     try {
-        const load = LOADERS[ext];
-        if (!load) throw new Error(`${t('unsupportedFormat')}: ${name}`);
-        const object = await load(info);
-        const counted = show(object, info);
-        const up = savedSettings.up ?? object.userData.up ?? '+Z';
-        isCloud = counted.points > 0 && !counted.faces;
-        setupUi(counted.faces > 0, counted.points > 0, up);
-        setUp(up);
-        if ([1, 2, 4].includes(savedSettings.pointSize)) setPointSize(savedSettings.pointSize);
-        // Original is already the choice for a cloud that has colours; Height applies to any cloud.
-        if (counted.points > 0 && savedSettings.colorMode === 'height') cloudColors.setMode('height');
-        for (const helper of savedHelpers[helperKind()] ?? DEFAULT_HELPERS[helperKind()]) if (!(isCloud && helper === 'bounds')) setHelper(helper, true);
+        await setupView(shown);
+        viewReady = true;
     } catch (error) {
-        // A page whose file changed keeps showing that it loads.
-        if (!showError(error)) return;
+        showError(error);
     }
     $('loading-indicator').hidden = true;
     wake();
+}
+
+async function setupView(shown) {
+    const counted = shown.map(file => file.info);
+    for (const file of files) {
+        file.clouds = [];
+        file.group.traverse(child => child.isPoints && !child.userData.detail && !child.parent?.isMesh && file.clouds.push(child));
+    }
+    const kept = savedView?.camera ? savedView : null;
+    // A file keeps its solid color while it stays in the view; one added takes the lowest color no other file has.
+    const hues = assignHues(files.map(file => file.id), kept?.hues);
+    for (const file of files) file.hue = hues[file.id];
+    for (const file of files) file.group.visible = !kept?.hidden?.includes(file.id);
+    // A kept state that hides every loaded file (the shown ones were removed) would leave nothing to frame.
+    if (!shown.some(file => file.group.visible)) for (const file of files) file.group.visible = true;
+    // A failed opened file leaves the view's defaults to the first file that loaded.
+    const lead = opened.object ? opened : shown[0];
+    // Point size and the up axis live in the settings the extension keeps (sent on every change), so a page
+    // rendered for an added or removed file takes them from there like any other.
+    const up = savedSettings.up ?? lead?.object.userData.up ?? '+Z';
+    // Files share the opened file's frame: each is turned from the up its format declares into that frame.
+    const frameUp = lead?.object.userData.up ?? '+Z';
+    for (const file of shown) {
+        file.group.quaternion.copy(relativeUp(frameUp, file.object.userData.up ?? '+Z'));
+        file.box = file.ownBox.clone().applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(file.group.quaternion));
+    }
+    // Point-cloud and map defaults follow the opened file; a map's plane takes no display mode (its info has no faces).
+    isMap = Boolean(lead?.object.userData.map);
+    isCloud = lead?.info.points > 0 && !lead.info.faces;
+    setupUi(counted.some(info => info.faces > 0), counted.some(info => info.points > 0), up);
+    updateBox();
+    setUp(up);
+    if (kept?.camera) {
+        const [x, y, z, tx, ty, tz, near, far] = kept.camera;
+        Object.assign(camera, { near, far });
+        camera.position.set(x, y, z);
+        camera.updateProjectionMatrix();
+        controls.target.set(tx, ty, tz);
+        controls.update();
+    }
+    // The view kept over an added or removed file wins over the helpers last left for this kind of model.
+    // A cloud's axes are held back (still kept as on) while its origin is past camera.far.
+    const originNear = camera.position.length() <= camera.far;
+    for (const helper of kept?.helpers ?? savedHelpers[helperKind()] ?? DEFAULT_HELPERS[helperKind()]) {
+        if (isCloud && helper === 'bounds') continue;
+        if (isCloud && helper === 'axes' && !originNear) axesHeldBack = true;
+        else setHelper(helper, true);
+    }
+    if ([1, 2, 4].includes(savedSettings.pointSize)) setPointSize(savedSettings.pointSize);
+    if (kept?.mode && counted.some(info => info.faces > 0)) setMode(kept.mode);
+    // Solid is offered only while the view holds several files: kept for one, it could not be turned off.
+    // A file without a kept mode (the one just added, or every file on a fresh page) takes the colouring last left;
+    // Original is already the choice for a cloud that has colours, Height applies to any cloud.
+    const keptColor = file => (kept?.colors?.[file.id] === 'solid' && files.length < 2 ? null : kept?.colors?.[file.id]);
+    const colorOf = file => keptColor(file) ?? (savedSettings.colorMode === 'height' ? 'height' : null);
+    const colors = files.filter(file => colorOf(file) && file.clouds.length).map(file => [colorOf(file), file.clouds]);
+    if (colors.length) cloudColors.setModes(colors);
+    await setupStage();
 }
 
 main();

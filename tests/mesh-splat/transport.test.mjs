@@ -120,3 +120,52 @@ test('a piece the extension reports changed ends the read in FileChanged', async
     const { readAll } = createTransport(vscodeApi, { src: 'unused', bytes: '40', mtime: '1', key: 'k', piece: '16' });
     await assert.rejects(readAll(), { name: 'FileChanged' });
 });
+
+test('two files read at once each get their own bytes, though their read ids are the same', async () => {
+    const contents = { map: bytes(40), scan: bytes(25).reverse() };
+    const vscodeApi = {
+        postMessage(message) {
+            if (message.type !== 'read') return;
+            setTimeout(() => deliver({ type: 'readReply', file: message.file, id: message.id, at: message.at, chunk: contents[message.file].slice(message.at, message.at + 16) }), Math.random() * 5);
+        }
+    };
+    const map = createTransport(vscodeApi, { src: 'unused', bytes: '40', piece: '16', file: 'map' });
+    const scan = createTransport(vscodeApi, { src: 'unused', bytes: '25', piece: '16', file: 'scan' });
+    const [a, b] = await Promise.all([map.readAll(), scan.readAll()]);
+    assert.deepEqual([...a], [...contents.map]);
+    assert.deepEqual([...b], [...contents.scan]);
+});
+
+test('reads name the render that made the page, so the extension can drop an old page\'s', async () => {
+    const posted = [];
+    const vscodeApi = {
+        postMessage(message) {
+            posted.push(message);
+            if (message.type === 'read') setTimeout(() => deliver({ type: 'readReply', id: message.id, at: message.at, chunk: bytes(10) }));
+        }
+    };
+    await createTransport(vscodeApi, { src: 'unused', bytes: '10', piece: '16', render: '7' }).readAll();
+    assert.deepEqual([...new Set(posted.map(m => `${m.type} ${m.render}`))], ['read 7', 'readDone 7']);
+});
+
+test('a file of the page\'s list is read by its own id, and only the opened one sends the STEP cache under the key', async () => {
+    const contents = { 0: bytes(40), 1: bytes(25).reverse() };
+    const posted = [];
+    const vscodeApi = {
+        postMessage(message) {
+            posted.push(message);
+            if (message.type === 'stepCache') return setTimeout(() => deliver({ type: 'stepCacheAck', key: message.key, render: message.render, at: message.at }));
+            if (message.type !== 'read') return;
+            setTimeout(() => deliver({ type: 'readReply', file: message.file, id: message.id, at: message.at, chunk: contents[message.file].slice(message.at, message.at + 16) }));
+        }
+    };
+    // The page's dataset names the opened file in `file`; its `files` list names each file by `id`.
+    const page = { src: 'map.pcd', bytes: '40', mtime: '1', key: 'map-key', piece: '16', render: '1', file: '0' };
+    const listed = [{ id: '0', src: 'map.pcd', bytes: 40, mtime: 1 }, { id: '1', src: 'scan.pcd', bytes: 25, mtime: 2 }];
+    const [map, scan] = listed.map(file => createTransport(vscodeApi, page, file));
+    assert.deepEqual([...await scan.readAll()], [...contents[1]]);
+    assert.deepEqual([...new Set(posted.filter(m => m.type === 'read').map(m => m.file))], ['1']);
+    await map.sendCache(bytes(4));
+    await scan.sendCache(bytes(4));
+    assert.deepEqual(posted.filter(m => m.type === 'stepCache').map(m => m.key), ['map-key']);
+});

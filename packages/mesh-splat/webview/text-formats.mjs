@@ -1,4 +1,5 @@
 import { grown } from './geometry.mjs';
+import { recentering } from './recenter.mjs';
 
 const numbers = line => line.trim().split(/[\s,;]+/).map(Number);
 
@@ -68,6 +69,7 @@ function scanLine(text, start, end, values) {
 
 export function parsePointsText(text) {
     let positions = new Float32Array(3 * 4096);
+    const placing = recentering();
     let colors = new Float32Array(3 * 4096);
     let count = 0;
     let colored = true;
@@ -87,9 +89,7 @@ export function parsePointsText(text) {
             positions = grown(positions);
             colors = grown(colors);
         }
-        positions[count * 3] = values[0];
-        positions[count * 3 + 1] = values[1];
-        positions[count * 3 + 2] = values[2];
+        placing.write(positions, count, values[0], values[1], values[2]);
         const rgbAt = tokens >= 7 ? 4 : 3;
         if (colored && tokens >= rgbAt + 3 && isByte(values[rgbAt]) && isByte(values[rgbAt + 1]) && isByte(values[rgbAt + 2])) {
             colors[count * 3] = values[rgbAt] / 255;
@@ -100,7 +100,8 @@ export function parsePointsText(text) {
         }
         count++;
     }
-    return { positions: positions.subarray(0, count * 3), colors: colored && count ? colors.subarray(0, count * 3) : null };
+    const offset = placing.finish(positions);
+    return { positions: positions.subarray(0, count * 3), colors: colored && count ? colors.subarray(0, count * 3) : null, offset };
 }
 
 export function parseOff(text) {

@@ -156,3 +156,72 @@ test('an LZF back-reference copies earlier output', () => {
     const points = readPcdPoints(new Uint8Array([...new TextEncoder().encode(fields), ...new Uint8Array(sizes.buffer), ...packed]));
     assert.deepEqual([...points.positions], [1.5, 2.5, 1.5]);
 });
+
+// 1 mm apart at UTM coordinates (easting 5e5, northing 4e6), where float32 steps are 3 cm and 0.25 m.
+const utmRows = Array.from({ length: 5 }, (_, i) => [500000.25 + i / 1000, 4000000.5 + i / 1000, 120 + i / 1000]);
+
+function doublePcd(rows) {
+    const head = `FIELDS x y z\nSIZE 8 8 8\nTYPE F F F\nCOUNT 1 1 1\nPOINTS ${rows.length}\nDATA binary\n`;
+    const body = new DataView(new ArrayBuffer(rows.length * 24));
+    rows.forEach((row, r) => row.forEach((v, k) => body.setFloat64(r * 24 + k * 8, v, true)));
+    return new Uint8Array([...new TextEncoder().encode(head), ...new Uint8Array(body.buffer)]);
+}
+
+const asciiPcd = rows => new TextEncoder().encode(`FIELDS x y z\nSIZE 4 4 4\nTYPE F F F\nCOUNT 1 1 1\nPOINTS ${rows.length}\nDATA ascii\n${rows.map(r => r.join(' ')).join('\n')}\n`);
+
+const assertNear = (points, rows, tolerance = 1e-5) => {
+    for (let i = 0; i < rows.length; i++) {
+        for (let k = 0; k < 3; k++) assert.ok(Math.abs(points.positions[i * 3 + k] + points.offset[k] - rows[i][k]) < tolerance, `point ${i} axis ${k}`);
+    }
+};
+
+test('takes a UTM offset out of double and ASCII positions before float32, in chunks of any size', () => {
+    for (const bytes of [doublePcd(utmRows), asciiPcd(utmRows)]) {
+        const whole = readPcdPoints(bytes);
+        assert.deepEqual(whole.offset, [500000, 4000000, 0]);
+        assertNear(whole, utmRows);
+        for (const size of [1, 7, 50]) {
+            const reader = pcdReader();
+            for (let at = 0; at < bytes.length; at += size) reader.push(bytes.subarray(at, at + size));
+            assert.deepEqual(reader.finish(), whole);
+        }
+    }
+});
+
+test('a cloud near the origin has no offset', () => {
+    assert.equal(readPcdPoints(binaryPcd(['x', 'y', 'z'], [[1, 2, 3], [-900.5, 9000, 4]])).offset, null);
+});
+
+test('the offset is picked from the start of the stream and kept for points read after it', () => {
+    // Past the first rows the cloud runs 3 km further east: its points still come out to a quarter millimetre
+    // (float32 steps 0.24 mm at 3 km).
+    const rows = Array.from({ length: 100000 }, (_, i) => [500000.25 + (i < 70000 ? i / 1000 : 3000 + i / 1000), 4000000.5, 120]);
+    const points = readPcdPoints(doublePcd(rows));
+    assert.deepEqual(points.offset, [500000, 4000000, 0]);
+    assertNear(points, rows, 2.5e-4);
+});
+
+test('a given offset is taken out instead, before the region test', () => {
+    const rows = [[500001, 4000002, 5], [500020, 4000002, 5]];
+    const seen = [];
+    const reader = pcdReader(Infinity, { offset: [500000, 4000000, 0], inside: (x, y, z) => (seen.push([x, y, z]), x < 10), expected: 2 });
+    reader.push(doublePcd(rows));
+    const points = reader.finish();
+    assert.deepEqual(seen, [[1, 2, 5], [20, 2, 5]]);
+    assert.deepEqual([...points.positions], [1, 2, 5]);
+    assert.deepEqual(points.offset, [500000, 4000000, 0]);
+});
+
+test('one stray point 10 km out at the start of a stream does not shift an indoor scan', () => {
+    const rows = [[1e7, 3, 0], ...Array.from({ length: 20 }, (_, i) => [1.0001 * i, 2.0002 * i, 0.5])];
+    const points = readPcdPoints(doublePcd(rows));
+    assert.equal(points.offset, null);
+    assert.deepEqual(Array.from(points.positions.subarray(3)), Array.from(Float32Array.from(rows.slice(1).flat())));
+});
+
+test('the streamed offset comes out of X and Z of a Y-up cloud', () => {
+    const rows = utmRows.map(([x, y, z]) => [x, z, y]);
+    const points = readPcdPoints(doublePcd(rows));
+    assert.deepEqual(points.offset, [500000, 0, 4000000]);
+    assertNear(points, rows);
+});

@@ -2,12 +2,18 @@
 
 ## Unreleased
 
+- Several files in one view: *Add file…* (or Shift-drop from the Explorer) adds point clouds, meshes, splats and ROS maps to the view, each a Stage row with a visibility toggle, a remove button and its own colors, including one solid color per file. All share one frame and camera, and height and field colors share one range.
+- ROS occupancy grid maps: a `.pgm` opens as a map with the same-named `.yaml` beside it (or open the `.yaml` with *Reopen Editor With…*, PNG images too), at its origin, yaw and resolution, with cells read as Nav2's map_server reads them and colored as RViz's Map display. Info shows cells, meters, resolution and origin. A `.pgm` without a map YAML (none, or a same-named YAML that is not a map) shows as a greyscale image.
+- KITTI LiDAR scans (`.bin`, x y z intensity) open through *Reopen Editor With…*, colored by intensity and streamed like PCD; nuScenes `.pcd.bin` scans add `ring` as a field. Info names the layout, and a file whose size is not whole points is refused.
 - Point clouds open with the grid shown on their z = 0 plane (the up axis's zero), not under their lowest point; a cloud farther from it than twice its largest side keeps the grid under its lowest point.
-- Point clouds also open with the axes shown, and their Display menu leaves out Bounds.
+- A point cloud below its z = 0 plane, within twice its largest side of it, opens (and returns on F) with the camera above the plane, looking down through the grid.
+- Point clouds also open with the axes shown, unless their origin is too far away to draw (UTM coordinates), and their Display menu leaves out Bounds.
 - Point sizes take one row of dots in the Display menu instead of three rows.
 - The ground grid reaches the horizon, as in Isaac Sim, with minor and 10x major lines whose spacing follows the zoom.
-- Grid, axes and bounds stay as last left, for point clouds and for other models apart; a model opens with the grid the first time.
+- Grid, axes and bounds stay as last left, for point clouds, maps and other models apart; a model opens with the grid the first time.
 - Point size and Original / Height colouring stay as last left, and each file reopens with the up axis last chosen for it.
+- Point clouds at UTM coordinates no longer jump while orbiting, and keep millimetre detail instead of snapping to a 0.25 m lattice where the file stores more than float32 (xyz / pts / asc, ASCII or double PCD and PLY); float32 files (binary PCD and PLY `float`, KITTI / nuScenes `.bin`) stop jumping but keep the precision they were written with. Info shows the offset taken out.
+- The colour legend gives both ends as many decimals as their difference needs: elevations of 1,234.5–1,236.0 no longer read as 1,230 and 1,240.
 
 ## 0.4.0
 

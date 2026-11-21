@@ -3,18 +3,21 @@
 // elsewhere, and when the extension cannot read it, fetch streams it. The STEP cache goes the other way in
 // pieces, each acknowledged before the next, so the workbench and the extension host never hold all of it.
 
-// `page` is the page's dataset as the extension rendered it: the file's `src` and `bytes`, the cache file
-// name `key` it may write, the extension's read size `piece`, which also sizes the cache pieces, and the
-// `render` that made this page, since two renders of an unchanged file share a key.
-export function createTransport(vscodeApi, page) {
-    const { src, bytes: fileSize, mtime, key: cacheKey, piece, render } = page;
+// Reads and cache pieces name the page's `render`: two renders of an unchanged file share a cache key, and read
+// ids restart on every page. Replies name their `file`, since a view reads several at once. Only the opened file
+// may write the cache.
+export function createTransport(vscodeApi, page, listed = null) {
+    const { piece, render } = page;
+    const { src, bytes: fileSize, mtime, key: cacheKey, file } = listed
+        ? { ...listed, file: listed.id, key: String(listed.id) === String(page.file) ? page.key : '' }
+        : page;
     const PIECE = Number(piece);
     const replies = new Map();
     let cacheAck = null;
     let reads = 0;
     window.addEventListener('message', ({ data }) => {
         if (data?.type === 'stepCacheAck' && data.key === cacheKey && String(data.render) === String(render)) cacheAck?.(data);
-        if (data?.type === 'readReply') replies.get(`${data.id}:${data.at}`)?.(data);
+        if (data?.type === 'readReply' && (file === undefined || String(data.file) === String(file))) replies.get(`${data.id}:${data.at}`)?.(data);
     });
 
     // A size other than the rendered one means a save mid-read, which re-renders the page; the page
@@ -36,7 +39,7 @@ export function createTransport(vscodeApi, page) {
         const id = ++reads;
         const request = at => new Promise(resolve => {
             replies.set(`${id}:${at}`, resolve);
-            vscodeApi.postMessage({ type: 'read', id, at, mtime: mtime === undefined ? undefined : Number(mtime) });
+            vscodeApi.postMessage({ type: 'read', file, id, at, render, mtime: mtime === undefined ? undefined : Number(mtime) });
         }).finally(() => replies.delete(`${id}:${at}`));
         if (vscodeApi) {
             const ahead = [0, 1, 2].map(i => request(i * PIECE));
@@ -52,7 +55,7 @@ export function createTransport(vscodeApi, page) {
                     if (chunk.byteLength < PIECE) return;
                 }
             } finally {
-                vscodeApi.postMessage({ type: 'readDone', id });
+                vscodeApi.postMessage({ type: 'readDone', file, id, render });
             }
         }
         const stream = (await fetch(src)).body.getReader();
@@ -76,6 +79,7 @@ export function createTransport(vscodeApi, page) {
     }
 
     async function sendCache(bytes) {
+        if (!cacheKey) return;
         for (let at = 0; at < bytes.byteLength; at += PIECE) {
             // An ack is for this page's key and this piece; one left over from a replaced page is not.
             const acked = new Promise(resolve => { cacheAck = ack => ack.at === at && resolve(ack); });
