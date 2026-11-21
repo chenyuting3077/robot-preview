@@ -156,7 +156,9 @@
               "ignored-element",
               "ignored-attribute",
               "missing-attribute",
-              "invalid-value"
+              "missing-element",
+              "invalid-value",
+              "invalid-geometry"
             ],
             "enumDescriptions": [
               "A joint names a link that does not exist (error).",
@@ -175,12 +177,14 @@
               "A continuous joint sets lower/upper, which are ignored.",
               "Visual and collision sizes differ 100x or more (likely mm vs m).",
               "An element ROS does not read where it is written, such as a typo or an <origin> directly in a <link>.",
-              "An attribute the element does not have, such as a typo.",
-              "An element lacks an attribute ROS requires, such as <box> without size (error).",
-              "A value that is not a number, has the wrong count of numbers, or is not a joint type (error)."
+              "An attribute the element does not have, or one its URDF version does not read.",
+              "An element lacks an attribute ROS requires, such as <box> without size (error unless only a colour is lost).",
+              "An element lacks a child ROS requires, such as a <visual> without <geometry> or an <inertial> without <inertia> (error).",
+              "A value that is not a number, has the wrong count of numbers, or is not a joint type (error unless only a colour is lost).",
+              "The first element in <geometry> is not a shape, or is a <capsule> below URDF 1.1 (error)."
             ]
           },
-          "markdownDescription": "Model checks to skip. Each Problems entry shows its rule id as the code."
+          "markdownDescription": "Model and structure checks to skip. Each Problems entry shows its rule id as the code."
         }
       }
     },

@@ -83,6 +83,15 @@ test('an inertia that is not positive definite or breaks the triangle inequality
     assert.deepEqual(rules(inertia('ixx="0.1" iyy="0.2" izz="0.25" ixy="0.01" ixz="0" iyz="0"')), []);
 });
 
+test('URDF 1.2 makes effort and velocity optional and rejects lower > upper', () => {
+    const limited = (version, limit) => `<robot name="r" version="${version}">${link('a')}${link('b')}${joint('j', 'a', 'b', { type: 'revolute', extra: `<axis xyz="0 0 1"/>${limit}` })}</robot>`;
+    assert.deepEqual(rules(limited('1.2', '<limit lower="0" upper="1"/>')), []);
+    assert.deepEqual(rules(limited('1.0', '<limit lower="0" upper="1"/>')), ['missing-limit']);
+    assert.deepEqual(issues(limited('1.2', '<limit lower="1" upper="0"/>')), [{ rule: 'inverted-limit', kind: 'joint', name: 'j', severity: 'error' }]);
+    const fixed = `<robot name="r" version="1.2">${link('a')}${link('b')}${joint('j', 'a', 'b', { extra: '<limit lower="1" upper="0"/>' })}</robot>`;
+    assert.deepEqual(rules(fixed), ['inverted-limit'], 'every joint type, not only moving ones');
+});
+
 test('a zero joint axis is a warning', () => {
     assert.deepEqual(issues(arm(undefined, '<axis xyz="0 0 0"/><limit lower="-1" upper="1" effort="1" velocity="1"/>')), [
         { rule: 'zero-axis', kind: 'joint', name: 'j', severity: 'warning' }

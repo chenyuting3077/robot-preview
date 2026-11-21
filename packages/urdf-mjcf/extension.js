@@ -156,26 +156,36 @@ function settingPath(value) {
     return path.resolve(first, expanded);
 }
 
-// Package folders under `dir` the way colcon finds them: a folder with
-// package.xml is not searched further, and COLCON_IGNORE / AMENT_IGNORE hide one.
-async function findPackageDirs(dir, out = [], visited = new Set()) {
+// Each folder below `dir` once, symlink loops included, without build output
+// or hidden folders. `visit(dir, names)` returns false to stop descending.
+async function walkFolders(dir, visit, visited = new Set()) {
     const real = await fs.realpath(dir).catch(() => null);
-    if (!real || visited.has(real)) return out;
+    if (!real || visited.has(real)) return;
     visited.add(real);
     const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
-    const names = new Set(entries.map(entry => entry.name));
-    if (names.has('COLCON_IGNORE') || names.has('AMENT_IGNORE')) return out;
-    if (names.has('package.xml')) {
-        out.push(dir);
-        return out;
-    }
+    const folders = [];
+    const files = [];
     for (const entry of entries) {
-        if (SKIP_DIRS.has(entry.name) || entry.name.startsWith('.')) continue;
         const full = path.join(dir, entry.name);
-        const isDir = entry.isSymbolicLink() ? (await fs.stat(full).catch(() => null))?.isDirectory() : entry.isDirectory();
-        if (isDir) await findPackageDirs(full, out, visited);
+        const isDir = entry.isSymbolicLink() ? (await fs.stat(full).catch(() => null))?.isDirectory() ?? false : entry.isDirectory();
+        if (!isDir) files.push(entry.name);
+        else if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) folders.push(full);
     }
-    return out;
+    if (visit(dir, files) === false) return;
+    for (const folder of folders) await walkFolders(folder, visit, visited);
+}
+
+// As colcon finds packages: none below a package or a COLCON_IGNORE / AMENT_IGNORE.
+// The folder given is searched even if marked: colcon marks its own install/.
+async function findPackageDirs(dir) {
+    const found = [];
+    await walkFolders(dir, (folder, files) => {
+        if (folder !== dir && (files.includes('COLCON_IGNORE') || files.includes('AMENT_IGNORE'))) return false;
+        if (!files.includes('package.xml')) return true;
+        found.push(folder);
+        return false;
+    });
+    return found;
 }
 
 // Candidate folders in priority order (first one naming a package wins), read
@@ -224,21 +234,11 @@ async function findModel(name) {
 let packageIndex = null;
 const getPackageIndex = () => (packageIndex ??= buildPackageIndex());
 
-async function walk(dir, out = [], visited = new Set()) {
-    const real = await fs.realpath(dir).catch(() => null);
-    if (!real || visited.has(real)) return out;
-    visited.add(real);
-    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        const isDir = entry.isSymbolicLink()
-            ? (await fs.stat(full).catch(() => null))?.isDirectory() ?? false
-            : entry.isDirectory();
-        if (isDir) {
-            if (!SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) await walk(full, out, visited);
-        } else if (ASSET_RE.test(entry.name)) {
-            out.push(full);
-        }
-    }
+async function walk(dir) {
+    const out = [];
+    await walkFolders(dir, (folder, files) => {
+        out.push(...files.filter(name => ASSET_RE.test(name)).map(name => path.join(folder, name)));
+    });
     return out;
 }
 
@@ -537,14 +537,14 @@ const NAVIGATION_KINDS = {
     link: { tag: /<link\b[^>]*>/g },
     joint: { tag: /<joint\b[^>]*>/g }
 };
-const XACRO_DIRECTIVES = new Set(['property', 'macro', 'arg', 'include', 'if', 'unless', 'insert_block', 'element', 'attribute', 'call']);
+const XACRO_BUILTINS = new Set([...Object.keys(schema.XACRO_DIRECTIVES), 'call']);
 const INCLUDE_FILE_RE = /<xacro:include\b[^>]*?\bfilename\s*=\s*["']([^"']+)["']/g;
 const PATH_ATTRIBUTE_RE = /\bfilename\s*=\s*["']([^"']+)["']/g;
 const groupStart = match => match.index + match[0].lastIndexOf(match[1]);
 const isXacroModel = fsPath => /\.(urdf|xacro)$/i.test(fsPath);
 
 const SYMBOL_PATTERNS = [
-    { kind: 'macro', re: /<xacro:([\w.-]+)/g, skip: name => XACRO_DIRECTIVES.has(name) },
+    { kind: 'macro', re: /<xacro:([\w.-]+)/g, skip: name => XACRO_BUILTINS.has(name) },
     { kind: 'link', re: /<(?:parent|child)\b[^>]*?\blink\s*=\s*["']([^"']+)["']/g },
     { kind: 'path', re: PATH_ATTRIBUTE_RE }
 ];
@@ -595,9 +595,10 @@ async function resolvePathReference(value, fromFile, args = {}) {
 
 // SRDF shares the <robot> root and the .xacro extension.
 const isSrdf = doc => /\.srdf(\.xacro)?$/i.test(doc.fileName);
+const hasUrdfSchema = doc => isXacroModel(doc.fileName) && !isSrdf(doc);
 
 function schemaHover(doc, position) {
-    if (isSrdf(doc)) return undefined;
+    if (!hasUrdfSchema(doc)) return undefined;
     const text = doc.getText();
     const offset = doc.offsetAt(position);
     const token = schema.tokenize(text).tokens.find(token => token.start <= offset && offset < token.end);
@@ -613,8 +614,34 @@ function schemaHover(doc, position) {
     const attribute = token.attributes?.find(a => offset >= a.nameStart && offset <= a.valueStart + a.value.length);
     if (!attribute) return undefined;
     if (offset < attribute.valueStart) return hover(schema.attributeDoc(element, attribute.name), attribute.nameStart, attribute.name.length);
-    const valueDoc = schema.SCHEMA[element].attributes[attribute.name]?.values?.[attribute.value];
-    return hover(valueDoc && `**${attribute.value}**: ${valueDoc}`, attribute.valueStart, attribute.value.length);
+    return hover(schema.valueDoc(element, attribute.name, attribute.value), attribute.valueStart, attribute.value.length);
+}
+
+function snippetItem(label, kind, snippet, documentation) {
+    const item = new vscode.CompletionItem(label, kind);
+    if (snippet) item.insertText = new vscode.SnippetString(snippet);
+    if (documentation) item.documentation = new vscode.MarkdownString(documentation);
+    return item;
+}
+
+const isStructureRule = code => Object.hasOwn(schema.RULES, code ?? '');
+
+function quickFixes(document, diagnostics, fixes) {
+    return diagnostics.flatMap(diagnostic => {
+        const actions = fixes?.get(fixKey(document.uri.fsPath, diagnostic.range)) || [];
+        return actions.map(fix => {
+            const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
+            if (fix.command) {
+                action.command = fix.command;
+            } else {
+                action.edit = new vscode.WorkspaceEdit();
+                for (const edit of fix.edits) action.edit.replace(document.uri, edit.range, edit.text);
+            }
+            action.diagnostics = [diagnostic];
+            action.isPreferred = actions.length === 1;
+            return action;
+        });
+    });
 }
 
 // Runs on the text alone, so it reports while typing with no preview open.
@@ -625,13 +652,18 @@ class StructureChecks {
         this.timers = new Map();
     }
 
+    forgetFixes(fsPath) {
+        for (const key of this.fixes.keys()) if (key.startsWith(`${fsPath}:`)) this.fixes.delete(key);
+    }
+
     check(doc) {
-        if (!isRobotModel(doc) || isSrdf(doc)) return;
+        if (doc.uri.scheme !== 'file' || !hasUrdfSchema(doc)) return;
         const disabled = new Set(vscode.workspace.getConfiguration('robotPreviewUrdf').get('checks.disabled') || []);
         const fsPath = doc.uri.fsPath;
-        for (const key of this.fixes.keys()) if (key.startsWith(`${fsPath}:`)) this.fixes.delete(key);
+        this.forgetFixes(fsPath);
         const range = (start, end) => new vscode.Range(doc.positionAt(start), doc.positionAt(end));
-        const diagnostics = schema.checkStructure(doc.getText()).filter(issue => !disabled.has(issue.rule)).map(issue => {
+        const issues = schema.checkStructure(doc.getText(), { xacro: /\.xacro$/i.test(fsPath) });
+        const diagnostics = issues.filter(issue => !disabled.has(issue.rule)).map(issue => {
             const diagnostic = new vscode.Diagnostic(range(issue.start, issue.end), issue.message,
                 issue.severity === 'error' ? vscode.DiagnosticSeverity.Error : vscode.DiagnosticSeverity.Warning);
             Object.assign(diagnostic, { source: 'Robot Preview', code: issue.rule });
@@ -648,16 +680,21 @@ class StructureChecks {
 
     schedule(doc) {
         clearTimeout(this.timers.get(doc.uri.fsPath));
-        this.timers.set(doc.uri.fsPath, setTimeout(() => this.check(doc), UPDATE_DELAY_MS));
+        this.timers.set(doc.uri.fsPath, setTimeout(() => {
+            this.timers.delete(doc.uri.fsPath);
+            this.check(doc);
+        }, UPDATE_DELAY_MS));
     }
 
     forget(doc) {
         clearTimeout(this.timers.get(doc.uri.fsPath));
+        this.timers.delete(doc.uri.fsPath);
+        this.forgetFixes(doc.uri.fsPath);
         this.diagnostics.delete(doc.uri);
     }
 
-    handles(diagnostic) {
-        return schema.RULES[diagnostic.code] !== undefined;
+    provideCodeActions(document, range, context) {
+        return quickFixes(document, context.diagnostics.filter(diagnostic => isStructureRule(diagnostic.code)), this.fixes);
     }
 }
 
@@ -790,42 +827,34 @@ class Navigator {
             : open !== -1 && !before.includes('}', open) && /(^|[^\w.'"])\w*$/.test(before.slice(open + 2)) ? 'property'
             : null;
         if (!kind) return this.schemaCompletions(doc, position);
+        const items = (await this.namesOf(doc, kind)).map(name => new vscode.CompletionItem(name, NAVIGATION_KINDS[kind].completion));
+        if (kind === 'macro') items.push(...schema.xacroDirectives().map(({ name, snippet, doc: documentation }) => snippetItem(name, vscode.CompletionItemKind.Keyword, snippet, documentation)));
+        return items;
+    }
+
+    async namesOf(doc, kind) {
         const definitions = await this.definitions(doc, kind, undefined, await this.scope(doc));
-        const names = new Set(definitions.map(definition => attributeOf(definition.tag, 'name')).filter(Boolean));
-        return Array.from(names, name => new vscode.CompletionItem(name, NAVIGATION_KINDS[kind].completion));
+        return [...new Set(definitions.map(definition => attributeOf(definition.tag, 'name')).filter(Boolean))];
     }
 
     async schemaCompletions(doc, position) {
-        if (isSrdf(doc)) return undefined;
-        const text = doc.getText();
-        const offset = doc.offsetAt(position);
-        const tag = schema.tagAt(text, offset);
+        if (!hasUrdfSchema(doc)) return undefined;
+        const tag = schema.tagAt(doc.getText(), doc.offsetAt(position));
         if (!tag) return undefined;
         const range = new vscode.Range(doc.positionAt(tag.start), position);
-        const item = (label, kind, insert, documentation) => Object.assign(new vscode.CompletionItem(label, kind), {
-            range,
-            insertText: insert && new vscode.SnippetString(insert),
-            documentation: documentation && new vscode.MarkdownString(documentation)
-        });
+        const item = (...args) => Object.assign(snippetItem(...args), { range });
         if (tag.kind === 'element') {
-            return schema.childrenOf(tag.parent).map(name =>
-                item(name, vscode.CompletionItemKind.Property, schema.elementSnippet(name), schema.elementDoc(name, tag.parent)));
+            return schema.elementsAt(tag.parent, tag.siblings).map(({ name, snippet, doc: documentation }) => item(name, vscode.CompletionItemKind.Property, snippet, documentation));
         }
-        const spec = schema.SCHEMA[tag.element];
         if (tag.kind === 'attribute') {
-            return Object.keys(spec.attributes).filter(name => !tag.present.includes(name)).map(name => Object.assign(
-                item(name, vscode.CompletionItemKind.Field, schema.attributeSnippet(name, spec.attributes[name], 1), schema.attributeDoc(tag.element, name)),
-                { sortText: (spec.attributes[name].required ? '0' : '1') + name }));
+            return schema.attributesOfElement(tag.element).filter(({ name }) => !tag.present.includes(name)).map(({ name, required, snippet, doc: documentation }) =>
+                Object.assign(item(name, vscode.CompletionItemKind.Field, snippet, documentation), { sortText: (required ? '0' : '1') + name }));
         }
-        const attribute = spec.attributes[tag.attribute];
-        if (attribute?.type === 'enum') {
-            return Object.entries(attribute.values).map(([value, doc]) => item(value, vscode.CompletionItemKind.EnumMember, null, doc));
-        }
+        const values = schema.valuesOf(tag.element, tag.attribute);
+        if (values.length) return values.map(({ value, doc: documentation }) => item(value, vscode.CompletionItemKind.EnumMember, null, documentation));
         const kind = tag.attribute === 'link' ? 'link' : tag.element === 'mimic' && tag.attribute === 'joint' ? 'joint' : null;
         if (!kind) return undefined;
-        const definitions = await this.definitions(doc, kind, undefined, await this.scope(doc));
-        const names = new Set(definitions.map(definition => attributeOf(definition.tag, 'name')).filter(Boolean));
-        return Array.from(names, name => item(name, vscode.CompletionItemKind.Reference));
+        return (await this.namesOf(doc, kind)).map(name => item(name, vscode.CompletionItemKind.Reference));
     }
 
     async provideDocumentLinks(doc) {
@@ -1044,22 +1073,8 @@ class Preview {
         }
     }
 
-    provideCodeActions(document, range, context, fixesFor = () => this.fixes) {
-        return context.diagnostics.flatMap(diagnostic => {
-            const actions = fixesFor(diagnostic)?.get(fixKey(document.uri.fsPath, diagnostic.range)) || [];
-            return actions.map(fix => {
-                const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
-                if (fix.command) {
-                    action.command = fix.command;
-                } else {
-                    action.edit = new vscode.WorkspaceEdit();
-                    for (const edit of fix.edits) action.edit.replace(document.uri, edit.range, edit.text);
-                }
-                action.diagnostics = [diagnostic];
-                action.isPreferred = actions.length === 1;
-                return action;
-            });
-        });
+    provideCodeActions(document, range, context) {
+        return quickFixes(document, context.diagnostics.filter(diagnostic => !isStructureRule(diagnostic.code)), this.fixes);
     }
 
     expectedPath({ value }) {
@@ -1482,9 +1497,10 @@ exports.activate = context => {
         vscode.languages.registerDocumentLinkProvider(xacroFiles, { provideDocumentLinks: doc => navigator.provideDocumentLinks(doc) }),
         vscode.languages.registerCodeActionsProvider(
             [{ scheme: 'file', pattern: '**/*.{urdf,xacro,xml}' }],
-            { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context, diagnostic => (structure.handles(diagnostic) ? structure.fixes : preview.fixes)) },
+            { provideCodeActions: (document, range, context) => preview.provideCodeActions(document, range, context) },
             { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }
         ),
+        vscode.languages.registerCodeActionsProvider(xacroFiles, structure, { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] }),
         vscode.commands.registerCommand('robotPreviewUrdf.locatePackage', name => preview.locatePackage(name)),
         vscode.commands.registerCommand('robotPreviewUrdf.setXacroArgs', uri => {
             uri = uri || vscode.window.activeTextEditor?.document.uri;

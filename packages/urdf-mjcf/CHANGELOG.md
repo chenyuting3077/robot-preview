@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-- URDF completion: typing `<` offers the elements ROS reads at that spot, each a snippet with its required attributes (a `<joint>` comes with `<parent>`, `<child>` and `<origin>`); attribute names, joint types, and link and joint names for `<parent>`, `<child>` and `<mimic>`.
-- Hover on a URDF element, attribute or joint type explains it with units and defaults.
-- Structure checks while typing, without the preview: elements and attributes ROS ignores (typos, an `<origin>` directly in a `<link>`), missing required attributes and malformed values, with a quick fix for typos. Rule ids `ignored-element`, `ignored-attribute`, `missing-attribute`, `invalid-value`.
-- `robotPreviewUrdf.packageSearchPaths` searches folders for ROS packages at any depth, for another workspace or a pixi environment.
+- URDF completion: typing `<` offers the elements ROS reads at that spot, each a snippet with its required attributes (a `<joint>` comes with `<parent>`, `<child>` and `<origin>`), plus `<gazebo>`, `<ros2_control>` and `<transmission>` under `<robot>`; `<xacro:` offers the xacro directives; attribute names, joint types, and link and joint names for `<parent>`, `<child>` and `<mimic>`.
+- Hover on a URDF element, attribute or joint type explains it with what it takes, units and defaults.
+- Structure checks while typing, without the preview: elements and attributes ROS ignores (typos, an `<origin>` directly in a `<link>`, a second `<origin>`, `quat_xyzw` below URDF 1.1), missing required attributes and children, malformed values (including a number broken over two lines) and missing shapes, each saying whether ROS rejects the model or drops part of a link; a quick fix for typos. Rule ids `ignored-element`, `ignored-attribute`, `missing-attribute`, `missing-element`, `invalid-value`, `invalid-geometry`.
+- `robotPreviewUrdf.packageSearchPaths` searches folders for ROS packages at any depth, for another workspace or a pixi environment's `share`.
 
 ## 0.4.6
 

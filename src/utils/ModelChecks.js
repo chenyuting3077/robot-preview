@@ -76,7 +76,10 @@ function loopJoints(joints, linkNames) {
 export function checkModel(urdfText, { sizes = {} } = {}) {
     const robot = new DOMParser().parseFromString(urdfText, 'text/xml').documentElement;
     const issues = [];
-    const add = (rule, kind, name, message) => issues.push({ rule, severity: RULES[rule], kind, name, message });
+    const add = (rule, kind, name, message, severity = RULES[rule]) => issues.push({ rule, severity, kind, name, message });
+    // urdfdom's joint.cpp: from URDF 1.2 effort and velocity are optional and lower > upper rejects the model.
+    const [major, minor] = (robot.getAttribute('version') || '1.0').split('.').map(Number);
+    const urdf12 = major > 1 || (major === 1 && minor >= 2);
     const links = Array.from(robot.children).filter(element => element.tagName === 'link');
     const joints = Array.from(robot.children).filter(element => element.tagName === 'joint');
 
@@ -107,8 +110,12 @@ export function checkModel(urdfText, { sizes = {} } = {}) {
         const limit = childOf(joint, 'limit');
         if ((type === 'revolute' || type === 'prismatic') && !limit) {
             add('missing-limit', 'joint', name, `${type} joint "${name}" has no <limit>, which ROS requires`);
-        } else if (limit && (!limit.hasAttribute('effort') || !limit.hasAttribute('velocity'))) {
+        } else if (limit && !urdf12 && (!limit.hasAttribute('effort') || !limit.hasAttribute('velocity'))) {
             add('missing-limit', 'joint', name, `the <limit> of joint "${name}" lacks effort or velocity, which ROS requires`);
+        }
+        const bounded = limit?.hasAttribute('lower') && limit.hasAttribute('upper');
+        if (urdf12 && bounded && number(limit, 'lower') > number(limit, 'upper')) {
+            add('inverted-limit', 'joint', name, `joint "${name}" has lower > upper, which URDF 1.2 rejects`, 'error');
         }
         if (!MOVING.has(type)) continue;
         const axis = (childOf(joint, 'axis')?.getAttribute('xyz') ?? '1 0 0').trim().split(/\s+/).map(Number);
@@ -116,7 +123,7 @@ export function checkModel(urdfText, { sizes = {} } = {}) {
         if (!limit) continue;
         if (type === 'continuous' && (limit.hasAttribute('lower') || limit.hasAttribute('upper'))) {
             add('continuous-with-limits', 'joint', name, `continuous joint "${name}" ignores lower/upper; use revolute to limit it`);
-        } else if (number(limit, 'lower') > number(limit, 'upper')) {
+        } else if (!urdf12 && number(limit, 'lower') > number(limit, 'upper')) {
             add('inverted-limit', 'joint', name, `joint "${name}" has lower > upper, so it cannot move`);
         }
         if ((limit.hasAttribute('effort') && number(limit, 'effort') === 0) || (limit.hasAttribute('velocity') && number(limit, 'velocity') === 0)) {
@@ -142,7 +149,7 @@ export function checkModel(urdfText, { sizes = {} } = {}) {
             }
         } else if (!mass) {
             add('missing-mass', 'link', name, `the <inertial> of link "${name}" has no <mass>, which ROS requires`);
-        } else if (!(number(mass, 'value') > 0)) {
+        } else if (mass.hasAttribute('value') && !(number(mass, 'value') > 0)) {
             add('nonpositive-mass', 'link', name, `link "${name}" has a mass of zero or less`);
         } else if (inertia && !isValidInertia(inertia)) {
             add('invalid-inertia', 'link', name, `link "${name}" has an inertia no rigid body can have (not positive definite or breaking the triangle inequality)`);

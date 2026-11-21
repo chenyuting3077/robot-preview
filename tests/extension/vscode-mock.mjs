@@ -162,13 +162,12 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         Hover: class { constructor(contents, range) { Object.assign(this, { contents, range }); } },
         MarkdownString: class { constructor(value = '') { this.value = value; } appendCodeblock(code, lang) { this.value += `\n\`\`\`${lang}\n${code}\n\`\`\`\n`; return this; } appendMarkdown(text) { this.value += text; return this; } },
         CompletionItem: class { constructor(label, kind) { Object.assign(this, { label, kind }); } },
-        CompletionItemKind: { Variable: 5, Function: 2, Field: 4, Property: 9, Reference: 17, EnumMember: 19, Constant: 20 },
+        CompletionItemKind: { Variable: 5, Function: 2, Field: 4, Property: 9, Keyword: 13, Reference: 17, EnumMember: 19, Constant: 20 },
         SnippetString: class { constructor(value) { this.value = value; } },
         DocumentLink: class { constructor(range, target) { Object.assign(this, { range, target }); } },
         CodeActionKind: { QuickFix: 'quickfix' },
         env: { language: 'zh-tw' },
         languages: {
-            // The preview's collection is state.diagnostics; any other is state.collections[name].
             createDiagnosticCollection: name => {
                 const target = name === 'robot-preview' ? state.diagnostics : (state.collections[name] = new Map());
                 return {
@@ -179,7 +178,9 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
                 };
             },
             registerCodeActionsProvider: (selector, provider) => {
-                state.codeActions = provider;
+                const providers = [...(state.codeActionProviders || []), provider];
+                state.codeActionProviders = providers;
+                state.codeActions = { provideCodeActions: (...args) => providers.flatMap(each => each.provideCodeActions(...args) || []) };
                 return { dispose() {} };
             },
             registerDefinitionProvider: (selector, provider) => ((state.definitions = provider), { dispose() {} }),

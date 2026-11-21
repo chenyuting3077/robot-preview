@@ -112,7 +112,7 @@ test('completion offers properties after ${, macros after <xacro: and arguments 
         return ((await env.state.completions.provideCompletionItems(doc, position)) || []).map(item => item.label).sort();
     };
     assert.deepEqual(await complete('<link name="${'), ['arm_length', 'base_name', 'radius']);
-    assert.deepEqual(await complete('<xacro:'), ['arm']);
+    assert.deepEqual(await complete('<xacro:'), ['arg', 'arm', 'attribute', 'element', 'if', 'include', 'insert_block', 'macro', 'property', 'unless']);
     assert.deepEqual(await complete('<link name="$(arg '), ['side']);
 });
 
