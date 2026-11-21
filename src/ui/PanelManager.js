@@ -61,9 +61,12 @@ export class PanelManager {
         this.modelGraphView = null;
         this.savedGraphView = null;
         this.onLayoutChange = null;
-        window.addEventListener('resize', () => {
-            for (const state of this.panels.values()) if (!state.busy) this.render(state, false);
-        });
+        window.addEventListener('resize', () => this.renderAll());
+    }
+
+    // Also on toolbar size changes: docks and the top clamp sit below it.
+    renderAll() {
+        for (const state of this.panels.values()) if (!state.busy) this.render(state, false);
     }
 
     setModelGraphView(modelGraphView) {
@@ -83,12 +86,6 @@ export class PanelManager {
         this.registerPanel('floating-joints-panel');
         this.registerPanel('floating-model-tree');
         this.setupMaximizeButtons();
-    }
-
-    getLayouts() {
-        const layouts = {};
-        for (const [id, { layout }] of this.panels) if (layout) layouts[id] = { ...layout };
-        return layouts;
     }
 
     setLayouts(layouts = {}) {
@@ -119,12 +116,23 @@ export class PanelManager {
         const { panel } = state;
         const style = getComputedStyle(panel);
         state.layout = { left: Math.round(parseFloat(style.left)), top: Math.round(parseFloat(style.top)), width: panel.offsetWidth, height: panel.offsetHeight, dock: null, maximized: false };
-        state.panel.style.transform = '';
         this.render(state, false);
     }
 
-    changed() {
-        this.onLayoutChange?.();
+    // Where a gesture starts. Rendering first ends a running transition (restore
+    // from maximized, a snap, the show fade), whose in-between rect must not be
+    // measured and saved.
+    startRect(state) {
+        if (state.layout) {
+            this.render(state, false);
+            return placement(state.layout);
+        }
+        const style = getComputedStyle(state.panel);
+        return { left: parseFloat(style.left), top: parseFloat(style.top), width: state.panel.offsetWidth, height: state.panel.offsetHeight };
+    }
+
+    changed(state) {
+        this.onLayoutChange?.(state.id, { ...state.layout });
     }
 
     // Two levels only, so panels never climb over the toolbar (100) and menus.
@@ -190,8 +198,7 @@ export class PanelManager {
             e.stopPropagation();
             this.adopt(state);
             state.busy = true;
-            const style = getComputedStyle(panel);
-            resizing = { edge, x: e.clientX, y: e.clientY, left: parseFloat(style.left), top: parseFloat(style.top), width: panel.offsetWidth, height: panel.offsetHeight, last: e };
+            resizing = { edge, x: e.clientX, y: e.clientY, ...this.startRect(state), last: e };
             showCursor(edge);
             document.documentElement.style.cursor = CURSORS[edge];
             panel.style.transition = 'none';
@@ -256,13 +263,16 @@ export class PanelManager {
             const swallow = event => event.stopPropagation();
             window.addEventListener('click', swallow, true);
             setTimeout(() => window.removeEventListener('click', swallow, true));
-            this.changed();
+            this.changed(state);
         };
 
         header.addEventListener('mousedown', (e) => {
             if (e.button !== 0 || maximized() || e.target.closest('button, select, input')) return;
-            const r = panel.getBoundingClientRect();
-            dragging = { x: e.clientX, y: e.clientY, offsetX: e.clientX - r.left, offsetY: e.clientY - r.top, width: r.width, height: r.height, moved: false, zone: null };
+            const r = this.startRect(state);
+            dragging = {
+                x: e.clientX, y: e.clientY, width: r.width, height: r.height, moved: false, zone: null,
+                offsetX: clamp(e.clientX - r.left, 0, r.width), offsetY: clamp(e.clientY - r.top, 0, header.offsetHeight)
+            };
             document.addEventListener('mousemove', drag);
             document.addEventListener('mouseup', dragEnd);
         });
@@ -314,7 +324,7 @@ export class PanelManager {
                 ? { left, top, ...size, dock: zone, undocked: size, maximized: false }
                 : { ...placement({ left, top, ...size }), dock: null, maximized: false };
             this.render(state);
-            this.changed();
+            this.changed(state);
         };
     }
 
@@ -333,7 +343,7 @@ export class PanelManager {
                 const maximize = !state.panel.classList.contains('maximized');
                 state.layout.maximized = maximize;
                 this.showMaximized(state);
-                this.changed();
+                this.changed(state);
 
                 // After the panel's 0.4 s transition, so the graph fits the final size.
                 if (state.id !== 'floating-model-tree' || !this.modelGraphView) return;

@@ -1275,6 +1275,9 @@ class Preview {
             await this.editLimits(msg.joint, msg.limits);
         } else if (msg?.type === 'settings') {
             await this.context.globalState.update('settings', msg.settings);
+        } else if (msg?.type === 'panelLayout') {
+            // Per panel: previews in other windows hold stale copies of the panels they did not move.
+            await this.context.globalState.update('panels', { ...this.context.globalState.get('panels'), [msg.id]: msg.layout });
         } else if (msg?.type === 'diagnostics') {
             await this.onDiagnostics(msg);
         } else if (msg?.type === 'screenshot') {
@@ -1312,7 +1315,7 @@ class Preview {
                 if (!listing.paths.has(fsPath)) this.syntaxDiagnostics.delete(fsPath);
             }
             this.panel.webview.postMessage(full
-                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), xacroArgs: this.xacroArgsFor(primary.fsPath), env: listing.env }
+                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), panels: this.context.globalState.get('panels'), xacroArgs: this.xacroArgsFor(primary.fsPath), env: listing.env }
                 : { type: 'update', files, removed, primary: listing.primary, env: listing.env });
             const editor = vscode.window.activeTextEditor;
             if (full && editor) this.onSelectionChanged({ textEditor: editor, selections: editor.selections });

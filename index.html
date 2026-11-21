@@ -491,7 +491,7 @@
             transition: all 0.4s var(--spring);
         }
 
-        /* Dragging moves a panel by transform; maximized fills the view from where it stands. */
+        /* The open/close animation's leftover transform must not move a maximized panel. */
         #floating-model-tree.maximized,
         #floating-joints-panel.maximized {
             transform: none !important;

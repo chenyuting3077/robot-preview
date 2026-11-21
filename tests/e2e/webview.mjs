@@ -198,6 +198,9 @@ async function floatingPanels() {
         return { dx: (g.left + g.right - s.left - s.right) / 2, dy: (g.top + g.bottom - s.top - s.bottom) / 2, inside: g.left >= s.left - 1 && g.right <= s.right + 1 && g.top >= s.top - 1 && g.bottom <= s.bottom + 1, k: t.k, centre: t.invert([s.width / 2, s.height / 2]) }`);
     const centred = g => near(g.dx, 0, 3) && near(g.dy, 0, 3) && g.inside;
     const preview = () => ev(`const p = document.querySelector('.panel-snap-preview'); if (!p || getComputedStyle(p).display === 'none') return null; const r = p.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }`);
+    // What the extension stores: the last layout each panel was given.
+    const stored = {};
+    const collect = async () => Object.assign(stored, await ev(`return Object.fromEntries(window.__out.filter(m => m.type === 'panelLayout').map(m => [m.id, m.layout]))`));
     const cursorAt = ({ x, y }) => ev(`return getComputedStyle(document.elementFromPoint(${x}, ${y})).cursor`);
 
     await ev(`await window.__send('load')`);
@@ -209,7 +212,7 @@ async function floatingPanels() {
     await mouse('mousePressed', header(r).x, header(r).y, true);
     await mouse('mouseReleased', header(r).x, header(r).y);
     await sleep(500);
-    const clicked = await ev(`return { inline: document.getElementById('${JOINTS}').style.top, saved: !!window.__out.filter(m => m.type === 'settings').at(-1)?.settings?.panels?.['${JOINTS}'] }`);
+    const clicked = await ev(`return { inline: document.getElementById('${JOINTS}').style.top, saved: window.__out.some(m => m.type === 'panelLayout' && m.id === '${JOINTS}') }`);
     check('a click on an untouched panel header keeps its CSS place and saves no layout', clicked.inline === '' && !clicked.saved, JSON.stringify(clicked));
 
     await ev(`if (!document.getElementById('toggle-model-tree').classList.contains('active')) document.getElementById('toggle-model-tree').click()`);
@@ -275,6 +278,16 @@ async function floatingPanels() {
     after = await rectOf(JOINTS);
     check('the joints panel resizes from its top border', near(after.top, r.top - 60) && near(after.bottom, r.bottom), JSON.stringify({ r, after }));
 
+    r = after;
+    await ev(`document.querySelector('.panel-maximize-btn[data-panel-id=${JOINTS}]').click()`);
+    await sleep(700);
+    await ev(`document.querySelector('.panel-maximize-btn[data-panel-id=${JOINTS}]').click()`);
+    await sleep(80);
+    const restoring = await rectOf(JOINTS);
+    await drag(midLeft(restoring), { x: restoring.left - 37, y: midLeft(restoring).y });
+    after = await rectOf(JOINTS);
+    check('a resize started while the panel restores from maximized starts from its restored size', near(after.width, r.width + 40) && near(after.top, r.top) && near(after.height, r.height), JSON.stringify({ r, restoring, after }));
+
     // Snapping by dragging the header.
     r = await rectOf(TREE);
     await drag(header(r), { x: 600, y: 5 });
@@ -290,6 +303,13 @@ async function floatingPanels() {
     check('releasing at the left edge docks the panel at full height, width kept', near(after.left, MARGIN) && near(after.top, v.toolbar + MARGIN) && near(after.height, v.height - v.toolbar - 2 * MARGIN) && near(after.width, r.width), JSON.stringify({ r, after, v }));
 
     const docked = after;
+    await ev(`document.getElementById('top-control-bar').style.minHeight = '85px'`);
+    await sleep(300);
+    const tall = await view();
+    const dockedTall = await rectOf(TREE);
+    await ev(`document.getElementById('top-control-bar').style.minHeight = ''`);
+    await sleep(300);
+    check('a docked panel follows the toolbar height', tall.toolbar > v.toolbar && near(dockedTall.top, tall.toolbar + MARGIN) && near(dockedTall.bottom, tall.height - MARGIN), JSON.stringify({ tall, dockedTall }));
     await drag(header(docked), { x: v.width - 4, y: 400 }, { release: false });
     const rightPreview = await preview();
     await drag(null, { x: 700, y: 300 }, { release: false });
@@ -348,22 +368,44 @@ async function floatingPanels() {
     await drag(midBottom(r), { x: midBottom(r).x, y: r.bottom + 96 });
     await ev(`document.querySelector('.panel-maximize-btn[data-panel-id=${JOINTS}]').click()`);
     await sleep(1000);
-    const tree = await rectOf(TREE);
+    let tree = await rectOf(TREE);
+    await collect();
     const saved = await ev(`return window.__out.filter(m => m.type === 'settings').at(-1)?.settings`);
-    const savedTree = saved?.panels?.[TREE];
-    check('a moved panel and the maximized state are saved', !!savedTree && near(savedTree.left, tree.left) && near(savedTree.height, tree.height) && saved.panels[JOINTS]?.maximized === true, JSON.stringify(saved?.panels));
+    check('a moved panel and the maximized state are saved', !!stored[TREE] && near(stored[TREE].left, tree.left) && near(stored[TREE].height, tree.height) && stored[JOINTS]?.maximized === true, JSON.stringify(stored));
 
-    const reopen = async () => {
+    const reload = async () => {
         await send('Page.reload');
         await sleep(300);
         await waitFor(`window.__out?.some(m => m.type === 'ready')`);
-        await ev(`await window.__send('load', m => { m.settings = ${JSON.stringify(saved)}; })`);
+    };
+    const sendLoad = () => ev(`window.__send('load', m => { m.settings = ${JSON.stringify(saved)}; m.panels = ${JSON.stringify(stored)}; })`);
+    const reopen = async () => {
+        await reload();
+        await sendLoad();
         await waitFor(`window.app.currentModel?.links?.has('left_arm')`, 10000);
         await sleep(800);
     };
     await reopen();
     after = await rectOf(TREE);
     check('a new page opens the panels where they were left', ['left', 'top', 'width', 'height'].every(k => near(after[k], tree[k])) && await ev(`return document.getElementById('${JOINTS}').classList.contains('maximized')`), JSON.stringify({ tree, after }));
+
+    // Held at the parser, so the panel is moved before the first load finishes.
+    await reload();
+    await ev(`const fileHandler = window.app.fileHandler, load = fileHandler.loadPrimary.bind(fileHandler);
+        const gate = new Promise(resolve => { window.__open = resolve; });
+        fileHandler.loadPrimary = async (...args) => { await gate; return load(...args); };`);
+    await sendLoad();
+    await sleep(600);
+    r = await rectOf(TREE);
+    await drag(header(r), { x: 500, y: 350 });
+    tree = await rectOf(TREE);
+    await ev(`window.__open()`);
+    await waitFor(`window.app.currentModel?.links?.has('left_arm')`, 10000);
+    await sleep(500);
+    await collect();
+    await reopen();
+    after = await rectOf(TREE);
+    check('a panel moved while the model loads comes back on the next page', near(tree.left, 450, 60) && ['left', 'top', 'width', 'height'].every(k => near(after[k], tree[k])), JSON.stringify({ tree, after }));
 
     await send('Emulation.setDeviceMetricsOverride', { width: 640, height: 420, deviceScaleFactor: 1, mobile: false });
     await reopen();

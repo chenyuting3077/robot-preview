@@ -160,6 +160,7 @@ class App {
             const toolbar = document.getElementById('top-control-bar');
             new ResizeObserver(() => {
                 document.documentElement.style.setProperty('--toolbar-bottom', `${toolbar.offsetTop + toolbar.offsetHeight}px`);
+                this.panelManager?.renderAll();
             }).observe(toolbar);
             this.setupTheme();
             this.setupSettingsSync();
@@ -178,7 +179,7 @@ class App {
             if (document.documentElement.getAttribute('data-theme') === theme) return;
             document.documentElement.setAttribute('data-theme', theme);
             this.sceneManager.updateBackgroundColor();
-            if (this.currentModel) this.modelGraphView.drawModelGraph(this.currentModel);
+            if (this.currentModel) this.modelGraphView.drawModelGraph(this.currentModel, { keepView: true });
         };
         document.documentElement.removeAttribute('data-theme');
         sync();
@@ -193,13 +194,11 @@ class App {
         }
         settings.up = document.getElementById('up-select')?.value;
         settings.unit = this.angleUnit;
-        const panels = this.panelManager?.getLayouts() || {};
-        if (Object.keys(panels).length) settings.panels = panels;
         return settings;
     }
 
-    applyPanelSettings(settings) {
-        this.panelManager?.setLayouts(settings.panels);
+    applyPanelSettings(settings, panels) {
+        this.panelManager?.setLayouts(panels);
         for (const [buttonId, panelId] of Object.entries(PANEL_BUTTONS)) {
             if (!(buttonId in settings)) continue;
             document.getElementById(panelId).style.display = settings[buttonId] ? 'flex' : 'none';
@@ -235,7 +234,10 @@ class App {
             if (event.target.closest('#top-control-bar, .floating-panel-header')) setTimeout(save, 300);
         });
         document.getElementById('up-select')?.addEventListener('change', () => setTimeout(save, 0));
-        if (this.panelManager) this.panelManager.onLayoutChange = save;
+        // Apart from the settings and per panel, as soon as it changes: the
+        // settings are not saved before the first load ends, and previews in
+        // other windows would write back stale copies of panels they never moved.
+        if (this.panelManager) this.panelManager.onLayoutChange = (id, layout) => vscode.postMessage({ type: 'panelLayout', id, layout });
     }
 
     showError(message) {
@@ -297,7 +299,7 @@ class App {
                 vscode.setState({ sourcePath: message.sourcePath });
                 this.xacroArgs = message.xacroArgs || {};
                 this.env = message.env || {};
-                if (this.lastSettings === null) this.applyPanelSettings(message.settings || {});
+                if (this.lastSettings === null) this.applyPanelSettings(message.settings || {}, message.panels);
                 await this.loadFiles(message, true);
                 if (this.lastSettings === null) this.applySettings(message.settings || {});
             },

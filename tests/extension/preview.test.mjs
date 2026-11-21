@@ -180,14 +180,19 @@ test('settings, xacro arguments and the open preview survive a reload', async ()
     assert.deepEqual(load.xacroArgs, { side: 'right' });
 });
 
-test('the floating panels open where the last preview left them', async () => {
+test('the floating panels open where the last previews left them, each panel from the page that moved it', async () => {
     const env = await start();
-    const panels = {
-        'floating-model-tree': { left: 600, top: 300, width: 420, height: 380, dock: null, maximized: false },
-        'floating-joints-panel': { left: 20, top: 98, width: 360, height: 695, dock: 'left', undocked: { width: 360, height: 440 }, maximized: true }
-    };
-    env.panel.receive({ type: 'settings', settings: { 'toggle-model-tree': true, panels } });
+    // A second window: another extension host on the same global state.
+    const other = await start();
+    other.state.globalState = env.state.globalState;
+    const tree = { left: 20, top: 98, width: 360, height: 695, dock: 'left', undocked: { width: 360, height: 440 }, maximized: false };
+    const joints = { left: 600, top: 300, width: 420, height: 380, dock: null, maximized: true };
+    env.panel.receive({ type: 'panelLayout', id: 'floating-model-tree', layout: tree });
     await sleep(20);
+    other.panel.receive({ type: 'panelLayout', id: 'floating-joints-panel', layout: joints });
+    other.panel.receive({ type: 'settings', settings: { 'show-collision': true } });
+    await sleep(20);
+    const panels = { 'floating-model-tree': tree, 'floating-joints-panel': joints };
 
     env.panel.dispose();
     const next = env.vscode.window.createWebviewPanel();
@@ -196,7 +201,8 @@ test('the floating panels open where the last preview left them', async () => {
     const before = env.allOf('load').length;
     next.receive({ type: 'ready' });
     await waitFor(() => env.allOf('load').length > before);
-    assert.deepEqual(env.lastOf('load').settings.panels, panels);
+    assert.deepEqual(env.lastOf('load').panels, panels);
+    assert.deepEqual(env.lastOf('load').settings, { 'show-collision': true });
 });
 
 test('export writes the expanded URDF with $(find) paths mapped back to the package directories', async () => {

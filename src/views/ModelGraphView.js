@@ -25,8 +25,8 @@ export class ModelGraphView {
                 const previous = size;
                 size = width > 0 && height > 0 ? { width, height } : null;
                 if (!size) return;
-                if (!previous || this.autoFit) this.fitToView(false);
-                else this.panBy((width - previous.width) / 2, (height - previous.height) / 2);
+                if (this.autoFit) this.fitToView(false);
+                else if (previous) this.panBy((width - previous.width) / 2, (height - previous.height) / 2);
             }).observe(svgNode);
         }
     }
@@ -38,7 +38,10 @@ export class ModelGraphView {
         const svg = d3.select('#model-graph-svg');
         const emptyState = document.getElementById('graph-empty-state');
         const previousTransform = keepView && svg.node() ? d3.zoomTransform(svg.node()) : null;
-        if (!keepView) this.drawing = (this.drawing || 0) + 1;
+        if (!keepView) {
+            this.drawing = (this.drawing || 0) + 1;
+            this.autoFit = true;
+        }
 
         svg.selectAll('*:not(defs)').remove();
 
