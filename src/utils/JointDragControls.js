@@ -1,7 +1,7 @@
 import { isScalarJoint } from '../models/UnifiedRobotModel.js';
 import * as THREE from 'three';
 import { MathUtils } from './MathUtils.js';
-import { intersectDisplayed } from './picking.js';
+import { pickDisplayed } from './picking.js';
 
 /**
  * Universal joint drag control system
@@ -115,8 +115,7 @@ export class JointDragControls {
 
         let hoveredLink = null;
 
-        // Like urdf-loaders, only the closest hit counts. A shown collision mesh maps to its link like a visual, so
-        // joints stay draggable with visuals off.
+        // A shown collision mesh maps to its link like a visual, so joints stay draggable with visuals off.
         const hit = this.pickHit(raycaster);
         if (hit) {
             hoveredLink = findParentLink(hit.object, model);
@@ -148,7 +147,7 @@ export class JointDragControls {
 
     pickHit(raycaster) {
         if (!this.model?.threeObject) return null;
-        return intersectDisplayed(raycaster, [this.model.threeObject], this.camera).find(({ object }) => object.isMesh) || null;
+        return pickDisplayed(raycaster, [this.model.threeObject], this.camera, ({ object }) => object.isMesh);
     }
 
     updateJoint(joint, angle) {

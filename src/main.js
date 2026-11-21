@@ -17,7 +17,7 @@ const emptyLoadReport = () => ({ loadError: null, loadErrorLocation: null, missi
 import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
 import { createCameraKeys, pointerNdc } from './utils/camera-keys.js';
-import { intersectDisplayed } from './utils/picking.js';
+import { pickDisplayed } from './utils/picking.js';
 import './ui/view-gizmo.css';
 
 window.d3 = d3;
@@ -439,7 +439,7 @@ class App {
     pickMesh(ndc) {
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(ndc, this.sceneManager.camera);
-        return intersectDisplayed(raycaster, this.sceneManager.scene.children, this.sceneManager.camera).find(({ object }) => {
+        return pickDisplayed(raycaster, this.sceneManager.scene.children, this.sceneManager.camera, ({ object }) => {
             for (let current = object; current; current = current.parent) {
                 const name = current.name || '';
                 if (name.includes('jointAxis') || name.includes('helper') ||

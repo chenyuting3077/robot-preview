@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { JointDragControls } from '../../src/utils/JointDragControls.js';
 import { DragStateManager } from '../../src/utils/DragStateManager.js';
+import { HighlightManager } from '../../src/renderer/HighlightManager.js';
+import { intersectDisplayed } from '../../src/utils/picking.js';
 
 // base --(revolute j about Z)--> arm; arm has a visual box and a collision box at x = 1.
 function robot() {
@@ -104,7 +106,6 @@ test('with visual and collision hidden, nothing is hovered or grabbed', () => {
     assert.deepEqual(moved, []);
 });
 
-// MuJoCo simulation drag: bodies are flat groups of geoms carrying bodyID.
 function physicsScene() {
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
@@ -131,4 +132,56 @@ test('physics drag grabs a shown body and ignores a hidden one', () => {
         s.drag.start(50, 50);
         assert.equal(s.drag.physicsObject, null);
     }
+});
+
+test('physics drag ignores a wireframe geom, which is drawn only along its edges', () => {
+    const s = physicsScene();
+    s.geom.material.wireframe = true;
+    s.drag.start(50, 50);
+    assert.equal(s.drag.physicsObject, null);
+});
+
+test('a visual seen through another link\'s collision shell is the one hovered', () => {
+    const r = robot();
+    // base's oversized collision shell sits between the camera and arm's visual
+    const shell = Object.assign(new THREE.Group(), { isURDFCollider: true });
+    shell.add(new THREE.Mesh(new THREE.BoxGeometry(3, 3, 0.1), new THREE.MeshPhongMaterial()));
+    shell.position.z = 2;
+    r.model.threeObject.children[0].add(shell);
+    r.root.updateMatrixWorld(true);
+    const controls = hoverAt(r);
+    assert.equal(controls.hovered?.name, 'arm');
+    // off arm's visual, the shell is what is on screen
+    assert.equal(hoverAt(r, -1, 0).hovered?.name, 'base');
+});
+
+test('a hovered collision mesh keeps its see-through look, a little more opaque', () => {
+    const r = robot();
+    const original = r.collisionMesh.material;
+    Object.assign(original, { transparent: true, opacity: 0.35 });
+    const highlight = new HighlightManager({ redraw() {} });
+    highlight.highlightLink({ name: 'arm', threeObject: r.arm }, r.model, { showInfo: false });
+    assert.equal(r.visualMesh.material, highlight.highlightMaterial);
+    assert.notEqual(r.collisionMesh.material, highlight.highlightMaterial);
+    assert.ok(r.collisionMesh.material.transparent && Math.abs(r.collisionMesh.material.opacity - 0.5) < 1e-9, `opacity ${r.collisionMesh.material.opacity}`);
+    // unhighlighting also hides the hover tooltip
+    globalThis.document = { getElementById: () => null };
+    try {
+        highlight.unhighlightLink({ name: 'arm', threeObject: r.arm }, r.model);
+    } finally {
+        delete globalThis.document;
+    }
+    assert.equal(r.collisionMesh.material, original);
+});
+
+test('picking skips a face with no material, and objects off the raycaster layers', () => {
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    const ray = new THREE.Raycaster(new THREE.Vector3(0, 0, 5), new THREE.Vector3(0, 0, -1));
+    const unmaterialed = new THREE.Mesh(geometry, []);
+    unmaterialed.updateMatrixWorld(true);
+    assert.deepEqual(intersectDisplayed(ray, [unmaterialed]), []);
+    const layered = new THREE.Mesh(geometry, new THREE.MeshPhongMaterial());
+    layered.layers.set(3);
+    layered.updateMatrixWorld(true);
+    assert.deepEqual(intersectDisplayed(ray, [layered]), []);
 });

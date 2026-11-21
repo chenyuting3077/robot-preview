@@ -75,7 +75,9 @@ export class HighlightManager {
      */
     highlightLinkGeometry(linkObject, currentModel) {
         // Traverse current link and its fixed child links
-        const traverseNonRecursive = (obj, isRoot = false) => {
+        // urdf-loader flags the collider group, not its meshes
+        const traverseNonRecursive = (obj, isRoot = false, inCollider = false) => {
+            inCollider ||= Boolean(obj.isURDFCollider);
             // If not root and is URDFLink, stop (this is a non-fixed child link)
             if (!isRoot && (obj.type === 'URDFLink' || obj.isURDFLink)) {
                 return;
@@ -106,11 +108,6 @@ export class HighlightManager {
 
             // Process mesh
             if (obj.type === 'Mesh' || obj.isMesh) {
-                // Skip collision mesh (collision is highlighted separately)
-                if (obj.isURDFCollider) {
-                    return;
-                }
-
                 // Save original material
                 if (!obj.__origMaterial) {
                     obj.__origMaterial = obj.material;
@@ -118,7 +115,7 @@ export class HighlightManager {
 
                 // Check if this is a special visualization object
                 const isInertia = obj.userData?.isInertiaBox;
-                const isCollision = obj.userData?.isCollision || obj.userData?.isCollisionGeom;
+                const isCollision = inCollider || obj.userData?.isCollision || obj.userData?.isCollisionGeom;
                 const isCOM = obj.userData?.isCenterOfMass || (obj.parent && obj.parent.userData?.isCenterOfMass);
 
                 if (isInertia || isCollision) {
@@ -162,7 +159,7 @@ export class HighlightManager {
 
             // Recursively process children
             for (const child of obj.children) {
-                traverseNonRecursive(child, false);
+                traverseNonRecursive(child, false, inCollider);
             }
         };
 

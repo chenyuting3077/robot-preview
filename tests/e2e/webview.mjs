@@ -417,6 +417,16 @@ try {
     await display('show-collision', true);
     const collision = { hover: await hover(tip), drag: await drag(tip) };
     check('with only collision shown, hovering it highlights its link and a drag moves its joint', collision.hover === 'arm' && Math.abs(collision.drag) > 0.05, JSON.stringify(collision));
+    await display('show-visual', true);
+    await hover(middle);
+    const picked = await ev(`
+        const r = window.app.sceneManager.renderer.domElement.getBoundingClientRect();
+        const hit = window.app.pickMesh({ x: (${middle.x} - r.left) / r.width * 2 - 1, y: 1 - (${middle.y} - r.top) / r.height * 2 });
+        let collision = false;
+        for (let o = hit?.object; o; o = o.parent) collision ||= Boolean(o.isURDFCollider);
+        return { hit: !!hit, collision };`);
+    check('with both shown, the visual seen through the collision shell is what is picked', picked.hit && !picked.collision, JSON.stringify(picked));
+    await display('show-visual', false);
     await display('show-collision', false);
     const none = { hover: await hover(middle), drag: await drag(middle) };
     check('with visual and collision hidden, nothing is hovered or dragged', none.hover === null && none.drag === 0, JSON.stringify(none));

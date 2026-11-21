@@ -3,7 +3,7 @@
  * Used to apply forces when dragging objects during physics simulation
  */
 import * as THREE from 'three';
-import { intersectDisplayed } from './picking.js';
+import { pickDisplayed } from './picking.js';
 
 export class DragStateManager {
     constructor(scene, renderer, camera, container, controls) {
@@ -82,27 +82,24 @@ export class DragStateManager {
     start(x, y) {
         this.physicsObject = null;
         this.updateRaycaster(x, y);
-        const intersects = intersectDisplayed(this.raycaster, this.scene.children, this.camera);
+        const picked = pickDisplayed(this.raycaster, this.scene.children, this.camera, ({ object }) => object.bodyID !== undefined && object.bodyID > 0);
 
-        for (let i = 0; i < intersects.length; i++) {
-            const obj = intersects[i].object;
-            if (obj.bodyID !== undefined && obj.bodyID > 0) {
-                this.physicsObject = obj;
-                this.grabDistance = intersects[i].distance;
-                const hit = this.raycaster.ray.origin.clone();
-                hit.addScaledVector(this.raycaster.ray.direction, this.grabDistance);
-                this.arrow.position.copy(hit);
-                this.active = true;
-                this.controls.enabled = false;
-                this.localHit = obj.worldToLocal(hit.clone());
-                this.worldHit.copy(hit);
-                this.currentWorld.copy(hit);
-                this.arrow.visible = true;
+        if (picked) {
+            const obj = picked.object;
+            this.physicsObject = obj;
+            this.grabDistance = picked.distance;
+            const hit = this.raycaster.ray.origin.clone();
+            hit.addScaledVector(this.raycaster.ray.direction, this.grabDistance);
+            this.arrow.position.copy(hit);
+            this.active = true;
+            this.controls.enabled = false;
+            this.localHit = obj.worldToLocal(hit.clone());
+            this.worldHit.copy(hit);
+            this.currentWorld.copy(hit);
+            this.arrow.visible = true;
 
-                // Highlight selected object
-                this.highlightBody(obj);
-                break;
-            }
+            // Highlight selected object
+            this.highlightBody(obj);
         }
     }
 
