@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Click a part in the view to select its prim: it is boxed, marked in the Stage panel, and its path shown with each level clickable; a row's name selects too, Esc clears.
 - `.usda` `variantSet` blocks are read, with local opinions still stronger than the selected variant.
 - Paths into a USDZ (`scene.usdz[0/points.usd]`), as Isaac Sim 6 neural reconstruction stages use, are followed.
 - Isaac Sim's OmniPBR materials show their colour, texture, metallic and roughness instead of white.

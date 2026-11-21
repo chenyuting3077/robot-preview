@@ -82,16 +82,46 @@ new ResizeObserver(() => {
 }).observe(document.body);
 const raycaster = new THREE.Raycaster();
 const visibleInScene = object => !object || (object.visible && visibleInScene(object.parent));
+const pickAt = ndc => {
+    raycaster.setFromCamera(ndc, camera);
+    raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
+    return raycaster.intersectObject(root, true).find(({ object }) => visibleInScene(object));
+};
 const cameraKeys = createCameraKeys({
     camera,
     target: controls.target,
     element: renderer.domElement,
-    pick: ndc => {
-        raycaster.setFromCamera(ndc, camera);
-        raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
-        return raycaster.intersectObject(root, true).find(({ object }) => visibleInScene(object))?.point;
-    },
+    pick: ndc => pickAt(ndc)?.point,
     frame: () => localBox && frame()
+});
+
+// A click (a press that did not drag the view) on a USD stage selects the prim under the cursor. The raycast runs
+// per click, never per pointer move: on a 1.24M-triangle URDF a hover raycast cost orbiting 10 fps. A click on
+// Isaac's G1 (1.1M faces) takes 2 ms at the median and 136 ms at worst over 20 rays (node, Apple M2).
+let usdStage = null;
+let selectionBox = null;
+function selectPrim(prim) {
+    selectionBox?.removeFromParent();
+    selectionBox?.dispose();
+    // A box, not a recoloured material: cheap on million-triangle robots and visible on any colour.
+    selectionBox = prim && Object.assign(new THREE.BoxHelper(prim, 0x0a84ff), { raycast: () => {} });
+    if (selectionBox) scene.add(selectionBox);
+    usdStage?.panel.select(prim);
+    wake();
+}
+let pressedAt = null;
+renderer.domElement.addEventListener('pointerdown', event => { pressedAt = event.button === 0 ? [event.clientX, event.clientY] : null; });
+renderer.domElement.addEventListener('pointerup', event => {
+    if (!usdStage || !pressedAt || Math.hypot(event.clientX - pressedAt[0], event.clientY - pressedAt[1]) > 4) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    let prim = pickAt(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1))?.object;
+    while (prim?.userData.splat) prim = prim.parent;
+    let inStage = prim;
+    while (inStage && inStage !== usdStage.group) inStage = inStage.parent;
+    selectPrim(inStage ? prim : null);
+});
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && selectionBox) selectPrim(null);
 });
 controls.addEventListener('change', wake);
 renderer.setAnimationLoop(() => {
@@ -299,7 +329,7 @@ async function loadUsd(info) {
     info.notShown = notShown.map(([type, count]) => `${type} ×${count}`).join(', ');
     info.unit = metersPerUnit && ({ 1: 'm', 0.01: 'cm', 0.001: 'mm' }[metersPerUnit] ?? `${metersPerUnit} m`);
     for (const { object, ply } of gaussians) object.add(await loadSplat(ply, info, 'gaussians.ply'));
-    buildStage(group);
+    usdStage = { group, panel: buildStage(group, { onSelect: selectPrim }) };
     return withUp(group, upAxis === 'Y' ? '+Y' : '+Z');
 }
 
@@ -456,6 +486,7 @@ function setUp(up) {
     root.rotation.set(...UP[up]);
     cloudGround = isCloud && nearZeroPlane() ? 0 : null;
     frame();
+    selectionBox?.update();
     if (helpers.grid) setHelper('grid', true);
 }
 

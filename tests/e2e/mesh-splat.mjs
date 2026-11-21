@@ -289,6 +289,43 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 const rows = [...document.querySelectorAll('#stage-panel .prim-row')];
                 return rows.map(row => row.querySelector('.prim-name span').textContent + ':' + row.querySelector('.prim-type').textContent + ':' + row.querySelector('.prim-eye').getAttribute('aria-pressed')).join(',');
             })()`);
+            const shotChange = (a, b) => evaluate(`(async () => {
+                const load = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/jpeg;base64,' + src; });
+                const [x, y] = await Promise.all([load('${a}'), load('${b}')]);
+                const px = img => { const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0); return g.getImageData(0, 0, c.width, c.height).data; };
+                const p = px(x), q = px(y); let n = 0;
+                for (let i = 0; i < p.length; i += 4) if (Math.abs(p[i] - q[i]) + Math.abs(p[i + 1] - q[i + 1]) + Math.abs(p[i + 2] - q[i + 2]) > 40) n++;
+                return n / (p.length / 4);
+            })()`);
+            // Picking: a Stage row selects and boxes its prim, Escape clears, a click on the view selects what it hits
+            // and a click on nothing clears.
+            const selectedName = () => evaluate(`document.querySelector('#stage-panel .prim-row.selected .prim-name span')?.textContent ?? ''`);
+            // An idle view draws nothing, and headless Chrome may then capture a blank canvas: wake it first.
+            await evaluate(`window.dispatchEvent(new Event('input'))`);
+            await sleep(300);
+            const unpicked = await shot();
+            await evaluate(`[...document.querySelectorAll('#stage-panel .prim-row')].find(row => row.querySelector('.prim-name span').textContent === 'Tri').querySelector('.prim-name span').click()`);
+            await sleep(600);
+            const boxed = await shotChange(unpicked, await shot());
+            const byRow = `${await selectedName()} ${await evaluate(`document.getElementById('prim-path').textContent`)}`;
+            await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+            const cleared = await evaluate(`!document.querySelector('#stage-panel .prim-row.selected') && document.getElementById('prim-path').hidden`);
+            const click = async (x, y) => {
+                for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+                await sleep(50);
+            };
+            let byClick = '';
+            for (let y = 0.15; y < 0.95 && byClick !== 'Tri'; y += 0.1) {
+                for (let x = 0.05; x < 0.6 && byClick !== 'Tri'; x += 0.1) {
+                    await click(Math.round(x * size[0]), Math.round(y * size[1]));
+                    byClick = await selectedName();
+                }
+            }
+            await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
+            const emptyClears = await selectedName() === '';
+            const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears;
+            camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears}`;
             const before = await shot();
             await evaluate(`['Tri', 'Gaussians'].forEach(name => [...document.querySelectorAll('#stage-panel .prim-row')].find(row => row.querySelector('.prim-name span').textContent === name).querySelector('.prim-eye').click())`);
             await sleep(600);
@@ -304,10 +341,10 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             const parentOff = await evaluate(`(() => {
                 document.querySelector('#stage-panel .prim-row .prim-eye').click();
                 const allOff = [...document.querySelectorAll('#stage-panel .prim-eye')].every(eye => eye.querySelector('line'));
-                document.querySelector('#stage-panel .prim-name').click();
+                document.querySelector('#stage-panel .prim-toggle').click();
                 return allOff && document.querySelectorAll('#stage-panel .prim-row').length === 1;
             })()`);
-            state.treeOk = tree === 'World:Xform:true,Tri:Mesh:true,Hidden:Mesh:false,Gaussians:ParticleField3DGaussianSplat:true' && changed > 0.05 && parentOff;
+            state.treeOk = tree === 'World:Xform:true,Tri:Mesh:true,Hidden:Mesh:false,Gaussians:ParticleField3DGaussianSplat:true' && changed > 0.05 && parentOff && pickOk;
             camera += ` tree ${tree} hide ${(changed * 100).toFixed(1)}% parentOff ${parentOff}`;
         }
         if (/^(cube\.stl|cloud\.ply|gauss3d\.ply)$/.test(name)) {
