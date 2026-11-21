@@ -252,6 +252,17 @@ test('Add to Point Cloud View goes to the view used last, and opens a new one wh
     assert.deepEqual(names(panels[0].panel), ['scan.bin', 'one.pcd', 'two.pcd'], 'a closed view is forgotten');
 });
 
+test('Add to Point Cloud View waits out a late delete of the opened file and skips a link to a listed file', async () => {
+    const { env, panel, root, at } = await open({ 'map.pcd': 'map', 'a.pcd': 'a' });
+    fs.symlinkSync(at('map.pcd'), path.join(root, 'link.pcd'));
+    const uri = file => env.vscode.Uri.file(file);
+    // A rename-style save whose delete event comes after the create: the file is there.
+    const deleting = env.state.watchers[0].delete({ fsPath: at('map.pcd') });
+    await env.state.commands['robotPreviewMeshSplat.addToView'](uri(at('a.pcd')), [uri(at('a.pcd')), uri(path.join(root, 'link.pcd'))]);
+    await deleting;
+    assert.deepEqual(names(panel), ['map.pcd', 'a.pcd']);
+});
+
 test('the USD extension, which ships this file, registers no Open as points command', () => {
     const usd = fileURLToPath(new URL('../../packages/usd', import.meta.url));
     const root = workspace({ 'scene.usda': '#usda 1.0' });
