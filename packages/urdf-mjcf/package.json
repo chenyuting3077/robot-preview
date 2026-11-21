@@ -34,7 +34,10 @@
         "command": "robotPreviewUrdf.open",
         "title": "Open Preview to the Side",
         "category": "Robot Preview",
-        "icon": "$(preview)"
+        "icon": {
+          "light": "images/preview-light.svg",
+          "dark": "images/preview-dark.svg"
+        }
       },
       {
         "command": "robotPreviewUrdf.setXacroArgs",
@@ -56,32 +59,32 @@
       "editor/title": [
         {
           "command": "robotPreviewUrdf.open",
-          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/",
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/i",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
           "command": "robotPreviewUrdf.open",
-          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/"
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/i"
         },
         {
           "command": "robotPreviewUrdf.setXacroArgs",
-          "when": "resourceExtname == .xacro"
+          "when": "resourceExtname =~ /^\\.xacro$/i"
         }
       ],
       "commandPalette": [
         {
           "command": "robotPreviewUrdf.open",
-          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/"
+          "when": "resourceExtname =~ /^\\.(urdf|xacro|xml|sdf|world)$/i"
         },
         {
           "command": "robotPreviewUrdf.setXacroArgs",
-          "when": "resourceExtname == .xacro"
+          "when": "resourceExtname =~ /^\\.xacro$/i"
         },
         {
           "command": "robotPreviewUrdf.exportUrdf",
-          "when": "resourceExtname == .xacro"
+          "when": "resourceExtname =~ /^\\.xacro$/i"
         }
       ]
     },

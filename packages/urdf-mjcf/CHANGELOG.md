@@ -9,6 +9,8 @@
 - SDF preview: `.sdf` model and `.world` files, with nested models, `<include>` of `model://` and relative models (the newest SDF their `model.config` lists), `relative_to` / `expressed_in` poses and the older SDF axis rules. Meshes, capsules, ellipsoids, cones and planes are drawn; Gazebo material scripts such as `Gazebo/Grey` get their colors. Click a link to jump to it, also inside an included model. An include that cannot be found, such as a Fuel URL, is skipped and named in Problems.
 - MJCF textures: 2D `<texture>` files and builtin checker, gradient and flat textures with their marks, placed by `texrepeat` and `texuniform` as MuJoCo does, also while simulating. The MuJoCo Menagerie floor and Cassie's texture now look as they do in MuJoCo.
 - MJCF geoms directly in `<worldbody>` (a scene floor) take their material's color; a geom's `rgba` overrides its material unless it is MuJoCo's default `0.5 0.5 0.5 1`.
+- The preview button and menu entries also show for upper-case extensions (`.URDF`, `.XML`, `.Xacro`, `.SDF`).
+- The editor title's preview button has its own icon (code beside an axis tripod) instead of the generic preview icon Markdown uses too.
 
 ## 0.4.6
 
