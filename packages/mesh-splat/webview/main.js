@@ -183,8 +183,9 @@ function selectPrim(prim) {
 let pressedAt = null;
 renderer.domElement.addEventListener('pointerdown', event => { pressedAt = event.button === 0 ? [event.clientX, event.clientY] : null; });
 renderer.domElement.addEventListener('pointerup', event => {
-    if (!usdStage || !picking || !pressedAt || Math.hypot(event.clientX - pressedAt[0], event.clientY - pressedAt[1]) > 4) return;
-    selectPrim(primAt(event));
+    if (!usdStage || !pressedAt || Math.hypot(event.clientX - pressedAt[0], event.clientY - pressedAt[1]) > 4) return;
+    // With picking off a click picks nothing, but it still clears a selection made before or from the Stage panel.
+    selectPrim(picking ? primAt(event) : null);
 });
 let lastMove = null;
 renderer.domElement.addEventListener('pointermove', event => {

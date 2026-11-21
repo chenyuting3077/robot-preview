@@ -339,7 +339,10 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             const hoverName = await hoverAt(...onTri);
             const hoverOff = await hoverAt(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
             // With picking turned off neither a rest nor a click picks; turned on again, a click does.
+            await click(...onTri);
             await evaluate(`document.getElementById('pick-btn').click()`);
+            await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
+            const offClears = await selectedName() === '';
             const offPressed = await evaluate(`document.getElementById('pick-btn').getAttribute('aria-pressed')`);
             const offHover = await hoverAt(...onTri);
             await click(...onTri);
@@ -360,7 +363,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             const hiddenBox = await shotChange(hiddenSelected, await viewShot());
             await evaluate(`${triRow}.querySelector('.prim-eye').click()`);
             await sleep(300);
-            const toggleOk = hiddenBox < 0.001 && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri';
+            const toggleOk = hiddenBox < 0.001 && offClears && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri';
             const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '' && toggleOk;
             camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}" toggle ${toggleOk} hidden-box ${(hiddenBox * 100).toFixed(2)}%`;
             const before = await shot();
