@@ -315,15 +315,19 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
                 await sleep(50);
             };
-            let byClick = '';
+            // The whole grid is clicked: Tri must be hit somewhere, the Gaussian field never (splats are not picked).
+            const clicked = new Set();
             let onTri = null;
-            for (let y = 0.15; y < 0.95 && byClick !== 'Tri'; y += 0.1) {
-                for (let x = 0.05; x < 0.6 && byClick !== 'Tri'; x += 0.1) {
-                    onTri = [Math.round(x * size[0]), Math.round(y * size[1])];
-                    await click(...onTri);
-                    byClick = await selectedName();
+            for (let y = 0.15; y < 0.95; y += 0.1) {
+                for (let x = 0.05; x < 0.6; x += 0.1) {
+                    const at = [Math.round(x * size[0]), Math.round(y * size[1])];
+                    await click(...at);
+                    const picked = await selectedName();
+                    clicked.add(picked);
+                    if (picked === 'Tri') onTri ??= at;
                 }
             }
+            const byClick = [...clicked].filter(Boolean).sort().join('+');
             await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
             const emptyClears = await selectedName() === '';
             // Resting the pointer names the part under it; moving off the model clears the name.
@@ -334,8 +338,19 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             };
             const hoverName = await hoverAt(...onTri);
             const hoverOff = await hoverAt(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
-            const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '';
-            camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}"`;
+            // With picking turned off neither a rest nor a click picks; turned on again, a click does.
+            await evaluate(`document.getElementById('pick-btn').click()`);
+            const offPressed = await evaluate(`document.getElementById('pick-btn').getAttribute('aria-pressed')`);
+            const offHover = await hoverAt(...onTri);
+            await click(...onTri);
+            const offClick = await selectedName();
+            await evaluate(`document.getElementById('pick-btn').click()`);
+            await click(...onTri);
+            const backOn = await selectedName();
+            await click(Math.round(size[0] * 0.02), Math.round(size[1] * 0.97));
+            const toggleOk = offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri';
+            const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '' && toggleOk;
+            camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}" toggle ${toggleOk}`;
             const before = await shot();
             await evaluate(`['Tri', 'Gaussians'].forEach(name => [...document.querySelectorAll('#stage-panel .prim-row')].find(row => row.querySelector('.prim-name span').textContent === name).querySelector('.prim-eye').click())`);
             await sleep(600);

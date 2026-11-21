@@ -5,6 +5,7 @@
 - The grid shows on opening and grid, axes and bounds stay as last left.
 - Click a part in the view to select its prim: it is boxed, marked in the Stage panel, and its path shown with each level clickable; a row's name selects too, Esc clears.
 - Resting the pointer on a part boxes it faintly and names it by the cursor with its path's last three levels, such as `left_hip_roll_link › visuals › mesh`.
+- Picking skips Gaussian fields, and the arrow button turns it off for orbiting a scene; the choice is kept.
 - `.usda` `variantSet` blocks are read, with local opinions still stronger than the selected variant.
 - Paths into a USDZ (`scene.usdz[0/points.usd]`), as Isaac Sim 6 neural reconstruction stages use, are followed.
 - Isaac Sim's OmniPBR materials show their colour, texture, metallic and roughness instead of white.

@@ -54,3 +54,15 @@ test('Display helpers left on for a kind of model open the next file, and unknow
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(second) }, next);
     assert.deepEqual(helpersOf(next.webview.html), { cloud: ['grid'], model: [] });
 });
+
+test('turning part picking off is kept for the next file opened', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-pick-'));
+    const [first, second] = ['a.usd', 'b.usd'].map(name => path.join(root, name));
+    for (const file of [first, second]) fs.writeFileSync(file, '#usda 1.0\n');
+    const { env, panel } = await openMeshSplat(root, first);
+    assert.match(panel.webview.html, /data-pick="true"/);
+    await panel.listener({ type: 'pick', on: false });
+    const next = fakePanel();
+    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(second) }, next);
+    assert.match(next.webview.html, /data-pick="false"/);
+});

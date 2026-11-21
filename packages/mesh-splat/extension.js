@@ -19,10 +19,12 @@ function stepCache(cacheDir, fileUri, stat, build) {
 // The Display menu's grid / axes / bounds, as last left for point clouds and for other models, open the next file.
 const HELPERS_KEY = 'displayHelpers';
 const HELPER_NAMES = ['grid', 'axes', 'bounds'];
+// Whether a USD view picks parts under the pointer, as last left.
+const PICK_KEY = 'pickParts';
 const validHelpers = helpers => Object.fromEntries(['cloud', 'model'].filter(kind => Array.isArray(helpers?.[kind]))
     .map(kind => [kind, helpers[kind].filter(name => HELPER_NAMES.includes(name))]));
 
-async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn, helpers) {
+async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn, helpers, pick) {
     const source = webview.cspSource;
     const csp = [
         "default-src 'none'",
@@ -41,7 +43,8 @@ async function renderHtml(template, webview, distUri, fileUri, stat, cache, turn
         piece: READ_PIECE,
         render: turn,
         cached: cache ? await vscode.workspace.fs.stat(cache.uri).then(() => webview.asWebviewUri(cache.uri), () => '') : '',
-        helpers: JSON.stringify(helpers)
+        helpers: JSON.stringify(helpers),
+        pick: String(pick)
     };
     return template
         .replace(/<html lang="[^"]*">/, `<html lang="${vscode.env.language}">`)
@@ -89,7 +92,7 @@ function activate(context) {
                 const stat = await vscode.workspace.fs.stat(document.uri).catch(() => null);
                 if (!stat) return;
                 const cache = stepCache(cacheDir, document.uri, stat, build);
-                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache, turn, context.globalState.get(HELPERS_KEY) ?? {});
+                const html = await renderHtml(template, panel.webview, distUri, document.uri, stat, cache, turn, context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true);
                 if (turn !== renders) return;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
                 panel.webview.html = html;
@@ -102,6 +105,7 @@ function activate(context) {
                 readDone: message => reader.done(message.id),
                 stepCache: message => writer.receive(message),
                 screenshot: message => saveScreenshot(document.uri, message.data),
+                pick: message => context.globalState.update(PICK_KEY, message.on !== false),
                 helpers: message => context.globalState.update(HELPERS_KEY, { ...context.globalState.get(HELPERS_KEY), ...validHelpers(message.helpers) })
             };
             panel.webview.onDidReceiveMessage(message => Object.hasOwn(handlers, message?.type) && handlers[message.type](message));
