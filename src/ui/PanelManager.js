@@ -45,7 +45,6 @@ export function placement(layout, v = view()) {
     return { left: Math.round(left), top: Math.round(top), width: Math.round(width), height: Math.round(height) };
 }
 
-// Where a header drag released at (x, y) docks; top or bottom alone does not.
 export function snapZone(x, y, v = view()) {
     const left = x < SNAP_ZONE, right = x > v.width - SNAP_ZONE;
     const top = y < SNAP_ZONE, bottom = y > v.height - SNAP_ZONE;
@@ -53,18 +52,19 @@ export function snapZone(x, y, v = view()) {
     return left ? 'left' : right ? 'right' : null;
 }
 
-const validLayout = layout => layout && ['left', 'top', 'width', 'height'].every(key => Number.isFinite(layout[key]));
+// A layout without a rect only says the panel is maximized from its CSS place.
+const hasRect = layout => !!layout && ['left', 'top', 'width', 'height'].every(key => Number.isFinite(layout[key]));
 
 export class PanelManager {
     constructor() {
         this.panels = new Map();
         this.modelGraphView = null;
         this.savedGraphView = null;
+        this.graphTimer = null;
         this.onLayoutChange = null;
         window.addEventListener('resize', () => this.renderAll());
     }
 
-    // Also on toolbar size changes: docks and the top clamp sit below it.
     renderAll() {
         for (const state of this.panels.values()) if (!state.busy) this.render(state, false);
     }
@@ -91,31 +91,34 @@ export class PanelManager {
     setLayouts(layouts = {}) {
         for (const [id, state] of this.panels) {
             const layout = layouts[id];
-            if (!validLayout(layout)) continue;
-            state.layout = { ...layout, dock: layout.dock || null, maximized: !!layout.maximized };
+            if (hasRect(layout)) state.layout = { ...layout, dock: layout.dock || null, maximized: !!layout.maximized };
+            else if (typeof layout?.maximized === 'boolean') state.layout = { maximized: layout.maximized };
+            else continue;
             this.render(state, false);
             this.showMaximized(state);
         }
     }
 
+    // Without animation the inline transition is put back afterwards, so the show fade it may hold goes on.
     render({ panel, layout }, animate = true) {
-        if (!layout) return;
+        if (!hasRect(layout)) return;
         const rect = placement(layout);
+        const transition = panel.style.transition;
         if (!animate) panel.style.transition = 'none';
         Object.assign(panel.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
         if (!animate) {
             panel.offsetHeight;
-            panel.style.transition = '';
+            panel.style.transition = transition;
         }
     }
 
     // Computed left/top, not the bounding rect: during the opening slideIn the
     // rect is 10 px off and would be pinned as the panel's place.
     adopt(state) {
-        if (state.layout) return;
+        if (hasRect(state.layout)) return;
         const { panel } = state;
         const style = getComputedStyle(panel);
-        state.layout = { left: Math.round(parseFloat(style.left)), top: Math.round(parseFloat(style.top)), width: panel.offsetWidth, height: panel.offsetHeight, dock: null, maximized: false };
+        state.layout = { left: Math.round(parseFloat(style.left)), top: Math.round(parseFloat(style.top)), width: panel.offsetWidth, height: panel.offsetHeight, dock: null, maximized: !!state.layout?.maximized };
         this.render(state, false);
     }
 
@@ -123,7 +126,7 @@ export class PanelManager {
     // from maximized, a snap, the show fade), whose in-between rect must not be
     // measured and saved.
     startRect(state) {
-        if (state.layout) {
+        if (hasRect(state.layout)) {
             this.render(state, false);
             return placement(state.layout);
         }
@@ -256,6 +259,7 @@ export class PanelManager {
             state.busy = false;
             showCursor(null);
             document.documentElement.style.cursor = '';
+            panel.style.transition = '';
             this.render(state, false);
             document.removeEventListener('mousemove', resize);
             document.removeEventListener('mouseup', stopResize);
@@ -339,20 +343,24 @@ export class PanelManager {
             const state = this.panels.get(button.getAttribute('data-panel-id'));
             if (!state) return;
             button.addEventListener('click', () => {
-                this.adopt(state);
+                // Not adopted: an untouched panel restores to its CSS place.
                 const maximize = !state.panel.classList.contains('maximized');
-                state.layout.maximized = maximize;
+                state.layout = { ...state.layout, maximized: maximize };
                 this.showMaximized(state);
                 this.changed(state);
 
                 // After the panel's 0.4 s transition, so the graph fits the final size.
+                // While a fit or restore is pending the view is in between, not the user's.
                 if (state.id !== 'floating-model-tree' || !this.modelGraphView) return;
+                const pending = this.graphTimer !== null;
+                clearTimeout(this.graphTimer);
+                const done = action => { this.graphTimer = setTimeout(() => { this.graphTimer = null; action(); }, 450); };
                 if (maximize) {
-                    this.savedGraphView = this.modelGraphView.saveView();
-                    setTimeout(() => this.modelGraphView.fitToView(true, 600), 450);
+                    if (!pending) this.savedGraphView = this.modelGraphView.saveView();
+                    done(() => this.modelGraphView.fitToView(true, 600));
                 } else {
                     const saved = this.savedGraphView;
-                    setTimeout(() => this.modelGraphView.restoreView(saved, 600), 450);
+                    done(() => this.modelGraphView.restoreView(saved, 600));
                 }
             });
         });

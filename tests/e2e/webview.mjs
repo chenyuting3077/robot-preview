@@ -215,6 +215,14 @@ async function floatingPanels() {
     const clicked = await ev(`return { inline: document.getElementById('${JOINTS}').style.top, saved: window.__out.some(m => m.type === 'panelLayout' && m.id === '${JOINTS}') }`);
     check('a click on an untouched panel header keeps its CSS place and saves no layout', clicked.inline === '' && !clicked.saved, JSON.stringify(clicked));
 
+    const maximizeButton = id => `document.querySelector('.panel-maximize-btn[data-panel-id=${id}]').click()`;
+    await ev(maximizeButton(JOINTS));
+    await sleep(600);
+    await ev(maximizeButton(JOINTS));
+    await sleep(600);
+    const unpinned = await ev(`return { inline: document.getElementById('${JOINTS}').style.top, saved: window.__out.filter(m => m.type === 'panelLayout' && m.id === '${JOINTS}').at(-1)?.layout }`);
+    check('maximize and restore of an untouched panel keep its CSS place', unpinned.inline === '' && unpinned.saved?.maximized === false && !('left' in unpinned.saved), JSON.stringify(unpinned));
+
     await ev(`if (!document.getElementById('toggle-model-tree').classList.contains('active')) document.getElementById('toggle-model-tree').click()`);
     await sleep(800);
 
@@ -353,8 +361,18 @@ async function floatingPanels() {
 
     r = await rectOf(TREE);
     await drag(header(r), { x: v.width - 5, y: 400 });
+    r = await rectOf(TREE);
+    await send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: (r.left + r.right) / 2, y: (r.top + r.bottom) / 2, deltaX: 0, deltaY: -200 });
+    await sleep(300);
+    const zoomedDocked = await graph();
+    await ev(`document.querySelector('.panel-close-btn[data-panel=${TREE}]').click()`);
+    await sleep(400);
     await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 640, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    await ev(`document.getElementById('toggle-model-tree').click()`);
     await sleep(500);
+    g = await graph();
+    check('a zoomed graph whose panel changed size while hidden keeps its centre point', near(g.k, zoomedDocked.k, 1e-6) && near(g.centre[0], zoomedDocked.centre[0], 1) && near(g.centre[1], zoomedDocked.centre[1], 1), JSON.stringify({ zoomedDocked, g }));
     const small = await view();
     after = await rectOf(TREE);
     check('a right-docked panel stays docked at full height when the view shrinks', near(after.right, small.width - MARGIN) && near(after.top, small.toolbar + MARGIN) && near(after.height, small.height - small.toolbar - 2 * MARGIN), JSON.stringify({ after, small }));

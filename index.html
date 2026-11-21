@@ -59,10 +59,10 @@
 
         /* Joint control floating panel */
         #floating-joints-panel {
-            top: calc(80px + 340px + 20px);
+            top: calc(var(--toolbar-bottom, 60px) + 20px + 340px + 20px);
             left: 20px;
             width: 360px;
-            height: calc(100vh - 80px - 340px - 40px);
+            height: calc(100vh - var(--toolbar-bottom, 60px) - 20px - 340px - 40px);
             transition: all 0.4s var(--spring);
         }
 

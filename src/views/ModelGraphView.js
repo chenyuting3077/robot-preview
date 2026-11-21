@@ -19,12 +19,13 @@ export class ModelGraphView {
 
         const svgNode = document.getElementById('model-graph-svg');
         if (svgNode) {
+            // Kept while hidden: the panel can change size then (a dock and a window resize).
             let size = null;
             new ResizeObserver(([entry]) => {
                 const { width, height } = entry.contentRect;
+                if (!(width > 0 && height > 0)) return;
                 const previous = size;
-                size = width > 0 && height > 0 ? { width, height } : null;
-                if (!size) return;
+                size = { width, height };
                 if (this.autoFit) this.fitToView(false);
                 else if (previous) this.panBy((width - previous.width) / 2, (height - previous.height) / 2);
             }).observe(svgNode);

@@ -311,7 +311,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         extensionUri: { fsPath: root },
         globalStorageUri: globalStorage && { fsPath: globalStorage, path: globalStorage },
         subscriptions: [],
-        globalState: { get: key => state.globalState.get(key), update: async (key, value) => state.globalState.set(key, value) },
+        globalState: { get: key => state.globalState.get(key), keys: () => [...state.globalState.keys()], update: async (key, value) => state.globalState.set(key, value) },
         workspaceState: { get: (key, fallback) => state.workspaceState.get(key) ?? fallback, update: async (key, value) => state.workspaceState.set(key, value) }
     };
 

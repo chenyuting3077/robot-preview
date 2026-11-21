@@ -1276,8 +1276,9 @@ class Preview {
         } else if (msg?.type === 'settings') {
             await this.context.globalState.update('settings', msg.settings);
         } else if (msg?.type === 'panelLayout') {
-            // Per panel: previews in other windows hold stale copies of the panels they did not move.
-            await this.context.globalState.update('panels', { ...this.context.globalState.get('panels'), [msg.id]: msg.layout });
+            // A key per panel: previews in other windows know only the panels they moved,
+            // and a merged object written from two windows would drop one of the writes.
+            await this.context.globalState.update(`panel:${msg.id}`, msg.layout);
         } else if (msg?.type === 'diagnostics') {
             await this.onDiagnostics(msg);
         } else if (msg?.type === 'screenshot') {
@@ -1315,7 +1316,7 @@ class Preview {
                 if (!listing.paths.has(fsPath)) this.syntaxDiagnostics.delete(fsPath);
             }
             this.panel.webview.postMessage(full
-                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), panels: this.context.globalState.get('panels'), xacroArgs: this.xacroArgsFor(primary.fsPath), env: listing.env }
+                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), panels: Object.fromEntries(this.context.globalState.keys().filter(key => key.startsWith('panel:')).map(key => [key.slice(6), this.context.globalState.get(key)])), xacroArgs: this.xacroArgsFor(primary.fsPath), env: listing.env }
                 : { type: 'update', files, removed, primary: listing.primary, env: listing.env });
             const editor = vscode.window.activeTextEditor;
             if (full && editor) this.onSelectionChanged({ textEditor: editor, selections: editor.selections });
