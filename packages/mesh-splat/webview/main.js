@@ -95,12 +95,12 @@ const cameraKeys = createCameraKeys({
     frame: () => localBox && frame()
 });
 
-// A click (a press that did not drag the view) on a USD stage selects the prim under the cursor. The raycast runs
-// per click, never per pointer move: on a 1.24M-triangle URDF a hover raycast cost orbiting 10 fps. A click on
-// Isaac's G1 (1.1M faces) takes 2 ms at the median and 136 ms at worst over 20 rays (node, Apple M2).
-// Resting the pointer on a part (100 ms, never while dragging) boxes it faintly and names it by the cursor, for the
-// same reason: a raycast per resting point, not per move. The name is the path's last three levels: Isaac calls
-// every leaf "mesh", and the link it belongs to sits two levels up (left_hip_roll_link › visuals › mesh).
+// A click (a press that did not drag the view) on a USD stage selects the prim under the cursor. The URDF view's
+// hover raycast cost orbiting 10 fps on a 1.24M-triangle robot, so nothing here raycasts while dragging.
+// The part under a moving pointer (never while dragging) is boxed faintly and named by the cursor, raycast at most
+// every 40 ms: over 200 rays on G1 one takes 0.4 ms at the median, 9 ms at p99 and 33 ms at most, so a frame is
+// rarely lost; waiting for the pointer to rest 100 ms instead felt slow. The name is the path's last three levels:
+// Isaac calls every leaf "mesh", and the link it belongs to sits two levels up (left_hip_roll_link › visuals › mesh).
 let usdStage = null;
 let selected = null;
 let selectionBox = null;
@@ -112,8 +112,7 @@ const primBox = (prim, color) => {
     const box = Object.assign(new THREE.BoxHelper(prim, color), { raycast: () => {} });
     scene.add(box);
     return box;
-};
-const dropBox = box => {
+};const dropBox = box => {
     box?.removeFromParent();
     box?.dispose();
     return null;
@@ -133,7 +132,8 @@ function primAt(event) {
     const rect = renderer.domElement.getBoundingClientRect();
     raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
     raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
-    return raycaster.intersectObjects(usdStage.pickable, false).find(({ object }) => visibleInScene(object))?.object ?? null;
+    // Hidden prims (Isaac's collision meshes) are left out of the raycast, not filtered after it.
+    return raycaster.intersectObjects(usdStage.pickable.filter(visibleInScene), false)[0]?.object ?? null;
 }
 function hoverPrim(prim, event) {
     const label = $('hover-label');
@@ -164,17 +164,25 @@ renderer.domElement.addEventListener('pointerup', event => {
     if (!usdStage || !picking || !pressedAt || Math.hypot(event.clientX - pressedAt[0], event.clientY - pressedAt[1]) > 4) return;
     selectPrim(primAt(event));
 });
+let lastMove = null;
 renderer.domElement.addEventListener('pointermove', event => {
-    clearTimeout(hoverTimer);
     if (!usdStage || !picking) return;
     if (event.buttons) {
+        clearTimeout(hoverTimer);
+        hoverTimer = 0;
         hoverPrim(null);
         return;
     }
-    hoverTimer = setTimeout(() => hoverPrim(primAt(event), event), 100);
+    lastMove = event;
+    if (!$('hover-label').hidden) Object.assign($('hover-label').style, { left: `${event.clientX + 14}px`, top: `${event.clientY + 14}px` });
+    hoverTimer ||= setTimeout(() => {
+        hoverTimer = 0;
+        hoverPrim(primAt(lastMove), lastMove);
+    }, 40);
 });
 renderer.domElement.addEventListener('pointerleave', () => {
     clearTimeout(hoverTimer);
+    hoverTimer = 0;
     if (usdStage) hoverPrim(null);
 });
 document.addEventListener('keydown', event => {
