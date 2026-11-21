@@ -67,8 +67,8 @@
         }
 
         #floating-joints-panel.maximized {
-            top: 80px !important;
-            height: calc(100vh - 100px) !important;
+            top: calc(var(--toolbar-bottom, 60px) + 20px) !important;
+            height: calc(100vh - var(--toolbar-bottom, 60px) - 40px) !important;
         }
 
         #floating-joints-panel .floating-panel-content {
@@ -498,10 +498,10 @@
         }
 
         #floating-model-tree.maximized {
-            top: 80px !important;
+            top: calc(var(--toolbar-bottom, 60px) + 20px) !important;
             left: 20px !important;
             width: calc(100vw - 40px) !important;
-            height: calc(100vh - 100px) !important;
+            height: calc(100vh - var(--toolbar-bottom, 60px) - 40px) !important;
         }
 
         /* Over the resize border, children such as the header (move) and the graph (grab) show the resize cursor too. */

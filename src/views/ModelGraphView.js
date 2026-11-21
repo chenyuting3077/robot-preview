@@ -38,6 +38,7 @@ export class ModelGraphView {
         const svg = d3.select('#model-graph-svg');
         const emptyState = document.getElementById('graph-empty-state');
         const previousTransform = keepView && svg.node() ? d3.zoomTransform(svg.node()) : null;
+        if (!keepView) this.drawing = (this.drawing || 0) + 1;
 
         svg.selectAll('*:not(defs)').remove();
 
@@ -96,11 +97,15 @@ export class ModelGraphView {
 
         const container = svg.append('g').attr('class', 'zoom-container');
 
+        // A click on a node jitters by a pixel or two; only a real pan or zoom ends auto-fit.
+        let gestureStart = null;
         const zoom = d3.zoom()
             .scaleExtent([0.1, 4])
+            .on('start', (event) => { gestureStart = event.transform; })
             .on('zoom', (event) => {
                 container.attr('transform', event.transform);
-                if (event.sourceEvent) this.autoFit = false;
+                const t = event.transform, from = gestureStart || t;
+                if (event.sourceEvent && (Math.abs(t.k - from.k) > 1e-3 || Math.hypot(t.x - from.x, t.y - from.y) > 4)) this.autoFit = false;
             });
 
         svg.call(zoom);
@@ -816,11 +821,12 @@ export class ModelGraphView {
     saveView() {
         if (!this.currentSvg) return null;
         const { x, y, k } = d3.zoomTransform(this.currentSvg.node());
-        return { x, y, k, autoFit: this.autoFit };
+        return { x, y, k, autoFit: this.autoFit, drawing: this.drawing };
     }
 
     restoreView(view, duration = 0) {
-        if (!view || !this.currentSvg || !this.currentZoom) {
+        // A view saved before another model was drawn does not fit this one.
+        if (!view || view.drawing !== this.drawing || !this.currentSvg || !this.currentZoom) {
             this.fitToView(duration > 0, duration);
             return;
         }

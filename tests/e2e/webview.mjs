@@ -202,10 +202,20 @@ async function floatingPanels() {
 
     await ev(`await window.__send('load')`);
     await waitFor(`window.app.currentModel?.links?.has('left_arm')`, 10000);
+
+    // The joints panel has not been moved yet: a click on its header must not pin its CSS place.
+    let r = await rectOf(JOINTS);
+    await mouse('mouseMoved', header(r).x, header(r).y);
+    await mouse('mousePressed', header(r).x, header(r).y, true);
+    await mouse('mouseReleased', header(r).x, header(r).y);
+    await sleep(500);
+    const clicked = await ev(`return { inline: document.getElementById('${JOINTS}').style.top, saved: !!window.__out.filter(m => m.type === 'settings').at(-1)?.settings?.panels?.['${JOINTS}'] }`);
+    check('a click on an untouched panel header keeps its CSS place and saves no layout', clicked.inline === '' && !clicked.saved, JSON.stringify(clicked));
+
     await ev(`if (!document.getElementById('toggle-model-tree').classList.contains('active')) document.getElementById('toggle-model-tree').click()`);
     await sleep(800);
 
-    let r = await rectOf(TREE);
+    r = await rectOf(TREE);
     await drag(midRight(r), { x: r.right - 64, y: midRight(r).y });
     let after = await rectOf(TREE);
     check('the tree panel resizes from its right border, also beside the graph', near(after.width, r.width - 60) && near(after.left, r.left), JSON.stringify({ r, after }));
@@ -233,7 +243,8 @@ async function floatingPanels() {
     const topCursor = await cursorAt(midTop(r));
     await drag(midTop(r), { x: midTop(r).x, y: r.top - 57 });
     after = await rectOf(TREE);
-    check('the top border shows the resize cursor and resizes, also over the header', topCursor === 'ns-resize' && near(after.top, r.top - 60) && near(after.bottom, r.bottom), JSON.stringify({ topCursor, r, after }));
+    let v = await view();
+    check('the top border shows the resize cursor and resizes up to the toolbar, also over the header', topCursor === 'ns-resize' && after.top < r.top && near(after.top, Math.max(v.toolbar, r.top - 60)) && near(after.bottom, r.bottom), JSON.stringify({ topCursor, r, after, v }));
 
     r = after;
     await mouse('mouseMoved', (r.left + r.right) / 2, (r.top + r.bottom) / 2 + 20);
@@ -265,7 +276,11 @@ async function floatingPanels() {
     check('the joints panel resizes from its top border', near(after.top, r.top - 60) && near(after.bottom, r.bottom), JSON.stringify({ r, after }));
 
     // Snapping by dragging the header.
-    let v = await view();
+    r = await rectOf(TREE);
+    await drag(header(r), { x: 600, y: 5 });
+    after = await rectOf(TREE);
+    check('a panel dropped over the toolbar stays below it, so its header can be grabbed', after.top >= v.toolbar, JSON.stringify({ after, v }));
+
     r = await rectOf(TREE);
     await drag(header(r), { x: 6, y: 420 }, { release: false });
     const dockPreview = await preview();
@@ -290,6 +305,33 @@ async function floatingPanels() {
     check('releasing in a corner snaps the panel flush to it, size kept', near(after.right, v.width - MARGIN) && near(after.bottom, v.height - MARGIN) && near(after.width, r.width) && near(after.height, r.height), JSON.stringify({ r, after, v }));
 
     r = after;
+    await drag(midTop(r), { x: midTop(r).x, y: 5 });
+    await drag(header(await rectOf(TREE)), { x: v.width - 5, y: 5 });
+    after = await rectOf(TREE);
+    check('a tall panel snapped to a top corner fits between the toolbar and the bottom', near(after.top, v.toolbar + MARGIN) && after.bottom <= v.height - MARGIN + 1 && near(after.right, v.width - MARGIN), JSON.stringify({ after, v }));
+
+    r = after;
+    await drag(header(r), { x: 700, y: 300 }, { release: false });
+    const held = await rectOf(TREE);
+    await send('Emulation.setDeviceMetricsOverride', { width: 1380, height: 800, deviceScaleFactor: 1, mobile: false });
+    await sleep(300);
+    const heldAfterResize = await rectOf(TREE);
+    await drag(null, { x: 702, y: 300 });
+    await send('Emulation.clearDeviceMetricsOverride');
+    await sleep(300);
+    check('a window resize during a drag leaves the panel under the pointer', near(heldAfterResize.left, held.left) && near(heldAfterResize.top, held.top), JSON.stringify({ held, heldAfterResize }));
+
+    r = await rectOf(TREE);
+    await drag(header(r), { x: header(r).x - 100, y: header(r).y + 40 }, { release: false });
+    const lost = await rectOf(TREE);
+    for (const step of [1, 2, 3]) await mouse('mouseMoved', header(r).x - 100 - 40 * step, header(r).y + 40);
+    await sleep(100);
+    const afterLost = await rectOf(TREE);
+    await mouse('mouseReleased', header(r).x - 220, header(r).y + 40);
+    await sleep(600);
+    check('a drag ends when the button was released outside the view', near(afterLost.left, lost.left), JSON.stringify({ lost, afterLost }));
+
+    r = await rectOf(TREE);
     await drag(header(r), { x: v.width - 5, y: 400 });
     await send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 640, deviceScaleFactor: 1, mobile: false });
     await sleep(500);
@@ -327,7 +369,7 @@ async function floatingPanels() {
     await reopen();
     v = await view();
     after = await rectOf(TREE);
-    check('a panel saved in a bigger view opens inside a smaller one, shrunk to fit', after.left >= 0 && after.top >= 0 && after.right <= v.width && after.bottom <= v.height && near(after.width, tree.width) && near(after.height, v.height - 2 * MARGIN), JSON.stringify({ after, v }));
+    check('a panel saved in a bigger view opens inside a smaller one, shrunk to fit', after.left >= 0 && after.top >= 0 && after.right <= v.width && after.bottom <= v.height && near(after.width, tree.width) && near(after.height, v.height - v.toolbar - 2 * MARGIN), JSON.stringify({ after, v }));
     await send('Emulation.clearDeviceMetricsOverride');
 }
 

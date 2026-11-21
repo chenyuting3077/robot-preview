@@ -1,11 +1,8 @@
 /**
- * PanelManager - drag, resize, snap, maximize and the saved layout of the floating panels.
- *
- * A panel the user has not touched keeps its CSS position, which follows the
- * window. Once moved, resized or maximized it gets a layout: its rect in px, an
- * optional dock side and the maximized flag. The layout is the user's intent
- * and is not changed by the window size; what is shown is the layout clamped to
- * the current view, so a panel that had to shrink grows back with the window.
+ * A panel the user has not touched keeps its CSS place, which follows the
+ * window. The saved layout is the user's intent and the window size never
+ * changes it; only what is shown is clamped, so a panel that had to shrink in a
+ * small window grows back in a bigger one.
  */
 
 const MIN_WIDTH = 280;
@@ -25,11 +22,11 @@ function view() {
     return { width: window.innerWidth, height: window.innerHeight, top: toolbar ? toolbar.getBoundingClientRect().bottom : 0 };
 }
 
-// What a layout looks like in the current view.
+// Panels stay below the toolbar (z-index 100), or a header under it could not be grabbed.
 export function placement(layout, v = view()) {
     const { dock } = layout;
     let width = clamp(layout.width, MIN_WIDTH, v.width - 2 * MARGIN);
-    let height = clamp(layout.height, MIN_HEIGHT, v.height - 2 * MARGIN);
+    let height = clamp(layout.height, MIN_HEIGHT, v.height - v.top - 2 * MARGIN);
     let { left, top } = layout;
     if (dock === 'left' || dock === 'right') {
         top = v.top + MARGIN;
@@ -43,7 +40,7 @@ export function placement(layout, v = view()) {
     else if (dock?.endsWith('right')) left = v.width - MARGIN - width;
     if (!dock) {
         left = clamp(left, 0, v.width - width);
-        top = clamp(top, 0, v.height - height);
+        top = clamp(top, v.top, v.height - height);
     }
     return { left: Math.round(left), top: Math.round(top), width: Math.round(width), height: Math.round(height) };
 }
@@ -65,7 +62,7 @@ export class PanelManager {
         this.savedGraphView = null;
         this.onLayoutChange = null;
         window.addEventListener('resize', () => {
-            for (const state of this.panels.values()) this.render(state, false);
+            for (const state of this.panels.values()) if (!state.busy) this.render(state, false);
         });
     }
 
@@ -77,7 +74,7 @@ export class PanelManager {
         const panel = document.getElementById(panelId);
         const header = panel?.querySelector(headerSelector);
         if (!panel || !header) return;
-        const state = { id: panelId, panel, header, layout: null };
+        const state = { id: panelId, panel, header, layout: null, busy: false };
         this.panels.set(panelId, state);
         this.setupPanelDragAndResize(state);
     }
@@ -115,11 +112,13 @@ export class PanelManager {
         }
     }
 
-    // Takes over an untouched panel at the place its CSS (or a stray transform) shows it.
+    // Computed left/top, not the bounding rect: during the opening slideIn the
+    // rect is 10 px off and would be pinned as the panel's place.
     adopt(state) {
         if (state.layout) return;
-        const r = state.panel.getBoundingClientRect();
-        state.layout = { left: Math.round(r.left), top: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height), dock: null, maximized: false };
+        const { panel } = state;
+        const style = getComputedStyle(panel);
+        state.layout = { left: Math.round(parseFloat(style.left)), top: Math.round(parseFloat(style.top)), width: panel.offsetWidth, height: panel.offsetHeight, dock: null, maximized: false };
         state.panel.style.transform = '';
         this.render(state, false);
     }
@@ -128,13 +127,9 @@ export class PanelManager {
         this.onLayoutChange?.();
     }
 
+    // Two levels only, so panels never climb over the toolbar (100) and menus.
     bringToFront(panel) {
-        let maxZIndex = 50;
-        document.querySelectorAll('.floating-panel').forEach(p => {
-            const z = parseInt(getComputedStyle(p).zIndex) || 50;
-            if (z > maxZIndex && p !== panel) maxZIndex = z;
-        });
-        panel.style.zIndex = maxZIndex + 1;
+        document.querySelectorAll('.floating-panel').forEach(p => { p.style.zIndex = p === panel ? 52 : 51; });
     }
 
     snapPreview(panel) {
@@ -143,11 +138,10 @@ export class PanelManager {
             this.preview.className = 'panel-snap-preview';
         }
         if (this.preview.parentElement !== panel.parentElement) panel.parentElement.appendChild(this.preview);
-        this.preview.style.zIndex = (parseInt(panel.style.zIndex) || 50) - 1;
+        this.preview.style.zIndex = 51;
         return this.preview;
     }
 
-    // Resize borders, moving by the header, and snapping to the view's sides and corners.
     setupPanelDragAndResize(state) {
         const { panel, header } = state;
         const maximized = () => panel.classList.contains('maximized');
@@ -195,8 +189,9 @@ export class PanelManager {
             e.preventDefault();
             e.stopPropagation();
             this.adopt(state);
-            const r = panel.getBoundingClientRect();
-            resizing = { edge, x: e.clientX, y: e.clientY, left: r.left, top: r.top, width: r.width, height: r.height, last: e };
+            state.busy = true;
+            const style = getComputedStyle(panel);
+            resizing = { edge, x: e.clientX, y: e.clientY, left: parseFloat(style.left), top: parseFloat(style.top), width: panel.offsetWidth, height: panel.offsetHeight, last: e };
             showCursor(edge);
             document.documentElement.style.cursor = CURSORS[edge];
             panel.style.transition = 'none';
@@ -215,10 +210,10 @@ export class PanelManager {
                 rect.width = clamp(width - dx, MIN_WIDTH, Math.min(maxWidth, left + width));
                 rect.left = left + width - rect.width;
             }
-            const maxHeight = v.height - 2 * MARGIN;
+            const maxHeight = v.height - v.top - 2 * MARGIN;
             if (edge.includes('s')) rect.height = clamp(height + dy, MIN_HEIGHT, Math.min(maxHeight, v.height - top));
             if (edge.includes('n')) {
-                rect.height = clamp(height - dy, MIN_HEIGHT, Math.min(maxHeight, top + height));
+                rect.height = clamp(height - dy, MIN_HEIGHT, Math.min(maxHeight, top + height - v.top));
                 rect.top = top + height - rect.height;
             }
             return rect;
@@ -228,7 +223,9 @@ export class PanelManager {
             Object.assign(panel.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
         };
 
+        // A button released outside the webview sends no mouseup here.
         const resize = (e) => {
+            if (e.buttons === 0) return stopResize(resizing.last);
             e.preventDefault();
             resizing.last = e;
             frame ??= requestAnimationFrame(() => {
@@ -249,6 +246,7 @@ export class PanelManager {
                 dock: keepDock ? dock : null, ...(keepDock && undocked ? { undocked } : {}), maximized: false
             };
             resizing = null;
+            state.busy = false;
             showCursor(null);
             document.documentElement.style.cursor = '';
             this.render(state, false);
@@ -263,7 +261,6 @@ export class PanelManager {
 
         header.addEventListener('mousedown', (e) => {
             if (e.button !== 0 || maximized() || e.target.closest('button, select, input')) return;
-            this.adopt(state);
             const r = panel.getBoundingClientRect();
             dragging = { x: e.clientX, y: e.clientY, offsetX: e.clientX - r.left, offsetY: e.clientY - r.top, width: r.width, height: r.height, moved: false, zone: null };
             document.addEventListener('mousemove', drag);
@@ -271,9 +268,13 @@ export class PanelManager {
         });
 
         const drag = (e) => {
+            if (e.buttons === 0) return dragEnd();
             e.preventDefault();
             if (!dragging.moved) {
                 if (Math.hypot(e.clientX - dragging.x, e.clientY - dragging.y) < 3) return;
+                // Only now: a plain click on the header must not pin the panel's CSS place.
+                this.adopt(state);
+                state.busy = true;
                 dragging.moved = true;
                 header.style.cursor = 'grabbing';
                 panel.style.transition = 'none';
@@ -304,6 +305,7 @@ export class PanelManager {
             const { moved, left, top, width, height, zone } = dragging;
             dragging = null;
             if (!moved) return;
+            state.busy = false;
             header.style.cursor = '';
             panel.style.transition = '';
             if (this.preview) this.preview.style.display = 'none';
