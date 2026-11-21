@@ -470,3 +470,78 @@ test('the opened file under another spelling of its path is not added again', as
     await panel.listener({ type: 'addPaths', uris });
     assert.deepEqual(names(panel), ['map.pcd']);
 });
+
+test('a render that saw the opened file gone, finishing after a newer one, still lets files be added', async () => {
+    const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'scan.pcd': 'scan' });
+    const [watcher] = env.state.watchers;
+    const stat = env.vscode.workspace.fs.stat;
+    // A rename-style save: the change's stat finds the file missing and answers late; the create's finds it back.
+    let first = true;
+    env.vscode.workspace.fs.stat = async uri => {
+        if (first) {
+            first = false;
+            await new Promise(resolve => setTimeout(resolve, 50));
+            throw new Error('ENOENT');
+        }
+        return stat(uri);
+    };
+    fs.writeFileSync(at('map.pcd'), 'saved map');
+    await Promise.all([watcher.change({ fsPath: at('map.pcd') }), watcher.create({ fsPath: at('map.pcd') })]);
+    await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
+    assert.deepEqual(names(panel), ['map.pcd', 'scan.pcd']);
+});
+
+test('a delete event for the opened file that arrives after it is back does not lock the view\'s files', async () => {
+    const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'scan.pcd': 'scan' });
+    const [watcher] = env.state.watchers;
+    fs.writeFileSync(at('map.pcd'), 'saved map');
+    await watcher.create({ fsPath: at('map.pcd') });
+    await watcher.delete({ fsPath: at('map.pcd') });
+    await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
+    assert.deepEqual(names(panel), ['map.pcd', 'scan.pcd']);
+});
+
+test('closing the tab while a render waits on its stat ends that render quietly', async () => {
+    const { env, panel, at } = await open({ 'map.pcd': 'map' });
+    const [watcher] = env.state.watchers;
+    const html = panel.webview.html;
+    const stat = env.vscode.workspace.fs.stat;
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    env.vscode.workspace.fs.stat = async uri => (await held, stat(uri));
+    fs.writeFileSync(at('map.pcd'), 'saved map');
+    const rendering = watcher.change({ fsPath: at('map.pcd') });
+    panel.dispose();
+    release();
+    await rendering;
+    assert.equal(panel.webview.html, html, 'a closed tab gets no page');
+});
+
+test('a deleted added file re-renders the view with that file shown missing', async () => {
+    const { env, panel, at, url } = await open({ 'map.pgm': 'P5', 'scan.pcd': 'scan' });
+    await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
+    const watcher = env.state.watchers.find(({ pattern }) => pattern.pattern === 'scan.pcd');
+    fs.rmSync(at('scan.pcd'));
+    await watcher.delete?.({ fsPath: at('scan.pcd') });
+    assert.deepEqual(listed(panel).map(file => [file.name, !!file.missing]), [['map.pgm', false], ['scan.pcd', true]]);
+    // A deleted file is like a removed one: the view stays.
+    assert.match(panel.webview.html, /data-keep="1"/);
+});
+
+test('two files whose 64-bit file ids differ only past 2^53 (NTFS) are two files', async () => {
+    const { panel, at, url } = await open({ 'scan_a.pcd': 'a', 'scan_b.pcd': 'b' });
+    // As Node on Windows: the file id is exact as a bigint, rounded as a Number.
+    const ids = { [at('scan_a.pcd')]: 2n ** 60n + 1n, [at('scan_b.pcd')]: 2n ** 60n + 2n };
+    const statSync = fs.statSync;
+    fs.statSync = (file, options) => {
+        const stats = statSync(file, options);
+        if (!stats || !(file in ids)) return stats;
+        return Object.assign(stats, options?.bigint ? { ino: ids[file], dev: 7n } : { ino: Number(ids[file]), dev: 7 });
+    };
+    try {
+        await panel.listener({ type: 'addPaths', uris: [url('scan_b.pcd')] });
+    } finally {
+        fs.statSync = statSync;
+    }
+    assert.deepEqual(names(panel), ['scan_a.pcd', 'scan_b.pcd']);
+});

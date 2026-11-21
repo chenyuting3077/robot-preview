@@ -15,9 +15,10 @@ const inside = (dir, file) => {
 // macOS and Windows disks ignore case by default, so map.pcd and MAP.PCD are one file there.
 const samePath = (a, b) => (['darwin', 'win32'].includes(process.platform) ? a.toLowerCase() === b.toLowerCase() : a === b);
 // A link to a file in the view is that file too. Some file systems report no inode (0); then only the path tells.
+// NTFS file ids are 64-bit and pass 2^53, so as Numbers two files could compare equal: they are read as bigints.
 const sameFile = (a, b) => {
     if (samePath(a, b)) return true;
-    const [x, y] = [a, b].map(file => fs.statSync(file, { throwIfNoEntry: false }));
+    const [x, y] = [a, b].map(file => fs.statSync(file, { throwIfNoEntry: false, bigint: true }));
     return Boolean(x?.ino && x.ino === y?.ino && x.dev === y.dev);
 };
 // VS Code's glob cannot escape ']' (it always ends a range), so glob characters match any one character and the
@@ -163,19 +164,23 @@ function activate(context) {
             let keeps = true;
             // While the opened file is gone no page can be rendered, so the list stays as the page shows it.
             let openedGone = false;
+            // A render still waiting on a stat when the tab closes would find no files (and a disposed webview).
+            let disposed = false;
             const render = async (keep = false) => {
                 const turn = ++renders;
                 keeps &&= keep;
                 const stats = await Promise.all(files.map(file => vscode.workspace.fs.stat(file.uri).catch(() => null)));
-                // A rename-style save removes the file for a moment; the create that follows renders again.
+                if (disposed) return;
+                // A rename-style save removes the file for a moment; the create that follows renders again. A render
+                // whose stat answered late must not mark the file gone after a newer one found it back.
                 if (!stats[0]) {
-                    openedGone = true;
+                    if (turn === renders) openedGone = true;
                     return;
                 }
                 const cache = stepCache(cacheDir, document.uri, stats[0], build);
                 const html = await renderHtml(template, panel.webview, distUri, files.map((file, i) => ({ ...file, stat: stats[i], takesFiles })), cache, turn, keeps,
                     context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true, context.globalState.get(SETTINGS_KEY) ?? {});
-                if (turn !== renders) return;
+                if (turn !== renders || disposed) return;
                 keeps = true;
                 openedGone = false;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
@@ -190,6 +195,11 @@ function activate(context) {
                 panel.webview.html = html;
             };
             let pageRender = null;
+            const confirmGone = async () => {
+                const turn = renders;
+                const there = await vscode.workspace.fs.stat(document.uri).then(() => true, () => false);
+                if (!there && turn === renders) openedGone = true;
+            };
             const startReader = file => {
                 file.reader?.dispose();
                 const reader = fileReader(file.uri.fsPath, message => file.reader === reader && post({ ...message, file: file.id }));
@@ -202,7 +212,10 @@ function activate(context) {
                 // Editors that save by writing a new file and renaming it over the old one fire create, not change.
                 watcher.onDidChange(changed);
                 watcher.onDidCreate(changed);
-                if (!files.length) watcher.onDidDelete(event => event && samePath(event.fsPath, uri.fsPath) && (openedGone = true));
+                // A delete event can arrive after the create that follows it, so the opened file is looked at again.
+                // An added file that is deleted shows as missing, the view kept as for a removed one.
+                const opened = !files.length;
+                watcher.onDidDelete(event => event && samePath(event.fsPath, uri.fsPath) && (opened ? confirmGone() : render(true)));
                 const file = { id, uri, watcher, reader: null };
                 startReader(file);
                 files.push(file);
@@ -285,6 +298,7 @@ function activate(context) {
                 views.unshift(view);
             });
             panel.onDidDispose(() => {
+                disposed = true;
                 views.splice(views.indexOf(view), 1);
                 [...files].forEach(drop);
                 writer.dispose();

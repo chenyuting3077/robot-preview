@@ -926,6 +926,45 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(slowDir, { recursive: true, force: true });
 }
 
+// A 200 m cloud added to a 10 cm one: the view kept over the add (its far plane set for 10 cm) still shows it.
+{
+    const farDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-far-'));
+    const disk = (radius, z, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = radius * Math.sqrt(i / 3000), a = i * 2.399; return `${r * Math.cos(a)} ${r * Math.sin(a)} ${z} ${rgb}`; }).join('\n');
+    const small = path.join(farDir, 'small.xyz');
+    const big = path.join(farDir, 'big.xyz');
+    fs.writeFileSync(small, disk(0.05, 0, '255 0 0'));
+    fs.writeFileSync(big, disk(100, -30, '255 0 255'));
+    await htmlFor(small);
+    const panel = panels.get('small.xyz');
+    const look = async key => {
+        pages.set(`/page/${key}`, panel.webview.html.replaceAll('vscode-webview:', "'self'"));
+        await send('Page.navigate', { url: `${origin}/page/${key}` });
+        for (let i = 0; i < 150 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+        await evaluate("document.querySelectorAll('#top-control-bar, #stage-bar, #stage-panel, #color-legend').forEach(e => { e.style.visibility = 'hidden'; })");
+        await sleep(800);
+        const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 900, height: 600, scale: 0.5 } })).data;
+        return evaluate(`(async () => {
+            const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
+            const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, c.width, c.height).data; let red = 0, magenta = 0;
+            for (let i = 0; i < d.length; i += 4) {
+                // Magenta, not blue: the axes draw blue.
+                if (d[i] > 150 && d[i + 1] < 80 && d[i + 2] < 80) red++;
+                if (d[i] > 150 && d[i + 2] > 150 && d[i + 1] < 80) magenta++;
+            }
+            return { red, magenta };
+        })()`);
+    };
+    await evaluate('sessionStorage.clear()');
+    const alone = await look('far-alone');
+    await panel.listener({ type: 'addPaths', uris: [pathToFileURL(big).href] });
+    const added = await look('far-added');
+    const ok = alone.red > 50 && added.red > 50 && added.magenta > 50;
+    results.push(ok);
+    console.log(`${ok ? 'PASS' : 'FAIL'} small.xyz + big.xyz, far plane after the add: alone red ${alone.red}, added red ${added.red} magenta ${added.magenta}`);
+    fs.rmSync(farDir, { recursive: true, force: true });
+}
+
 // A file with no points opens empty, and a view whose every file fails still lists them, the added one removable.
 {
     const started = Date.now();
