@@ -97,4 +97,9 @@ jobs:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
           if [ -z "$OVSX_PAT" ]; then echo "::warning::OVSX_PAT is not set; Open VSX skipped"; exit 0; fi
-          npx --yes ovsx@0.10.6 publish "$RUNNER_TEMP/extension.vsix" --skip-duplicate
+          if out=$(npx --yes ovsx@0.10.6 publish "$RUNNER_TEMP/extension.vsix" --skip-duplicate 2>&1); then echo "$out"; exit 0; fi
+          echo "$out"
+          # A version still in Open VSX's review fails as "already published, but currently isn't active";
+          # --skip-duplicate does not cover that state.
+          if grep -q "is already published" <<<"$out"; then echo "::warning::Open VSX already has $TAG"; exit 0; fi
+          exit 1
