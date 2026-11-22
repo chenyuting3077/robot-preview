@@ -4,6 +4,7 @@
 
 - The link info shown on hover waits until the pointer rests for half a second, so moving across the robot to orbit or drag a joint no longer flashes it; right after one closes, the next link's info opens at once. The highlight still follows the pointer immediately.
 - A floating panel snaps to a corner when dragged along an edge into the quarter of the view nearest that corner, instead of only inside a 24 px square in the corner.
+- A panel in a corner is at most half the view's height, so panels in the top and bottom corners of a side fit one above the other; it grows back to its own size when the view is taller or it leaves the corner.
 - An MJCF or SDF floor no longer reacts to hover or click, so moving over it does not light up the view or show the world body's info. Double-click still sets the orbit pivot on it.
 - MJCF Reset and Simulate sit beside the toolbar instead of over the middle of the model, and move below it when the view is narrow.
 - Visuals are shown whenever a preview opens. Turning them off is no longer kept, so a model opened later does not come up empty.

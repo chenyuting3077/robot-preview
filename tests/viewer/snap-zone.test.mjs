@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { snapZone } from '../../src/ui/PanelManager.js';
+import { snapZone, placement } from '../../src/ui/PanelManager.js';
 
 const v = { width: 1000, height: 800, top: 40 };
 
@@ -22,4 +22,13 @@ test('the middle of a side docks to that side; the middle of the top or bottom e
 test('past the edge counts as at it', () => {
     assert.equal(snapZone(-30, 400, v), 'left');
     assert.equal(snapZone(1030, -10, v), 'top-right');
+});
+
+test('a corner holds at most half the height below the toolbar; a side dock the full height', () => {
+    // (800 - 40 - 3 * 20) / 2
+    const tall = { left: 0, top: 0, width: 300, height: 600 };
+    assert.deepEqual(placement({ ...tall, dock: 'top-right' }, v), { left: 680, top: 60, width: 300, height: 350 });
+    assert.deepEqual(placement({ ...tall, dock: 'bottom-right' }, v), { left: 680, top: 430, width: 300, height: 350 });
+    assert.deepEqual(placement({ ...tall, height: 200, dock: 'bottom-left' }, v), { left: 20, top: 580, width: 300, height: 200 }, 'a short panel keeps its height');
+    assert.equal(placement({ ...tall, dock: 'left' }, v).height, 720);
 });

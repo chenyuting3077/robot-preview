@@ -31,6 +31,8 @@ export function placement(layout, v = view()) {
     let width = clamp(layout.width, MIN_WIDTH, v.width - 2 * MARGIN);
     let height = clamp(layout.height, MIN_HEIGHT, v.height - v.top - 2 * MARGIN);
     let { left, top } = layout;
+    // A corner holds at most half the height, so panels in the two corners of a side fit one above the other.
+    if (dock?.includes('-')) height = Math.min(height, Math.max(MIN_HEIGHT, Math.floor((v.height - v.top - 3 * MARGIN) / 2)));
     if (dock === 'left' || dock === 'right') {
         top = v.top + MARGIN;
         height = Math.max(MIN_HEIGHT, v.height - v.top - 2 * MARGIN);
