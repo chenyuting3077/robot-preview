@@ -286,6 +286,7 @@ test('the USD extension, which ships this file, registers no Open as points comm
     assert.equal(env.state.commands?.['robotPreviewMeshSplat.openAsPoints'], undefined);
     assert.equal(env.state.commands?.['robotPreviewMeshSplat.open3D'], undefined);
     assert.equal(env.state.commands?.['robotPreviewMeshSplat.addToView'], undefined);
+    assert.equal(env.state.trees?.['robotPreviewMeshSplat.files'], undefined, 'nor the file list');
 });
 
 test('a drop adds only URIs of the opened file\'s scheme, not bare paths or other schemes', async () => {
@@ -659,4 +660,52 @@ test('two files whose 64-bit file ids differ only past 2^53 (NTFS) are two files
         fs.statSync = statSync;
     }
     assert.deepEqual(names(panel), ['scan_a.pcd', 'scan_b.pcd']);
+});
+
+// A drag from the Explorer as VS Code hands it to a tree view: a URI list, and files from the OS as items.
+const transfer = (uris, files = []) => ({
+    get: mime => (mime === 'text/uri-list' && uris.length ? { asString: async () => uris.join('\r\n') } : undefined),
+    forEach: callback => files.forEach(uri => callback({ asFile: () => ({ uri }) }, 'files'))
+});
+const tree = env => env.state.trees['robotPreviewMeshSplat.files'];
+const rows = async env => (await tree(env).options.treeDataProvider.getChildren()).map(file => path.basename(file.uri.fsPath));
+
+test('the Explorer\'s Point Cloud View list shows the view\'s files and adds what is dropped on it', async () => {
+    const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'a.pcd': 'a', 'b.ply': 'b', 'notes.txt': 'x' });
+    assert.deepEqual(await rows(env), ['map.pcd']);
+    assert.equal(tree(env).description, 'map.pcd');
+    assert.deepEqual(env.state.executed.filter(([command]) => command === 'setContext').at(-1), ['setContext', 'robotPreviewMeshSplat.hasView', true]);
+    let refreshed = 0;
+    tree(env).options.treeDataProvider.onDidChangeTreeData(() => refreshed++);
+    // A type the view cannot show is skipped; a file from the OS that is also in the list comes once.
+    await tree(env).options.dragAndDropController.handleDrop(undefined, transfer([url('a.pcd'), url('notes.txt'), '# comment'], [env.vscode.Uri.file(at('b.ply')), env.vscode.Uri.file(at('a.pcd'))]));
+    assert.deepEqual(names(panel), ['map.pcd', 'a.pcd', 'b.ply']);
+    assert.deepEqual(await rows(env), ['map.pcd', 'a.pcd', 'b.ply']);
+    assert.ok(refreshed > 0, 'the list hears that the files changed');
+    const [opened, added] = await tree(env).options.treeDataProvider.getChildren();
+    const item = file => tree(env).options.treeDataProvider.getTreeItem(file);
+    assert.equal(item(opened).contextValue, 'opened', 'the opened file has no remove button');
+    assert.equal(item(added).contextValue, 'added');
+    // Removed from the list (the inline button, on a selection too), the opened file stays.
+    await env.state.commands['robotPreviewMeshSplat.removeFromView'](added, [opened, added]);
+    assert.deepEqual(names(panel), ['map.pcd', 'b.ply']);
+    panel.dispose();
+    assert.deepEqual(await rows(env), []);
+    assert.deepEqual(env.state.executed.filter(([command]) => command === 'setContext').at(-1), ['setContext', 'robotPreviewMeshSplat.hasView', false]);
+});
+
+test('files dropped on the list with no view open open one for the first and add the rest', async () => {
+    const root = workspace({ 'one.pcd': '1', 'two.ply': '2' });
+    const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), globalStorage: path.join(root, 'storage') });
+    env.activate();
+    const panels = [];
+    env.state.onExecute = async (command, target, viewType) => {
+        if (command !== 'vscode.openWith') return;
+        const panel = fakePanel();
+        panels.push(panel);
+        await env.state.customEditors[viewType].resolveCustomEditor({ uri: target }, panel);
+    };
+    await tree(env).options.dragAndDropController.handleDrop(undefined, transfer(['one.pcd', 'two.ply'].map(name => pathToFileURL(path.join(root, name)).href)));
+    assert.equal(panels.length, 1);
+    assert.deepEqual(names(panels[0]), ['one.pcd', 'two.ply']);
 });

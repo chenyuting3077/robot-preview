@@ -4,6 +4,7 @@
 
 - Distance colors: in a view of several files, a file's Stage row can color it by its distance to another file, to the nearest point of a cloud or the nearest triangle of a mesh (CloudCompare's C2C / C2M). The legend's top and a tolerance are typed in, *Hide within tolerance* leaves only what differs, and Info shows mean, RMS, 95th percentile, max and the share within tolerance.
 - Mesh rows in a view of several files color too: Original, Height, Solid and distance.
+- A *Point Cloud View* list in the Explorer shows the files of the view used last: drag files from the Explorer onto it to add them (a drag onto the 3D view itself does not reach it on macOS), or remove them with its × button.
 - *Side by side* (Display menu) splits a view of several files into two halves with one camera; each Stage row puts its file left, right or on both sides.
 - `.obj` `.gltf` `.dae` `.wrl` and `.xyz` open in the text editor again: they are text people edit, and `.xyz` is also a molecule format. The editor title's *Open 3D Preview* button (*Open as Point Cloud* for `.xyz`), the Explorer menu or *Reopen Editor With…* opens the view, and *Reopen Editor With… → Configure default editor* brings back the old behavior.
 - A view of large files (100 MB or more) in a tab hidden for 5 minutes gives its memory back, and loads again with the camera kept when you return.

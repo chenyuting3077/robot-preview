@@ -26,7 +26,7 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 - Solid, wireframe and point display, point size, up-axis selection, and vertex / face / splat counts.
 - Color point clouds by their original color, height, intensity or any other PLY property (confidence, curvature, ...), with a legend.
 - Grid, axes and bounding box from the Display menu, kept as last left for point clouds, maps and other models.
-- [Several files in one view](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#several-files-in-one-view), such as a scan over its map.
+- [Several files in one view](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#several-files-in-one-view), such as a scan over its map; drag files onto the *Point Cloud View* list in the Explorer to add them.
 - [Compare files](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#comparing-files): color a cloud or mesh by its distance to another (C2C / C2M) with a tolerance and statistics, or show two files side by side with one camera.
 - Save the view as a PNG screenshot.
 - Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls.

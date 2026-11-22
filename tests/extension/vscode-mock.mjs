@@ -157,6 +157,13 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
         },
         Range,
         ViewColumn: { One: 1, Beside: -2 },
+        EventEmitter: class {
+            constructor() { this.listeners = []; this.event = listener => { this.listeners.push(listener); return { dispose() {} }; }; }
+            fire(value) { this.listeners.forEach(listener => listener(value)); }
+            dispose() { this.listeners = []; }
+        },
+        TreeItem: class { constructor(resourceUri, collapsibleState) { Object.assign(this, { resourceUri, collapsibleState }); } },
+        TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
         RelativePattern: class { constructor(base, pattern) { Object.assign(this, { base, pattern }); } },
         WorkspaceEdit: class {
             constructor() { this.edits = []; }
@@ -261,6 +268,12 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
             registerWebviewPanelSerializer: (viewType, serializer) => {
                 state.serializer = serializer;
                 return { dispose() {} };
+            },
+            // `trees` holds each tree view's options and the view, whose description the extension sets.
+            createTreeView: (id, options) => {
+                const view = { options, description: '', dispose() {} };
+                (state.trees ||= {})[id] = view;
+                return view;
             },
             registerCustomEditorProvider: (viewType, provider) => {
                 state.customEditors[viewType] = provider;

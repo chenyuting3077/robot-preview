@@ -148,8 +148,24 @@
         "command": "robotPreviewMeshSplat.addToView",
         "title": "Add to Point Cloud View",
         "category": "Robot Preview"
+      },
+      {
+        "command": "robotPreviewMeshSplat.removeFromView",
+        "title": "Remove from the View",
+        "category": "Robot Preview",
+        "icon": "$(close)"
       }
     ],
+    "views": {
+      "explorer": [
+        {
+          "id": "robotPreviewMeshSplat.files",
+          "name": "Point Cloud View",
+          "when": "robotPreviewMeshSplat.hasView",
+          "contextualTitle": "Robot Preview"
+        }
+      ]
+    },
     "menus": {
       "editor/title": [
         {
@@ -190,6 +206,17 @@
         {
           "command": "robotPreviewMeshSplat.addToView",
           "when": "false"
+        },
+        {
+          "command": "robotPreviewMeshSplat.removeFromView",
+          "when": "false"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "robotPreviewMeshSplat.removeFromView",
+          "when": "view == robotPreviewMeshSplat.files && viewItem == added",
+          "group": "inline"
         }
       ]
     }

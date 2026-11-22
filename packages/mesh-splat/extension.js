@@ -143,9 +143,11 @@ function activate(context) {
         .filter(ext => ext && !CAD.test(`.${ext}`)))];
     // The USD extension ships this file too; its views take no added files until its docs say they do.
     const addsFiles = customEditors.some(({ viewType }) => viewType.startsWith('robotPreviewMeshSplat.'));
-    // Open views, the one used last first, for Add to Point Cloud View.
+    // Open views, the one used last first, for Add to Point Cloud View and the Explorer's file list.
     const views = [];
     const viewWaiters = new Set();
+    // Set once the file list is up: tells it a view opened, closed, came to the front or changed its files.
+    let viewsChanged = () => {};
     const provider = {
         openCustomDocument: uri => ({ uri, dispose() {} }),
         async resolveCustomEditor(document, panel) {
@@ -220,6 +222,7 @@ function activate(context) {
                 // one lands (VS Code compares the options; not checked in a real window), and its reads are dropped.
                 updateRoots();
                 panel.webview.html = html;
+                viewsChanged();
             };
             let pageRender = null;
             const release = () => {
@@ -358,9 +361,23 @@ function activate(context) {
             };
             const writer = cacheWriter(cacheDir?.fsPath, keys, post);
             panel.webview.onDidReceiveMessage(message => Object.hasOwn(handlers, message?.type) && handlers[message.type](message));
-            const view = { uri: document.uri, panel, takesFiles, addUris };
+            const view = {
+                uri: document.uri,
+                panel,
+                takesFiles,
+                addUris,
+                files: () => files.map((file, i) => ({ id: file.id, uri: file.uri, opened: !i, missing: Boolean(file.shownMissing) })),
+                remove: async ids => {
+                    if (openedGone) return refuse(() => view.remove(ids));
+                    const gone = files.filter((file, i) => i && ids.includes(file.id));
+                    if (!gone.length) return;
+                    gone.forEach(drop);
+                    await render(true);
+                }
+            };
             views.unshift(view);
             viewWaiters.forEach(waiter => waiter(view));
+            viewsChanged();
             panel.onDidChangeViewState(({ webviewPanel }) => {
                 visible = webviewPanel.visible;
                 if (!visible) scheduleRelease();
@@ -371,6 +388,7 @@ function activate(context) {
                 if (!webviewPanel.active) return;
                 views.splice(views.indexOf(view), 1);
                 views.unshift(view);
+                viewsChanged();
             });
             panel.onDidDispose(() => {
                 disposed = true;
@@ -378,6 +396,7 @@ function activate(context) {
                 views.splice(views.indexOf(view), 1);
                 [...files].forEach(drop);
                 writer.dispose();
+                viewsChanged();
             });
             await render();
         }
@@ -410,13 +429,12 @@ function activate(context) {
             };
             viewWaiters.add(waiter);
         });
-        context.subscriptions.push(vscode.commands.registerCommand('robotPreviewMeshSplat.addToView', async (clicked, selected) => {
-            const uris = (Array.isArray(selected) && selected.length ? selected : [clicked]).filter(Boolean);
+        const addToView = async uris => {
             if (!uris.length) return;
             let view = views.find(candidate => candidate.takesFiles);
             if (view) {
                 view.panel.reveal();
-                return view.addUris(uris);
+                return view.addUris(uris.filter(uri => uri.scheme === view.uri.scheme));
             }
             const [first, ...rest] = uris;
             // The first editor whose pattern names the file: the default one comes first, so a .pcd.bin is its.
@@ -427,7 +445,67 @@ function activate(context) {
             await vscode.commands.executeCommand('vscode.openWith', first, viewType);
             view = await opened;
             if (view && rest.length) await view.addUris(rest);
-        }));
+        };
+        context.subscriptions.push(vscode.commands.registerCommand('robotPreviewMeshSplat.addToView', (clicked, selected) =>
+            addToView((Array.isArray(selected) && selected.length ? selected : [clicked]).filter(Boolean))));
+        if (contributes('robotPreviewMeshSplat.removeFromView')) context.subscriptions.push(fileList(addToView));
+    }
+
+    // A drag from the Explorer never reaches a webview on macOS (docs/mesh-splat.md), but a tree view takes it:
+    // this list in the Explorer shows the files of the view used last and adds what is dropped on it, opening a
+    // view for the first file when none is open.
+    function fileList(addToView) {
+        const changed = new vscode.EventEmitter();
+        const current = () => views.find(view => view.takesFiles);
+        const tree = vscode.window.createTreeView('robotPreviewMeshSplat.files', {
+            canSelectMany: true,
+            treeDataProvider: {
+                onDidChangeTreeData: changed.event,
+                getChildren: element => (element ? [] : current()?.files() ?? []),
+                getTreeItem: file => {
+                    const item = new vscode.TreeItem(file.uri, vscode.TreeItemCollapsibleState.None);
+                    item.description = file.missing ? 'not found' : vscode.workspace.asRelativePath(path.dirname(file.uri.fsPath));
+                    item.tooltip = file.uri.fsPath;
+                    item.contextValue = file.opened ? 'opened' : 'added';
+                    return item;
+                }
+            },
+            dragAndDropController: {
+                dropMimeTypes: ['text/uri-list', 'files'],
+                dragMimeTypes: [],
+                async handleDrop(target, transfer) {
+                    const uris = [];
+                    const list = transfer.get('text/uri-list');
+                    for (const line of list ? (await list.asString()).split(/\r?\n/) : []) {
+                        const text = line.trim();
+                        if (!text || text.startsWith('#')) continue;
+                        try {
+                            uris.push(vscode.Uri.parse(text, true));
+                        } catch {
+                            // Not a URI: skipped like any other file the view cannot show.
+                        }
+                    }
+                    // Files from the operating system, where VS Code hands them over as files rather than a URI list.
+                    transfer.forEach(item => {
+                        const file = item.asFile?.();
+                        if (file?.uri && !uris.some(uri => sameFile(uri.fsPath, file.uri.fsPath))) uris.push(file.uri);
+                    });
+                    await addToView(uris.filter(uri => extensions.includes(extensionOf(uri.path))));
+                }
+            }
+        });
+        viewsChanged = () => {
+            const view = current();
+            tree.description = view ? path.basename(view.uri.path) : '';
+            vscode.commands.executeCommand('setContext', 'robotPreviewMeshSplat.hasView', Boolean(view));
+            changed.fire();
+        };
+        viewsChanged();
+        const remove = vscode.commands.registerCommand('robotPreviewMeshSplat.removeFromView', (clicked, selected) => {
+            const chosen = (Array.isArray(selected) && selected.length ? selected : [clicked]).filter(Boolean);
+            return current()?.remove(chosen.map(file => file.id));
+        });
+        return { dispose: () => [tree, remove, changed].forEach(item => item.dispose()) };
     }
 }
 
