@@ -483,12 +483,13 @@ try {
     check('zh-TW from <html lang>', await ev(`return window.i18n.getCurrentLanguage() === 'zh-TW' && document.getElementById('toggle-joints-panel').textContent.trim() === '關節'`));
     check('panels closed by default', await ev(`return ${panelsHidden}`));
 
-    await ev(`await window.__send('load', m => { m.settings = { 'show-collision': true, unit: 'deg' }; })`);
+    await ev(`await window.__send('load', m => { m.settings = { 'show-visual': false, 'show-collision': true, unit: 'deg' }; })`);
     check('model loads with both packages', await waitFor(`window.app.currentModel?.links?.has('left_arm') && window.app.currentModel.links.has('lift_link')`));
     check('STL without normals is shaded', await ev(`let n; window.app.currentModel.links.get('left_arm').threeObject.traverse(o => { if (!n && o.isMesh) n = o.geometry.attributes.normal; }); return !!n && Array.from(n.array).some(v => v !== 0)`));
     await sleep(800);
     check('loading indicator hidden after load', await ev(`return getComputedStyle(document.getElementById('loading-indicator')).display === 'none'`));
     check('settings applied, panels still closed', await ev(`return document.getElementById('show-collision').classList.contains('active') && window.app.angleUnit === 'deg' && ${panelsHidden}`));
+    check('visuals start on even if an older version saved them off', await ev(`return document.getElementById('show-visual').classList.contains('active') && window.app.sceneManager.visualizationManager.showVisual`));
     const diagnostics = await finalDiagnostics();
     check('clean diagnostics after load', diagnostics?.loadError === null && diagnostics.missingMeshes.length === 0 && Object.values(diagnostics.syntax).every(list => list.length === 0));
     const firstReports = await ev(`return window.__out.filter(m => m.type === 'diagnostics').map(m => ({ partial: !!m.partial, checks: m.checks.map(c => c.rule + ':' + c.name).sort() }))`);
@@ -559,7 +560,7 @@ try {
     check('limit edit posts radians', edit?.joint === 'left_arm_joint' && Math.abs(edit.limits.upper - Math.PI / 4) < 1e-9, JSON.stringify(edit));
     await sleep(500);
     const settings = await ev(`return window.__out.find(m => m.type === 'settings')?.settings`);
-    check('panel toggle saved as setting', settings?.['toggle-joints-panel'] === true && settings['show-collision'] === true, JSON.stringify(settings));
+    check('panel toggle saved as setting', settings?.['toggle-joints-panel'] === true && settings['show-collision'] === true && !('show-visual' in settings), JSON.stringify(settings));
 
     // robot_a spans 0.1-1 m, so its auto cell is 10 cm.
     const grid = await ev(`const btn = document.getElementById('toggle-grid'), label = () => document.getElementById('grid-label').textContent;

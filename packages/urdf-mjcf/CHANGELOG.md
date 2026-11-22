@@ -4,6 +4,7 @@
 
 - The link info shown on hover waits until the pointer rests for half a second, so moving across the robot to orbit or drag a joint no longer flashes it; right after one closes, the next link's info opens at once. The highlight still follows the pointer immediately.
 - A floating panel snaps to a corner when dragged along an edge into the quarter of the view nearest that corner, instead of only inside a 24 px square in the corner.
+- Visuals are shown whenever a preview opens. Turning them off is no longer kept, so a model opened later does not come up empty.
 
 ## 0.5.0
 

@@ -25,8 +25,9 @@ window.i18n = i18n;
 
 const vscode = acquireVsCodeApi();
 
+// Visuals are not kept: turned off once to look at collisions, every model opened later came up empty.
 const SETTING_BUTTONS = [
-    'show-visual', 'show-collision', 'show-inertia', 'show-com', 'toggle-axes-btn', 'toggle-joint-axes-btn',
+    'show-collision', 'show-inertia', 'show-com', 'toggle-axes-btn', 'toggle-joint-axes-btn',
     'toggle-shadow', 'toggle-lighting', 'toggle-grid', 'toggle-joints-panel', 'toggle-model-tree', 'ignore-limits',
     'pick-btn'
 ];
