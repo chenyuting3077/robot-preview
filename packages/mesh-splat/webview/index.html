@@ -40,7 +40,7 @@ canvas { display: block; }
 .tool-button:hover, .control-button:hover { background: var(--hover); color: var(--text-primary); transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
 .tool-button:active, .control-button:active { transform: scale(0.98); }
 .tool-button.active, .control-button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3); }
-#display-menu, #up-menu, #compare-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
+#display-menu, #up-menu, #compare-menu { display: none; position: absolute; top: calc(100% + 8px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
 #display-menu.open, #up-menu.open, #compare-menu.open { display: flex; }
 #compare-menu { width: max-content; max-width: min(320px, calc(100vw - 40px)); font-size: 11px; }
 /* It opens over the Stage panel, whose rows showed through the glass's backdrop and the translucent selects. */
@@ -53,7 +53,7 @@ canvas { display: block; }
 [data-theme="light"] #compare-menu select { background: #f2f2f2; }
 #compare-distance { display: flex; flex-direction: column; gap: 6px; }
 #stage-bar { position: fixed; top: 20px; right: 20px; padding: 5px 9px; border-radius: 21px; z-index: 100; }
-#stage-panel { position: fixed; top: 70px; right: 20px; width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
+#stage-panel { position: fixed; top: 62px; right: 20px; width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
 .stage-head, .prim-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 24px; align-items: center; gap: 6px; }
 .stage-head { padding: 6px 12px 6px 16px; font-size: 10px; color: var(--text-tertiary); border-bottom: 0.5px solid var(--glass-border); }
 .stage-head span:last-child { text-align: center; }
@@ -88,7 +88,7 @@ canvas { display: block; }
 #prim-path button:last-of-type { color: var(--accent); font-weight: 600; }
 .prim-path-type { margin-left: auto; padding-left: 8px; }
 #hover-label { position: fixed; padding: 3px 8px; border-radius: 8px; font-size: 11px; color: var(--text-primary); pointer-events: none; white-space: nowrap; z-index: 150; }
-#help-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; white-space: nowrap; z-index: 200; }
+#help-panel { display: none; position: absolute; top: calc(100% + 8px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; white-space: nowrap; z-index: 200; }
 #help-panel.open { display: block; }
 #help-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
 #help-panel td:first-child { color: var(--text-tertiary); }
@@ -100,7 +100,7 @@ canvas { display: block; }
 .size-row [data-size="1"] i { width: 3px; height: 3px; }
 .size-row [data-size="2"] i { width: 5px; height: 5px; }
 .size-row [data-size="4"] i { width: 8px; height: 8px; }
-#info-panel { display: none; position: absolute; top: calc(100% + 12px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; z-index: 200; width: max-content; max-width: min(420px, calc(100vw - 40px)); }
+#info-panel { display: none; position: absolute; top: calc(100% + 8px); left: -4px; padding: 10px 14px; border-radius: 14px; font-size: 11px; z-index: 200; width: max-content; max-width: min(420px, calc(100vw - 40px)); }
 #info-panel.open { display: block; }
 #info-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
 #info-panel td:first-child { color: var(--text-tertiary); }
