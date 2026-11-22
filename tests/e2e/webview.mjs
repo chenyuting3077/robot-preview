@@ -745,8 +745,18 @@ try {
     // altogether, as in the USD viewer, and is kept.
     const card = () => ev(`const el = document.getElementById('hover-info'), r = el.getBoundingClientRect();
         return { visible: el.classList.contains('visible'), left: Math.round(r.left), top: Math.round(r.top), right: Math.round(r.right), bottom: Math.round(r.bottom) };`);
+    // The card waits for the pointer to rest 500 ms; moving on the link keeps restarting the wait.
     await hover(middle);
+    const early = (await card()).visible;
+    for (let i = 0; i < 8; i++) {
+        await mouse('mouseMoved', middle.x + (i % 2 ? 2 : -2), middle.y);
+        await sleep(100);
+    }
+    const moving = (await card()).visible;
+    await mouse('mouseMoved', middle.x, middle.y);
+    await sleep(650);
     const beside = await card();
+    check('the hover info stays closed while the pointer moves and opens once it rests', !early && !moving && beside.visible, JSON.stringify({ early, moving, rested: beside.visible }));
     check('the hover info opens below-right of the pointer, as a right-click menu does', beside.visible && beside.left === middle.x + 4 && beside.top === middle.y + 4, JSON.stringify({ beside, middle }));
     await mouse('mouseMoved', middle.x + 8, middle.y + 3);
     await sleep(100);
@@ -756,6 +766,17 @@ try {
         hm.pointer = { x: innerWidth - 10, y: innerHeight - 10 }; hm.placeHoverInfo(el);
         const r = el.getBoundingClientRect(); return { right: Math.round(r.right), bottom: Math.round(r.bottom), x: innerWidth - 10, y: innerHeight - 10 };`);
     check('near the bottom-right corner it flips above-left of the pointer', flipped.right === flipped.x - 4 && flipped.bottom === flipped.y - 4, JSON.stringify(flipped));
+    // Right after one closes the next opens at once; after a pause the wait is back.
+    await mouse('mouseMoved', 5, 5);
+    await mouse('mouseMoved', middle.x, middle.y);
+    await sleep(100);
+    const warm = (await card()).visible;
+    await mouse('mouseMoved', 5, 5);
+    await sleep(500);
+    await mouse('mouseMoved', middle.x, middle.y);
+    await sleep(100);
+    const cold = (await card()).visible;
+    check('within 300 ms of the info closing the next opens at once, later it waits again', warm && !cold, JSON.stringify({ warm, cold }));
     await ev(`window.__out.length = 0; document.getElementById('pick-btn').click()`);
     const cleared = await ev(`return window.app.sceneManager.highlightManager.currentHighlightedLink === null && !document.getElementById('hover-info').classList.contains('visible')`);
     const off = { cleared, hover: await hover(middle), card: (await card()).visible, drag: await drag(middle) };
@@ -767,7 +788,9 @@ try {
     await sleep(400);
     check('the picking choice is saved', await ev(`return window.__out.findLast(m => m.type === 'settings')?.settings['pick-btn'] === false`));
     await ev(`document.getElementById('pick-btn').click()`);
-    check('turned back on, hovering shows the card again', await hover(middle) === 'arm' && (await card()).visible);
+    const back = await hover(middle);
+    await sleep(600);
+    check('turned back on, hovering shows the card again', back === 'arm' && (await card()).visible);
 
     // A MuJoCo checker floor under the pointer keeps its texture: the white highlight used to blank the whole view.
     const floorScene = '<mujoco model="fl"><asset><texture name="grid" type="2d" builtin="checker" rgb1=".1 .2 .3" rgb2=".2 .3 .4" width="64" height="64"/><material name="grid" texture="grid" texrepeat="4 4"/></asset><worldbody><light pos="0 0 3"/><geom name="floor" type="plane" size="2 2 .1" material="grid"/><body name="arm" pos="0 0 .5"><joint name="hinge" type="hinge" axis="0 1 0"/><geom type="box" pos=".3 0 0" size=".1 .1 .1"/></body></worldbody></mujoco>';

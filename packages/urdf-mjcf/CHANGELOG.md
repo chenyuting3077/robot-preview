@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The link info shown on hover waits until the pointer rests for half a second, so moving across the robot to orbit or drag a joint no longer flashes it; right after one closes, the next link's info opens at once. The highlight still follows the pointer immediately.
+
 ## 0.5.0
 
 - Marketplace description and keywords mention SDF, Gazebo, completion and model checks.

@@ -678,7 +678,7 @@ export class SceneManager {
         // Hover highlight callback (handle immediately, like urdf-loaders)
         this.dragControls.onHover = (link) => {
             if (link) {
-                this.highlightManager.highlightLink(link, this.currentModel);
+                this.highlightManager.hoverLink(link, this.currentModel);
             }
         };
 

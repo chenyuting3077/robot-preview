@@ -22,6 +22,12 @@ function glowing(material) {
     return Array.isArray(material) ? material.map(glow) : glow(material);
 }
 
+// Hover info waits for the pointer to rest INFO_DELAY ms, the initial delay of a Windows tooltip, so sweeping across
+// the robot to orbit or grab a joint does not flash cards. Within INFO_SKIP ms of one closing, the next opens at once,
+// as Radix UI's tooltip skipDelayDuration does, so reading link after link does not wait each time.
+const INFO_DELAY = 500;
+const INFO_SKIP = 300;
+
 export class HighlightManager {
     constructor(sceneManager) {
         this.sceneManager = sceneManager;
@@ -37,9 +43,33 @@ export class HighlightManager {
 
         this.pointer = null;
         this.hoverInfoLink = null;
+        this.pendingInfo = null;
+        this.infoTimer = null;
+        this.infoHiddenAt = -Infinity;
         globalThis.document?.addEventListener('pointermove', event => {
             this.pointer = { x: event.clientX, y: event.clientY };
+            // A held button is an orbit or a joint drag, not a rest.
+            if (this.pendingInfo) this.restartInfoTimer(event.buttons === 0);
         }, { capture: true, passive: true });
+        globalThis.document?.addEventListener('pointerdown', () => this.restartInfoTimer(false), { capture: true, passive: true });
+    }
+
+    // Pointer hover on the canvas: the highlight is immediate, the info waits (see INFO_DELAY).
+    hoverLink(link, currentModel) {
+        const warm = performance.now() - this.infoHiddenAt < INFO_SKIP;
+        this.highlightLink(link, currentModel, { showInfo: warm });
+        if (warm) return;
+        this.pendingInfo = { link, currentModel };
+        this.restartInfoTimer(true);
+    }
+
+    restartInfoTimer(arm) {
+        clearTimeout(this.infoTimer);
+        this.infoTimer = arm ? setTimeout(() => {
+            const pending = this.pendingInfo;
+            this.pendingInfo = null;
+            if (pending && this.currentHighlightedLink?.name === pending.link.name) this.showHoverInfo(pending.link, pending.currentModel);
+        }, INFO_DELAY) : null;
     }
 
     // Opened at the pointer as a right-click menu is on Windows and macOS: below-right, flipped near the window's
@@ -461,9 +491,12 @@ export class HighlightManager {
      * Hide hover information
      */
     hideHoverInfo() {
+        this.pendingInfo = null;
+        this.restartInfoTimer(false);
         const hoverInfo = document.getElementById('hover-info');
-        if (hoverInfo) {
+        if (hoverInfo?.classList.contains('visible')) {
             hoverInfo.classList.remove('visible');
+            this.infoHiddenAt = performance.now();
         }
         this.hoverInfoLink = null;
     }
