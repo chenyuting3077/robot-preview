@@ -245,7 +245,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
                 }
             }),
             openTextDocument: async fsPath => openDocument(fsPath),
-            asRelativePath: fsPath => path.relative(workspace, fsPath).split(path.sep).join('/'),
+            asRelativePath: target => path.relative(workspace, target.fsPath ?? target).split(path.sep).join('/'),
             // Like VS Code, every range refers to the text before the edit.
             applyEdit: async edit => {
                 const located = edit.edits.map(({ uri, range, text }) => {

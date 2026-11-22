@@ -686,6 +686,7 @@ test('the Explorer\'s Point Cloud View list shows the view\'s files and adds wha
     const item = file => tree(env).options.treeDataProvider.getTreeItem(file);
     assert.equal(item(opened).contextValue, 'opened', 'the opened file has no remove button');
     assert.equal(item(added).contextValue, 'added');
+    assert.equal(item(added).description, '', 'a file at the workspace root names no folder');
     // Removed from the list (the inline button, on a selection too), the opened file stays.
     await env.state.commands['robotPreviewMeshSplat.removeFromView'](added, [opened, added]);
     assert.deepEqual(names(panel), ['map.pcd', 'b.ply']);

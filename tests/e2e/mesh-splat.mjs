@@ -926,33 +926,40 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     console.log(`${ok ? 'PASS' : 'FAIL'} scan.xyz by distance to map.xyz and plane.off ${Math.round((Date.now() - started) / 100) / 10}s legend ${legend} warm ${colored.warm} cold ${colored.cold} shown ${colored.n} hidden within ${hidden.n} mean ${mean(toMap, 'map.xyz')} / ${mean(toPlane, 'plane.off')} within ${within(toMap)}% plane measured ${planeMeasured} map ${referenceGrey} compare menu ${menu} ${error}`);
     console.log(`  ${toMap.replace(/\n/g, ' | ')}`);
 
-    // Side by side: the map (red) left, the scan (blue, its own colors again) right, then the scan on both sides.
+    // Panes (#19): turned on, a pane for each of the three files: the map (red), the scan (blue, its own colors
+    // again) and the plane (hidden, so its pane is empty). Then the scan goes into the map's pane too.
     const splitAt = Date.now();
     await choose(1, 'rgb');
     await choose(0, 'rgb');
     await evaluate(`[0].forEach(row => document.querySelectorAll('#stage-panel .prim-row')[row].querySelector('.prim-eye').click()); document.querySelectorAll('#stage-panel .prim-row')[2].querySelector('.prim-eye').click()`);
-    await evaluate("document.getElementById('split-btn').click()");
+    await evaluate("document.getElementById('panes-btn').click()");
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'f', code: 'KeyF', text: 'f' });
     await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'f', code: 'KeyF' });
     await sleep(800);
-    const half = async side => nonBackground((await send('Page.captureScreenshot', { format: 'png', clip: { x: side === 'left' ? 0 : 450, y: 0, width: 450, height: 600, scale: 0.5 } })).data);
-    const [left, right] = [await half('left'), await half('right')];
-    const labels = await evaluate("[document.getElementById('split-left').textContent, document.getElementById('split-right').textContent].join('|')");
-    await evaluate(`document.querySelectorAll('#stage-panel .prim-row')[1].querySelector('.prim-side').click()`);
+    const part = async (x, width) => nonBackground((await send('Page.captureScreenshot', { format: 'png', clip: { x, y: 0, width, height: 600, scale: 0.5 } })).data);
+    const thirds = async () => [await part(0, 300), await part(300, 300), await part(600, 300)];
+    const [first, second, third] = await thirds();
+    const paneLabels = () => evaluate("[...document.querySelectorAll('.pane-label')].map(label => label.textContent).join('|')");
+    const labels = await paneLabels();
+    const buttons = await evaluate("[...document.querySelectorAll('#stage-panel .prim-row')].map(row => row.querySelectorAll('.prim-pane').length).join()");
+    await evaluate(`document.querySelectorAll('#stage-panel .prim-row')[1].querySelectorAll('.prim-pane')[0].click()`);
     await sleep(600);
-    const bothLeft = await half('left');
-    // A drag in the right half turns the left half too: one camera.
+    const [shared] = await thirds();
+    const sharedLabels = await paneLabels();
+    // A drag in the middle pane turns the first too: one camera.
     const before = await pageShot();
-    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 700, y: 300, button: 'left', clickCount: 1 });
-    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 760, y: 320, button: 'left', buttons: 1 });
-    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 760, y: 320, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 450, y: 300, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 510, y: 320, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 510, y: 320, button: 'left', clickCount: 1 });
     await sleep(600);
-    const leftAfter = await half('left');
+    const [firstAfter] = await thirds();
     const moved = await shotDiff(before, await pageShot());
-    // The axes (red x, blue z) show in both halves, so a few pixels of the other color are theirs.
-    const okSplit = left.warm > 50 && left.cold < left.warm / 20 && right.cold > 50 && right.warm < right.cold / 20 && labels === 'map.xyz|scan.xyz' && bothLeft.cold > 50 && moved > 0.002 && JSON.stringify(leftAfter) !== JSON.stringify(bothLeft);
+    // The axes (red x, blue z) show in every pane, so a few pixels of the other color are theirs.
+    const okSplit = first.warm > 50 && first.cold < first.warm / 10 && second.cold > 50 && second.warm < second.cold / 10 && third.warm < 200 && third.cold < 200
+        && labels === 'map.xyz|scan.xyz|' && buttons === '3,3,3' && shared.cold > 50 && sharedLabels === 'map.xyz · scan.xyz|scan.xyz|'
+        && moved > 0.002 && JSON.stringify(firstAfter) !== JSON.stringify(shared);
     results.push(okSplit);
-    console.log(`${okSplit ? 'PASS' : 'FAIL'} map.xyz | scan.xyz side by side ${Math.round((Date.now() - splitAt) / 100) / 10}s left red ${left.warm} blue ${left.cold}, right red ${right.warm} blue ${right.cold}, labels ${labels}, scan on both: left blue ${bothLeft.cold}, drag moved ${(moved * 100).toFixed(1)}%`);
+    console.log(`${okSplit ? 'PASS' : 'FAIL'} map.xyz | scan.xyz | plane.off in panes ${Math.round((Date.now() - splitAt) / 100) / 10}s first red ${first.warm} blue ${first.cold}, second red ${second.warm} blue ${second.cold}, third red ${third.warm} blue ${third.cold}, labels ${labels}, pane buttons ${buttons}, scan in the first too: blue ${shared.cold} labels ${sharedLabels}, drag moved ${(moved * 100).toFixed(1)}%`);
     fs.rmSync(compareDir, { recursive: true, force: true });
 }
 

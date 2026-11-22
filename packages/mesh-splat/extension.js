@@ -464,7 +464,9 @@ function activate(context) {
                 getChildren: element => (element ? [] : current()?.files() ?? []),
                 getTreeItem: file => {
                     const item = new vscode.TreeItem(file.uri, vscode.TreeItemCollapsibleState.None);
-                    item.description = file.missing ? 'not found' : vscode.workspace.asRelativePath(path.dirname(file.uri.fsPath));
+                    // The folder relative to the workspace (none for its root), or the whole folder outside it.
+                    const folder = path.dirname(vscode.workspace.asRelativePath(file.uri, false));
+                    item.description = file.missing ? 'not found' : folder === '.' ? '' : folder;
                     item.tooltip = file.uri.fsPath;
                     item.contextValue = file.opened ? 'opened' : 'added';
                     return item;

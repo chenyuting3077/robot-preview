@@ -49,7 +49,7 @@ canvas { display: block; }
 #compare-menu select { min-width: 0; padding: 2px 4px; border: 1px solid var(--button-border); border-radius: 6px; background: #2a2a2a; color: var(--text-primary); font: inherit; }
 [data-theme="dark"] #compare-menu option { background-color: #2a2a2a; }
 [data-theme="light"] #compare-menu select { background: #f2f2f2; }
-#compare-empty, #compare-distance { display: flex; flex-direction: column; gap: 6px; }
+#compare-distance { display: flex; flex-direction: column; gap: 6px; }
 #stage-bar { position: fixed; top: 20px; right: 20px; padding: 5px 9px; border-radius: 21px; z-index: 100; }
 #stage-panel { position: fixed; top: 70px; right: 20px; width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
 .stage-head, .prim-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 24px; align-items: center; gap: 6px; }
@@ -113,15 +113,18 @@ canvas { display: block; }
 #legend-distance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; }
 #legend-distance label { display: flex; align-items: center; gap: 6px; color: var(--text-tertiary); }
 #legend-distance .control-button { padding: 3px 8px; font-size: 11px; }
-#split-divider { position: fixed; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--glass-border); pointer-events: none; z-index: 5; }
-.split-label { position: fixed; bottom: 20px; max-width: calc(50% - 40px); padding: 4px 10px; border-radius: 10px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; z-index: 5; }
-#split-left { left: 20px; }
-#split-right { left: calc(50% + 20px); }
+#pane-lines, #pane-labels { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.pane-line { position: absolute; background: var(--glass-border); }
+.pane-label { position: absolute; padding: 4px 10px; border-radius: 10px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prim-type-cell { display: flex; align-items: center; gap: 3px; min-width: 0; }
 .prim-type-cell .prim-color { flex: 1; min-width: 0; }
 .prim-format { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prim-side { flex: none; min-width: 22px; padding: 0 3px; border: 1px solid var(--button-border); border-radius: 4px; background: transparent; color: var(--text-primary); font: inherit; font-size: 10px; cursor: pointer; }
-#stage-panel:not(.split) .prim-side { display: none; }
+.prim-panes { display: flex; flex: none; gap: 2px; }
+.prim-pane { width: 16px; height: 18px; padding: 0; border: 1px solid var(--button-border); border-radius: 4px; background: transparent; color: var(--text-tertiary); font: inherit; font-size: 10px; cursor: pointer; }
+.prim-pane.active { background: var(--accent); border-color: var(--accent); color: white; }
+/* Pane buttons take room from the color menu, so the column widens while there are panes. */
+#stage-panel.split { width: 400px; }
+#stage-panel.files.split .stage-head, #stage-panel.files.split .prim-row { grid-template-columns: minmax(0, 1fr) 164px 24px 24px; }
 #load-error { position: fixed; left: 16px; bottom: 16px; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 8px; background: rgba(200, 40, 40, 0.9); color: #fff; font: 12px/1.4 monospace; white-space: pre-wrap; z-index: 10000; }
 [hidden] { display: none !important; }
 </style>
@@ -172,20 +175,12 @@ canvas { display: block; }
       <option value="-X">-X</option>
     </select>
   </div>
-  <div class="control-bar-section">
-    <button class="tool-button" id="info-btn">i</button>
-    <div id="info-panel" class="glass"><table id="info-table"></table></div>
-  </div>
-  <div class="control-bar-section" id="pick-section" hidden>
-    <button class="tool-button" id="pick-btn" data-title="pickParts"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg></button>
-  </div>
-  <div class="control-bar-section">
-    <button class="tool-button" id="add-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
-  </div>
   <div class="control-bar-section" id="compare-section" hidden>
     <button class="tool-button" id="compare-btn" data-title="compare"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2"/><rect x="9" y="9" width="12" height="12" rx="2"/></svg> ▾</button>
     <div id="compare-menu" class="glass">
-      <div id="compare-empty" hidden><span class="compare-hint" data-t="compareNeedsTwo"></span><button class="control-button" id="compare-add" data-t="addFile"></button></div>
+      <span id="compare-empty" class="compare-hint" data-t="compareNeedsTwo" hidden></span>
+      <button class="control-button" id="add-btn" data-t="addFile" hidden></button>
+      <div class="display-menu-separator" id="add-separator" hidden></div>
       <div id="compare-distance" hidden>
         <span class="compare-hint" data-t="compareHint"></span>
         <label><span data-t="compareFile"></span><select id="compare-file"></select></label>
@@ -193,11 +188,18 @@ canvas { display: block; }
         <button class="control-button" id="compare-run" data-t="compareRun"></button>
         <div class="display-menu-separator"></div>
       </div>
-      <button class="control-button" id="split-btn" data-t="sideBySide" hidden></button>
+      <button class="control-button" id="panes-btn" data-t="panes" aria-pressed="false" hidden></button>
     </div>
+  </div>
+  <div class="control-bar-section" id="pick-section" hidden>
+    <button class="tool-button" id="pick-btn" data-title="pickParts"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg></button>
   </div>
   <div class="control-bar-section">
     <button class="tool-button" id="screenshot-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+  </div>
+  <div class="control-bar-section">
+    <button class="tool-button" id="info-btn">i</button>
+    <div id="info-panel" class="glass"><table id="info-table"></table></div>
   </div>
   <div class="control-bar-section">
     <button class="tool-button" id="help-btn">?</button>
@@ -211,9 +213,8 @@ canvas { display: block; }
   <div id="stage-rows"></div>
   <div id="prim-path" hidden></div>
 </div>
-<div id="split-divider" hidden></div>
-<div id="split-left" class="split-label glass" hidden></div>
-<div id="split-right" class="split-label glass" hidden></div>
+<div id="pane-lines"></div>
+<div id="pane-labels"></div>
 <div id="color-legend" class="glass" hidden><div id="legend-name"></div><div id="legend-bar"></div><div class="legend-ticks"><span id="legend-low"></span><span id="legend-high"></span><input id="legend-top" class="legend-input" type="number" min="0" step="any" hidden></div>
   <div id="legend-distance" hidden><label><span data-t="tolerance"></span><input id="tolerance-input" class="legend-input" type="number" min="0" step="any"></label><button class="control-button" id="hide-within-btn" data-t="hideWithin" aria-pressed="false"></button></div>
 </div>
