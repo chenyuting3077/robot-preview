@@ -3,6 +3,12 @@
 
 const isCollision = object => object.isURDFCollider || object.userData?.isCollisionGeom;
 
+// An MJCF plane marks its mesh; an SDF plane marks the visual its generated mesh loads under.
+export function isGround(object) {
+    for (let level = object; level; level = level.parent) if (level.userData?.isGroundPlane) return true;
+    return false;
+}
+
 function materialShown(object, hit) {
     const material = Array.isArray(object.material) ? object.material[hit.face?.materialIndex ?? 0] : object.material;
     // A wireframe (MuJoCo collision geoms) is drawn along its edges only; a hit inside a face is empty screen.

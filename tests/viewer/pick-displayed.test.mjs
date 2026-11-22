@@ -209,3 +209,19 @@ test('picking skips a face with no material, and objects off the raycaster layer
     layered.updateMatrixWorld(true);
     assert.deepEqual(intersectDisplayed(ray, [layered]), []);
 });
+
+test('a floor is not hovered, and still hides what is behind it', () => {
+    const r = robot();
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshPhongMaterial({ side: THREE.DoubleSide }));
+    floor.userData.isGroundPlane = true;
+    floor.position.z = -1;
+    const visual = Object.assign(new THREE.Group(), { isURDFVisual: true });
+    visual.add(floor);
+    r.model.threeObject.children[0].add(visual);
+    r.root.updateMatrixWorld(true);
+    assert.equal(hoverAt(r).hovered?.name, 'arm', 'the arm in front of the floor');
+    assert.equal(hoverAt(r, -1, 0).hovered, null, 'only the floor under the pointer');
+    floor.position.z = 2;
+    r.root.updateMatrixWorld(true);
+    assert.equal(hoverAt(r).hovered, null, 'the floor between the camera and the arm');
+});

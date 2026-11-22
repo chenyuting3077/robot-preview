@@ -1,7 +1,7 @@
 import { isScalarJoint } from '../models/UnifiedRobotModel.js';
 import * as THREE from 'three';
 import { MathUtils } from './MathUtils.js';
-import { pickDisplayed } from './picking.js';
+import { pickDisplayed, isGround } from './picking.js';
 
 /**
  * Universal joint drag control system
@@ -149,7 +149,10 @@ export class JointDragControls {
 
     pickHit(raycaster) {
         if (!this.model?.threeObject) return null;
-        return pickDisplayed(raycaster, [this.model.threeObject], this.camera, ({ object }) => object.isMesh);
+        const hit = pickDisplayed(raycaster, [this.model.threeObject], this.camera, ({ object }) => object.isMesh);
+        // The floor is scenery: hovering it lit up most of the view and named the world body. It still hides what is
+        // behind it, so it ends the pick rather than being skipped.
+        return hit && !isGround(hit.object) ? hit : null;
     }
 
     updateJoint(joint, angle) {

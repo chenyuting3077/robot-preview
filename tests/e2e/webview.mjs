@@ -796,7 +796,7 @@ try {
     await sleep(600);
     check('turned back on, hovering shows the card again', back === 'arm' && (await card()).visible);
 
-    // A MuJoCo checker floor under the pointer keeps its texture: the white highlight used to blank the whole view.
+    // A MuJoCo floor is not hovered or clicked, but double-click can still put the orbit pivot on it.
     const floorScene = '<mujoco model="fl"><asset><texture name="grid" type="2d" builtin="checker" rgb1=".1 .2 .3" rgb2=".2 .3 .4" width="64" height="64"/><material name="grid" texture="grid" texrepeat="4 4"/></asset><worldbody><light pos="0 0 3"/><geom name="floor" type="plane" size="2 2 .1" material="grid"/><body name="arm" pos="0 0 .5"><joint name="hinge" type="hinge" axis="0 1 0"/><geom type="box" pos=".3 0 0" size=".1 .1 .1"/></body></worldbody></mujoco>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/fl/fl.xml', data: new TextEncoder().encode(${JSON.stringify(floorScene)}) }], primary: '/fl/fl.xml' }, '*')`);
     await waitFor(`window.app.currentModel?.joints?.has('hinge')`, 15000);
@@ -816,7 +816,12 @@ try {
         const r = window.app.sceneManager.renderer.domElement.getBoundingClientRect();
         const hit = window.app.pickMesh({ x: (${floorAt.x} - r.left) / r.width * 2 - 1, y: 1 - (${floorAt.y} - r.top) / r.height * 2 });
         return { link: hm.currentHighlightedLink?.name, hitGround: Boolean(hit?.object.userData.isGroundPlane), at: ${JSON.stringify(floorAt)}, white: m === hm.highlightMaterial, map: Boolean(m.map), glow: m.emissiveIntensity };`);
-    check('a hovered MJCF floor keeps its texture with a faint glow', floorLit.link && !floorLit.white && floorLit.map && floorLit.glow > 0 && floorLit.glow < 0.25, JSON.stringify(floorLit));
+    await ev(`window.__out.length = 0`);
+    await mouse('mousePressed', floorAt.x, floorAt.y, 1);
+    await mouse('mouseReleased', floorAt.x, floorAt.y);
+    await sleep(100);
+    floorLit.revealed = await ev(`return window.__out.some(m => m.type === 'reveal')`);
+    check('the MJCF floor is not hovered or clicked, but stays a pivot target', !floorLit.link && !floorLit.white && !floorLit.revealed && floorLit.hitGround, JSON.stringify(floorLit));
 
     // Simulating draws the floor with its texture, Pause keeps the simulated pose, Reset returns to the model.
     await mouse('mouseMoved', 5, 5);

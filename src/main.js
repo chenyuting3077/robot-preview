@@ -17,7 +17,7 @@ const emptyLoadReport = () => ({ loadError: null, loadErrorLocation: null, missi
 import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
 import { createCameraKeys, pointerNdc } from './utils/camera-keys.js';
-import { pickDisplayed } from './utils/picking.js';
+import { pickDisplayed, isGround } from './utils/picking.js';
 import './ui/view-gizmo.css';
 
 window.d3 = d3;
@@ -498,8 +498,10 @@ class App {
             mouseDownPos = null;
             if (distance >= 5 || duration >= 300) return;
 
-            // With picking off a click picks nothing, but still clears what was selected.
-            const hit = this.sceneManager.picking ? this.pickMesh(pointerNdc(canvas, event)) : null;
+            // With picking off a click picks nothing, but still clears what was selected. The floor is not picked
+            // either, though it stays a target for the orbit pivot.
+            let hit = this.sceneManager.picking ? this.pickMesh(pointerNdc(canvas, event)) : null;
+            if (hit && isGround(hit.object)) hit = null;
 
             if (!hit) {
                 this.sceneManager.highlightManager.clearHighlight();
