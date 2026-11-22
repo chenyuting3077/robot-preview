@@ -34,6 +34,8 @@ canvas { display: block; }
 [data-theme="light"] .glass { background: rgba(255, 255, 255, 0.9); }
 #top-control-bar { position: absolute; top: 20px; left: 20px; width: fit-content; max-width: calc(100vw - 40px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px; row-gap: 4px; padding: 5px 9px; border-radius: 21px; z-index: 100; }
 .control-bar-section { position: relative; display: flex; align-items: center; }
+/* A section whose buttons are all hidden would still take a gap in the bar. */
+.control-bar-section:not(:has(> :not([hidden]))) { display: none; }
 .tool-button, .control-button { display: flex; align-items: center; gap: 5px; padding: 5px 12px; background: transparent; border: 1px solid var(--button-border); border-radius: 12px; cursor: pointer; transition: all 0.2s var(--spring); color: var(--text-secondary); font: 500 11px inherit; font-family: inherit; white-space: nowrap; }
 .tool-button:hover, .control-button:hover { background: var(--hover); color: var(--text-primary); transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
 .tool-button:active, .control-button:active { transform: scale(0.98); }
