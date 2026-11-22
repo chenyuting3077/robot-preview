@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The icon's splat is jade, close to the green of the URDF / MJCF icon, so the extensions look like one set.
 - Distance colors: the toolbar's *Compare* menu (or a file's Stage row) colors a file by its distance to another file, to the nearest point of a cloud or the nearest triangle of a mesh (CloudCompare's C2C / C2M). The legend's top and a tolerance are typed in, *Hide within tolerance* leaves only what differs, and Info shows mean, RMS, 95th percentile, max and the share within tolerance. The reference turns grey, so its colors are not read as distances.
 - Mesh rows in a view of several files color too: Original, Height, Solid and distance.
 - A *Point Cloud View* list in the Explorer shows the files of the view used last: drag files from the Explorer onto it to add them (a drag onto the 3D view itself does not reach it on macOS), or remove them with its × button.

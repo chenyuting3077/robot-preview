@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The icon's top layer is jade, close to the green of the URDF / MJCF icon, so the extensions look like one set.
+
 ## 0.3.0
 
 - Now listed as "Robot Preview: USD Viewer (OpenUSD, Isaac Sim)".
