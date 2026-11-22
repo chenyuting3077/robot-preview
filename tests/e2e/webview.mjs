@@ -188,7 +188,7 @@ async function floatingPanels() {
     };
     const rectOf = id => ev(`const r = document.getElementById('${id}').getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }`);
     const near = (a, b, tolerance = 1.5) => Math.abs(a - b) <= tolerance;
-    const view = () => ev(`return { width: innerWidth, height: innerHeight, toolbar: document.getElementById('top-control-bar').getBoundingClientRect().bottom }`);
+    const view = () => ev(`return { width: innerWidth, height: innerHeight, toolbar: document.getElementById('top-bars').getBoundingClientRect().bottom }`);
     const header = r => ({ x: r.left + 50, y: r.top + 20 });
     const midLeft = r => ({ x: r.left + 4, y: (r.top + r.bottom) / 2 });
     const midRight = r => ({ x: r.right - 4, y: (r.top + r.bottom) / 2 });
@@ -628,6 +628,15 @@ try {
     const mjcf = '<mujoco model="t"><worldbody><light pos="0 0 3"/><geom type="plane" size="2 2 .1"/><body name="arm" pos="0 0 1"><joint name="hinge" type="hinge" axis="0 1 0"/><geom type="capsule" fromto="0 0 0 .5 0 0" size=".05"/></body></worldbody></mujoco>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/t/t.xml', data: new TextEncoder().encode(${JSON.stringify(mjcf)}) }], primary: '/t/t.xml' }, '*')`);
     check('MJCF loads', await waitFor(`window.app.currentModel?.joints?.has('hinge')`, 15000));
+    await sleep(500); // the bar slides in
+    const bars = await ev(`const rect = id => { const r = document.getElementById(id).getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; };
+        return { toolbar: rect('top-control-bar'), sim: rect('mujoco-simulation-bar'), row: rect('top-bars') }`);
+    check('the simulation bar sits beside the toolbar, not over the model, and panels stay below both', bars.sim.top === bars.toolbar.top && bars.sim.left > bars.toolbar.right && bars.row.bottom >= bars.sim.bottom, JSON.stringify(bars));
+    const narrow = await ev(`const bar = document.getElementById('top-bars'); bar.style.right = (innerWidth - document.getElementById('top-control-bar').getBoundingClientRect().right - 10) + 'px';
+        await new Promise(r => setTimeout(r, 300)); const sim = document.getElementById('mujoco-simulation-bar').getBoundingClientRect(), tb = document.getElementById('top-control-bar').getBoundingClientRect();
+        const result = { simTop: sim.top, toolbarBottom: tb.bottom, panelTop: parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--toolbar-bottom')) };
+        bar.style.right = ''; return result;`);
+    check('without room the simulation bar wraps below the toolbar and panels move below it', narrow.simTop >= narrow.toolbarBottom && narrow.panelTop >= narrow.simTop + 20, JSON.stringify(narrow));
     await ev(`document.getElementById('mujoco-simulate-btn-bar').click()`);
     check('MuJoCo simulation runs under the CSP', await waitFor(`window.app.mujocoSimulationManager.isSimulationRunning()`, 30000));
 

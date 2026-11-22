@@ -21,7 +21,7 @@ const CURSORS = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize'
 const clamp = (value, min, max) => Math.min(Math.max(value, min), Math.max(min, max));
 
 function view() {
-    const toolbar = document.getElementById('top-control-bar');
+    const toolbar = document.getElementById('top-bars');
     return { width: window.innerWidth, height: window.innerHeight, top: toolbar ? toolbar.getBoundingClientRect().bottom : 0 };
 }
 

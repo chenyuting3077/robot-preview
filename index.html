@@ -190,11 +190,28 @@
             display: block;
         }
 
-        /* Top control bar */
-        #top-control-bar {
+        /* The toolbar and, for MJCF, the simulation bar share the top row and wrap below each other when narrow,
+           so the simulation bar never sits over the model. The row itself lets the pointer through to the view. */
+        #top-bars {
             position: absolute;
             top: 20px;
             left: 20px;
+            right: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-start;
+            gap: 8px;
+            z-index: 100;
+            pointer-events: none;
+        }
+
+        #top-bars > * {
+            pointer-events: auto;
+        }
+
+        /* Top control bar */
+        #top-control-bar {
+            position: relative;
             width: fit-content;
             max-width: calc(100% - 40px);
             display: flex;
@@ -796,11 +813,7 @@
 
         /* MuJoCo simulation control bar */
         #mujoco-simulation-bar {
-            position: fixed;
-            top: calc(var(--toolbar-bottom, 60px) + 20px);
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 100;
+            position: relative;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -818,11 +831,11 @@
         @keyframes slideDown {
             from {
                 opacity: 0;
-                transform: translateX(-50%) translateY(-10px);
+                transform: translateY(-10px);
             }
             to {
                 opacity: 1;
-                transform: translateX(-50%) translateY(0);
+                transform: translateY(0);
             }
         }
 
@@ -1781,6 +1794,7 @@
 <body>
     <div id="container">
         <div id="canvas-container">
+            <div id="top-bars">
             <div id="top-control-bar">
                 <div class="control-bar-section control-bar-views">
                     <button class="tool-button" id="display-menu-btn">
@@ -1861,8 +1875,6 @@
                 </div>
             </div>
 
-            <div id="loading-indicator" style="display: none;"></div>
-
             <div id="mujoco-simulation-bar" style="display:none;">
                 <button id="mujoco-reset-btn-bar">
                     <span data-i18n="mujocoReset"></span>
@@ -1871,6 +1883,10 @@
                     <span data-i18n="mujocoSimulate"></span>
                 </button>
             </div>
+            </div>
+
+            <div id="loading-indicator" style="display: none;"></div>
+
 
             <canvas id="canvas"></canvas>
 

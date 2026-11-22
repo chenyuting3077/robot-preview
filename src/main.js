@@ -158,7 +158,7 @@ class App {
                     button.classList.remove('active');
                 });
             }
-            const toolbar = document.getElementById('top-control-bar');
+            const toolbar = document.getElementById('top-bars');
             new ResizeObserver(() => {
                 document.documentElement.style.setProperty('--toolbar-bottom', `${toolbar.offsetTop + toolbar.offsetHeight}px`);
                 this.panelManager?.renderAll();
