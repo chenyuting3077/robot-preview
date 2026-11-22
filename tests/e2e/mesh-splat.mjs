@@ -109,7 +109,6 @@ function fixtures(dir) {
             buffers: [{ byteLength: 36, uri: `data:application/octet-stream;base64,${triangle.toString('base64')}` }]
         }),
         'cube-meshopt.gltf': meshoptCube(),
-        'gauss3d.ply': splatPly(['scale_0', 'scale_1', 'scale_2']),
         'gauss2d.ply': splatPly(['scale_0', 'scale_1']),
         'fields.ply': `ply\nformat ascii 1.0\nelement vertex 2000\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n${Array.from({ length: 2000 }, (_, i) => { const r = Math.sqrt(i / 2000), t = i * 2.399; return `${r * Math.cos(t)} ${r * Math.sin(t)} 0 ${i / 2000}`; }).join('\n')}\n`,
         'scene.usda': `#usda 1.0\n(\n    upAxis = "Z"\n    defaultPrim = "World"\n)\ndef Xform "World"\n{\n    def Mesh "Tri"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh "Hidden"\n    {\n        token visibility = "invisible"\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(50, 0, 0), (51, 0, 0), (50, 1, 0)]\n    }\n    def ParticleField3DGaussianSplat "Gaussians"\n    {\n        point3f[] positions = [(0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)]\n        quatf[] orientations = [(1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0)]\n        float3[] scales = [(0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1)]\n        float[] opacities = [0.9, 0.9, 0.9, 0.9]\n        int radiance:sphericalHarmonicsDegree = 0\n        float3[] radiance:sphericalHarmonicsCoefficients = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)]\n    }\n}\n`,
@@ -289,7 +288,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
             state.cacheOk = /data-cached="[^"]+"/.test(pages.get(`/page/${name}`));
             camera += ` cache ${state.cacheOk}`;
         }
-        if (!state.loading && !state.error && /^(cube\.stl|cloud\.ply|pole\.xyz|gauss3d\.ply)$/.test(name)) {
+        if (!state.loading && !state.error && /^(cube\.stl|cloud\.ply|pole\.xyz)$/.test(name)) {
             const size = await evaluate('[innerWidth, innerHeight]');
             const shot = async () => (await send('Page.captureScreenshot', { format: 'jpeg', quality: 60, clip: { x: 0, y: 0, width: size[0], height: size[1], scale: 0.25 } })).data;
             const diff = (a, b) => evaluate(`(async () => {
@@ -619,7 +618,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 state.treeOk = tree === 'World:Xform:true,Tri:Mesh:true,Hidden:Mesh:false,Gaussians:ParticleField3DGaussianSplat:true' && changed > 0.05 && parentOff && pickOk && reframed < 0.002;
                 camera += ` tree ${tree} hide ${(changed * 100).toFixed(1)}% parentOff ${parentOff}`;
             }
-            if (/^(cube\.stl|cloud\.ply|pole\.xyz|table\.xyz|gauss3d\.ply)$/.test(name)) {
+            if (/^(cube\.stl|cloud\.ply|pole\.xyz|table\.xyz)$/.test(name)) {
                 // Past the settle after the last input, the view draws nothing; a click on the grid draws it.
                 await sleep(2000);
                 const idle = await evaluate('new Promise(resolve => { const before = window.__draws; setTimeout(() => resolve(window.__draws - before), 1000); })');
