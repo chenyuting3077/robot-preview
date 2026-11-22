@@ -365,7 +365,10 @@ async function floatingPanels() {
     check('a docked panel dragged away gets its size from before docking', near(docked.height, v.height - v.toolbar - 2 * MARGIN) && near(after.width, r.width) && near(after.height, r.height), JSON.stringify({ r, docked, after }));
 
     r = after;
-    await drag(header(r), { x: v.width - 5, y: v.height - 5 });
+    await drag(header(r), { x: v.width - 5, y: v.height - 150 }, { release: false });
+    const alongEdge = await preview();
+    check('along the right edge, 150 px above the corner, the corner is previewed', alongEdge && near(alongEdge.right, v.width - MARGIN) && near(alongEdge.bottom, v.height - MARGIN) && near(alongEdge.height, r.height), JSON.stringify({ alongEdge, v }));
+    await drag(null, { x: v.width - 5, y: v.height - 5 });
     after = await rectOf(TREE);
     check('releasing in a corner snaps the panel flush to it, size kept', near(after.right, v.width - MARGIN) && near(after.bottom, v.height - MARGIN) && near(after.width, r.width) && near(after.height, r.height), JSON.stringify({ r, after, v }));
 
