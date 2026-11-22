@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
 import * as THREE from '../../packages/mesh-splat/node_modules/three/build/three.module.js';
-import { createCloudColors, assignHues } from '../../packages/mesh-splat/webview/cloud-colors.mjs';
+import { createCloudColors, assignHues, positionsOf } from '../../packages/mesh-splat/webview/cloud-colors.mjs';
 import { POINT_GREY } from '../../packages/mesh-splat/webview/materials.mjs';
 
 function page() {
@@ -313,4 +313,89 @@ test('the legend follows the Display menu\'s mode, then any ranged mode, and hid
     assert.equal(changes.at(-1)[0], 'field:intensity', 'no cloud uses height any more');
     colors.setMode('solid', [scan]);
     assert.deepEqual(changes.at(-1)[1], null);
+});
+
+test('a distance mode ranges from 0, takes a typed top, and is offered only to what was measured', () => {
+    page();
+    const root = new THREE.Group();
+    const scan = cloud(column(0, 1, 5));
+    const other = cloud(column(0, 1, 5));
+    root.add(scan, other);
+    const changes = [];
+    const colors = createCloudColors({ root, upAxis: () => '+Z', onChange: (...change) => changes.push(change) });
+    colors.setup();
+    scan.userData.distances = { map: new Float32Array([0.5, 1, 1.5, 2, 2.5]) };
+    colors.setMode('distance:map', [scan, other]);
+    assert.deepEqual([colors.modeOf(scan), colors.modeOf(other)], ['distance:map', 'height']);
+    // Chosen on a row, the distance is what the legend shows, from 0 rather than its lowest value.
+    assert.equal(changes.at(-1)[0], 'distance:map');
+    assert.equal(changes.at(-1)[1][0], 0);
+    assert.equal(changes.at(-1)[1][1], 2, "the 98th percentile of five values is the fourth");
+    assert.deepEqual(colors.usedReferences(), new Set(['map']));
+    // A typed top saturates everything past it at the top color.
+    colors.setDistanceTop(1);
+    assert.deepEqual(changes.at(-1)[1], [0, 1]);
+    assert.deepEqual(colorsOf(scan).slice(6, 9), colorsOf(scan).slice(12, 15));
+    assert.equal(scan.geometry.attributes.compareDistance.array, scan.userData.distances.map);
+});
+
+test('hiding within the tolerance turns the shader clip on only for objects in a distance mode', () => {
+    page();
+    const root = new THREE.Group();
+    const scan = cloud(column(0, 1, 5));
+    const other = cloud(column(0, 1, 5));
+    root.add(scan, other);
+    const colors = createCloudColors({ root, upAxis: () => '+Z' });
+    colors.setup();
+    scan.userData.distances = { map: new Float32Array(5) };
+    colors.setMode('distance:map', [scan]);
+    colors.setClip(0.1, true);
+    assert.equal(scan.material.userData.clip.value, 1);
+    assert.equal(other.material.userData.clip, undefined);
+    colors.setMode('height', [scan]);
+    assert.equal(scan.material.userData.clip.value, 0);
+});
+
+test('a mesh paints through a copy of its geometry and gets its own geometry and material back on Original', () => {
+    page();
+    const root = new THREE.Group();
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 1]), 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(9).fill(9), 3, true));
+    const material = new THREE.MeshStandardMaterial({ wireframe: true });
+    const mesh = new THREE.Mesh(geometry, material);
+    const pointsOfMesh = new THREE.Points(geometry, new THREE.PointsMaterial({ vertexColors: true }));
+    mesh.userData.points = pointsOfMesh;
+    root.add(mesh);
+    const colors = createCloudColors({ root, upAxis: () => '+Z', paintable: () => true });
+    colors.setup();
+    assert.equal(colors.modeOf(mesh), 'rgb');
+    assert.equal(mesh.geometry, geometry);
+    colors.setMode('height', [mesh]);
+    assert.notEqual(mesh.geometry, geometry);
+    assert.equal(mesh.geometry.attributes.position, geometry.attributes.position, 'positions are shared, not copied');
+    assert.equal(mesh.material.wireframe, true, 'the display mode carries over');
+    assert.ok(mesh.material.vertexColors);
+    assert.equal(pointsOfMesh.geometry, mesh.geometry);
+    // Heights along z run 0, 0, 1: the third vertex takes the other end of the scale.
+    const painted = [...mesh.geometry.attributes.color.array];
+    assert.notDeepEqual(painted.slice(0, 3), painted.slice(6, 9));
+    assert.deepEqual([...geometry.attributes.color.array], Array(9).fill(9), 'its own colors are untouched');
+    colors.setMode('rgb', [mesh]);
+    assert.equal(mesh.geometry, geometry);
+    assert.equal(mesh.material, material);
+    assert.equal(pointsOfMesh.geometry, geometry);
+    // The Display menu's buttons are for clouds: a mesh keeps its mode.
+    colors.setMode('height');
+    assert.equal(colors.modeOf(mesh), 'rgb');
+});
+
+test('quantized or interleaved positions are read as float32 xyz', () => {
+    const geometry = new THREE.BufferGeometry();
+    const interleaved = new THREE.InterleavedBuffer(new Float32Array([1, 2, 3, 9, 4, 5, 6, 9]), 4);
+    geometry.setAttribute('position', new THREE.InterleavedBufferAttribute(interleaved, 3, 0));
+    assert.deepEqual([...positionsOf(geometry)], [1, 2, 3, 4, 5, 6]);
+    const quantized = new THREE.BufferGeometry();
+    quantized.setAttribute('position', new THREE.BufferAttribute(new Int16Array([32767, 0, -32767]), 3, true));
+    assert.deepEqual([...positionsOf(quantized)].map(v => +v.toFixed(3)), [1, 0, -1]);
 });

@@ -45,6 +45,17 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 - STEP and IGES take no part: they start `+Y` and keep their own cache path.
 - Defaults follow the opened file: a cloud's grid and axes, a map's top-down camera. An added map keeps its cells under Wireframe and Points, which are for the meshes.
 
+## Comparing files
+
+- Distance colors measure each point (or mesh vertex) to the nearest point of a reference cloud or the nearest triangle of a reference mesh, exact, as CloudCompare's C2C / C2M do; there is no maximum search distance, so a scan's far returns get their true distance. Not signed, and no M3C2: both need normals.
+- A bounding-volume hierarchy, built once per reference file in a Web Worker and asked again for every file and detail cloud measured against it; the worker ends when no file uses that reference, giving back its copy of the reference and the tree (not measured in VS Code; the Node benchmark below peaked at 1.7 GB resident with a 10M-point and a 10M-triangle reference and 10M queries alive at once). 10M points against 10M points: 6.1 s to build, 13.4 s to query; against 10M triangles 7.4 s and 15.0 s; 1M against 1M about 0.5 s and 1.2 s (Node 22, Apple M2, one run each, a synthetic floor and wall in scan order; not measured in VS Code).
+- Everything goes into the root's frame less the reference file's center in float64 before float32, so two UTM clouds compare at the detail they were stored with.
+- The reference is its file's loaded points: past 10M the sample, not *Load detail in view*'s. Detail of a measured cloud is measured when it arrives.
+- The scale starts at 0 and ends at the 98th percentile unless a top is typed. The first tolerance is three times the median distance rounded to 1, 2 or 5 of a power of ten, a guess at registration noise, not checked against real pairs. *Hide within tolerance* discards in the shader, so dragging the tolerance recolors nothing.
+- A mesh in any mode but Original is drawn through a copy of its geometry that shares every attribute but color, with a plain vertex-colored material; Original puts its own geometry and materials back, textures included. The Display menu's color buttons still set clouds only.
+- Side by side draws one canvas twice with a scissor, each half showing its side's files: two canvases would upload every geometry twice. Zoom toward the cursor is off while split (OrbitControls measures the pointer against the whole canvas) and zooms toward the center instead; picking maps the pointer into its half.
+- `F` frames for the narrower of the two fields of view, so a half (taller than wide) takes the model in; a single view wider than tall frames as before.
+
 ## USD
 
 - three 0.187's `USDLoader` reads USDA / USDC / USDZ. `@needle-tools/usd` is non-commercial; TinyUSDZ 0.9.1 failed all five test files.

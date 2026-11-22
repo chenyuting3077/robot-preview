@@ -12,7 +12,8 @@ import { PCDLoader } from 'three/examples/jsm/loaders/PCDLoader.js';
 import { TDSLoader } from 'three/examples/jsm/loaders/TDSLoader.js';
 import { readPlyHeader, plyKind, addMissingScale, readPlyPoints, readPlyMesh } from './ply.mjs';
 import { flatNormals, percentile, grown } from './geometry.mjs';
-import { createCloudColors, assignHues } from './cloud-colors.mjs';
+import { createCloudColors, assignHues, distanceRef } from './cloud-colors.mjs';
+import { distanceStats, defaultTolerance } from './distance.mjs';
 import { UP, relativeUp } from './up.mjs';
 import { turboGradient } from './color.mjs';
 import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mjs';
@@ -25,9 +26,9 @@ import { recentering } from './recenter.mjs';
 import { legendLabels } from './legend-format.mjs';
 
 const STRINGS = {
-    en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', missingMaterials: 'Missing materials', notShown: 'Not shown', unit: 'Unit', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element', screenshot: 'Save screenshot', upAxis: 'Up axis', pickParts: 'Pick parts in the view', grid: 'Grid', axes: 'Axes', bounds: 'Bounds', layout: 'Layout', notAScan: 'the file is {0} bytes, not a multiple of the {1}-byte {2} point ({3}): it does not look like a {2} scan', occupancyMap: 'Occupancy grid map', greyImage: 'Greyscale image', cells: 'Cells', resolution: 'Resolution', perCell: 'm/cell', origin: 'Origin', mapMode: 'Mode', mapYaml: 'Map YAML', mapImage: 'Map image', noMapYaml: 'Not found, shown at 1 unit per pixel', notMapYaml: 'shown at 1 unit per pixel', mapImageMissing: 'Cannot read the map image', mapTooLarge: 'cells is more than this GPU can show as one texture', addFile: 'Add file…', offset: 'Offset taken out', detailFailed: 'Could not read', colorSolid: 'Solid color', remove: 'Remove from the view', notFound: 'File not found' },
-    'zh-TW': { detailInView: '載入視野內細節', colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', missingMaterials: '缺少的材質', notShown: '未顯示', unit: '單位', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element', screenshot: '儲存截圖', upAxis: '上方軸', pickParts: '在畫面上點選零件', grid: '格線', axes: '座標軸', bounds: '包圍盒', layout: '欄位配置', notAScan: '檔案大小 {0} bytes，不是 {2} 每點 {1} bytes（{3}）的倍數，看起來不是 {2} 掃描檔', occupancyMap: '佔據網格地圖', greyImage: '灰階影像', cells: '格數', resolution: '解析度', perCell: 'm/格', origin: '原點', mapMode: '模式', mapYaml: '地圖 YAML', mapImage: '地圖影像', noMapYaml: '找不到，以每像素 1 單位顯示', notMapYaml: '以每像素 1 單位顯示', mapImageMissing: '無法讀取地圖影像', mapTooLarge: '格超過這張顯示卡單張貼圖的上限', addFile: '加入檔案…', offset: '已扣除的偏移', detailFailed: '無法讀取', colorSolid: '單色', remove: '從檢視移除', notFound: '找不到檔案' },
-    'zh-CN': { detailInView: '加载视野内细节', colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', missingMaterials: '缺少的材质', notShown: '未显示', unit: '单位', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element', screenshot: '保存截图', upAxis: '上方轴', pickParts: '在画面上点选零件', grid: '网格线', axes: '坐标轴', bounds: '包围盒', layout: '字段布局', notAScan: '文件大小 {0} 字节，不是 {2} 每点 {1} 字节（{3}）的整数倍，看起来不是 {2} 扫描文件', occupancyMap: '占据栅格地图', greyImage: '灰度图像', cells: '栅格数', resolution: '分辨率', perCell: 'm/格', origin: '原点', mapMode: '模式', mapYaml: '地图 YAML', mapImage: '地图图像', noMapYaml: '未找到，以每像素 1 单位显示', notMapYaml: '以每像素 1 单位显示', mapImageMissing: '无法读取地图图像', mapTooLarge: '格超过这块显卡单张纹理的上限', addFile: '添加文件…', offset: '已扣除的偏移', detailFailed: '无法读取', colorSolid: '单色', remove: '从视图移除', notFound: '找不到文件' }
+    en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', missingMaterials: 'Missing materials', notShown: 'Not shown', unit: 'Unit', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element', screenshot: 'Save screenshot', upAxis: 'Up axis', pickParts: 'Pick parts in the view', grid: 'Grid', axes: 'Axes', bounds: 'Bounds', layout: 'Layout', notAScan: 'the file is {0} bytes, not a multiple of the {1}-byte {2} point ({3}): it does not look like a {2} scan', occupancyMap: 'Occupancy grid map', greyImage: 'Greyscale image', cells: 'Cells', resolution: 'Resolution', perCell: 'm/cell', origin: 'Origin', mapMode: 'Mode', mapYaml: 'Map YAML', mapImage: 'Map image', noMapYaml: 'Not found, shown at 1 unit per pixel', notMapYaml: 'shown at 1 unit per pixel', mapImageMissing: 'Cannot read the map image', mapTooLarge: 'cells is more than this GPU can show as one texture', addFile: 'Add file…', offset: 'Offset taken out', detailFailed: 'Could not read', colorSolid: 'Solid color', remove: 'Remove from the view', notFound: 'File not found', distanceTo: 'Distance to {0}', tolerance: 'Tolerance', hideWithin: 'Hide within tolerance', withinTolerance: 'Within {0}', distanceStats: 'mean {0} · RMS {1} · p95 {2} · max {3}', measuring: 'Measuring distances {0}%', distanceFailed: 'Could not measure distances', scaleTop: 'Top of the scale (empty: 98th percentile)', sideBySide: 'Side by side', sideLeft: 'L', sideRight: 'R', sideBoth: 'L R', side: 'Side in the split view' },
+    'zh-TW': { detailInView: '載入視野內細節', colorRgb: '原色', colorHeight: '高度', colorIntensity: '強度', pointsShown: '顯示 {0} / 共 {1}', help: '操作說明', pointSmall: '小點', pointMedium: '中點', pointLarge: '大點', helpKeyOrbit: '左鍵拖曳', helpOrbit: '旋轉', helpKeyPan: '右鍵／中鍵拖曳', helpPan: '平移', helpKeyZoom: '滾輪', helpZoom: '朝游標縮放', helpKeyPivot: '雙擊', helpPivot: '設定旋轉中心', helpKeyFly: 'W A S D', helpFly: '移動', helpKeyTurn: 'Q E', helpTurn: '轉向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '顯示', stage: 'Stage', primName: '名稱', primType: '類型', notLoaded: '未載入', missingMaterials: '缺少的材質', notShown: '未顯示', unit: '單位', info: '資訊', solid: '實體', wireframe: '線框', points: '點', loading: '正在載入', unsupportedFormat: '不支援的檔案格式', file: '檔案', format: '格式', fileSize: '檔案大小', vertices: '頂點', faces: '面', pointCount: '點數', splats: 'Splat 數', size: '尺寸', mesh: '網格', pointCloud: '點雲', gaussian: '高斯潑濺', flat: '2DGS（已壓平）', failed: '無法開啟這個檔案', flatUnsupported: '2DGS PLY 必須是 binary little-endian，且 vertex 是第一個 element', screenshot: '儲存截圖', upAxis: '上方軸', pickParts: '在畫面上點選零件', grid: '格線', axes: '座標軸', bounds: '包圍盒', layout: '欄位配置', notAScan: '檔案大小 {0} bytes，不是 {2} 每點 {1} bytes（{3}）的倍數，看起來不是 {2} 掃描檔', occupancyMap: '佔據網格地圖', greyImage: '灰階影像', cells: '格數', resolution: '解析度', perCell: 'm/格', origin: '原點', mapMode: '模式', mapYaml: '地圖 YAML', mapImage: '地圖影像', noMapYaml: '找不到，以每像素 1 單位顯示', notMapYaml: '以每像素 1 單位顯示', mapImageMissing: '無法讀取地圖影像', mapTooLarge: '格超過這張顯示卡單張貼圖的上限', addFile: '加入檔案…', offset: '已扣除的偏移', detailFailed: '無法讀取', colorSolid: '單色', remove: '從檢視移除', notFound: '找不到檔案', distanceTo: '到 {0} 的距離', tolerance: '容差', hideWithin: '隱藏容差內的點', withinTolerance: '容差 {0} 內', distanceStats: '平均 {0} · RMS {1} · p95 {2} · 最大 {3}', measuring: '正在計算距離 {0}%', distanceFailed: '無法計算距離', scaleTop: '色階上限（留空：第 98 百分位）', sideBySide: '左右並排', sideLeft: '左', sideRight: '右', sideBoth: '左右', side: '並排時顯示在哪一側' },
+    'zh-CN': { detailInView: '加载视野内细节', colorRgb: '原色', colorHeight: '高度', colorIntensity: '强度', pointsShown: '显示 {0} / 共 {1}', help: '操作说明', pointSmall: '小点', pointMedium: '中点', pointLarge: '大点', helpKeyOrbit: '左键拖曳', helpOrbit: '旋转', helpKeyPan: '右键／中键拖曳', helpPan: '平移', helpKeyZoom: '滚轮', helpZoom: '朝光标缩放', helpKeyPivot: '双击', helpPivot: '设置旋转中心', helpKeyFly: 'W A S D', helpFly: '移动', helpKeyTurn: 'Q E', helpTurn: '转向', helpKeyFast: 'Shift', helpFast: '加速', helpKeyFrame: 'F', helpFrame: '回到全貌', display: '显示', stage: 'Stage', primName: '名称', primType: '类型', notLoaded: '未加载', missingMaterials: '缺少的材质', notShown: '未显示', unit: '单位', info: '信息', solid: '实体', wireframe: '线框', points: '点', loading: '正在加载', unsupportedFormat: '不支持的文件格式', file: '文件', format: '格式', fileSize: '文件大小', vertices: '顶点', faces: '面', pointCount: '点数', splats: 'Splat 数', size: '尺寸', mesh: '网格', pointCloud: '点云', gaussian: '高斯泼溅', flat: '2DGS（已压平）', failed: '无法打开这个文件', flatUnsupported: '2DGS PLY 必须是 binary little-endian，且 vertex 是第一个 element', screenshot: '保存截图', upAxis: '上方轴', pickParts: '在画面上点选零件', grid: '网格线', axes: '坐标轴', bounds: '包围盒', layout: '字段布局', notAScan: '文件大小 {0} 字节，不是 {2} 每点 {1} 字节（{3}）的整数倍，看起来不是 {2} 扫描文件', occupancyMap: '占据栅格地图', greyImage: '灰度图像', cells: '栅格数', resolution: '分辨率', perCell: 'm/格', origin: '原点', mapMode: '模式', mapYaml: '地图 YAML', mapImage: '地图图像', noMapYaml: '未找到，以每像素 1 单位显示', notMapYaml: '以每像素 1 单位显示', mapImageMissing: '无法读取地图图像', mapTooLarge: '格超过这块显卡单张纹理的上限', addFile: '添加文件…', offset: '已扣除的偏移', detailFailed: '无法读取', colorSolid: '单色', remove: '从视图移除', notFound: '找不到文件', distanceTo: '到 {0} 的距离', tolerance: '容差', hideWithin: '隐藏容差内的点', withinTolerance: '容差 {0} 内', distanceStats: '平均 {0} · RMS {1} · p95 {2} · 最大 {3}', measuring: '正在计算距离 {0}%', distanceFailed: '无法计算距离', scaleTop: '色阶上限（留空：第 98 百分位）', sideBySide: '左右并排', sideLeft: '左', sideRight: '右', sideBoth: '左右', side: '并排时显示在哪一侧' }
 };
 const lang = document.documentElement.lang.toLowerCase();
 const strings = STRINGS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.startsWith('zh') ? 'zh-CN' : 'en'];
@@ -89,17 +90,94 @@ scene.add(root);
 for (const file of files) root.add(file.group);
 let localBox = null;
 const fieldLabel = name => (name === 'intensity' ? t('colorIntensity') : name);
+// Splats (and Spark's renderer, a mesh) and map planes keep their own look.
+const insideSplat = object => Boolean(object) && (object.userData.splat || insideSplat(object.parent));
+const paintable = object => object.isMesh && !object.userData.map && !insideSplat(object);
 const cloudColors = createCloudColors({
     root,
     upAxis: () => $('up-select').value,
     label: fieldLabel,
+    paintable,
     // By id, which a file keeps when one before it is removed, so its solid color stays.
     fileOf: cloud => fileOf(cloud).hue,
     onChange: (mode, range) => {
         showLegend(mode, range);
         syncColorRows();
+        showInfo();
     }
 });
+
+// Distance colors (#18): a file's points or mesh vertices colored by their distance to another file. One tolerance
+// for the view, typed into the legend: it hides what agrees and is the line the Info share is counted against.
+let comparer = null;
+let tolerance = null;
+let hideWithin = false;
+let distanceTop = null;
+let measuring = 0;
+const fileById = id => files.find(file => file.id === id);
+// A file's clouds and meshes, with the detail its clouds have loaded.
+const measurable = file => [...file.paintables, ...file.clouds.map(cloud => cloud.userData.detailCloud).filter(Boolean)];
+async function measureDistances(reference, objects) {
+    const todo = objects.filter(object => !object.userData.distances?.[reference.id]);
+    if (!todo.length) return;
+    comparer ??= (await import('./compare.mjs')).createComparer(root);
+    const indicator = $('loading-indicator');
+    const progress = (done, total) => { indicator.textContent = t('measuring').replace('{0}', Math.floor(100 * done / total)); };
+    measuring++;
+    indicator.hidden = false;
+    progress(0, 1);
+    try {
+        const values = await comparer.measure(reference, reference.paintables, todo, progress);
+        todo.forEach((object, i) => { (object.userData.distances ??= {})[reference.id] = values[i]; });
+    } finally {
+        if (!--measuring) {
+            indicator.hidden = true;
+            indicator.textContent = t('loading');
+        }
+        wake();
+    }
+}
+async function setDistance(file, reference) {
+    const objects = measurable(file);
+    delete file.info.distanceError;
+    try {
+        await measureDistances(reference, objects);
+    } catch (error) {
+        if (error?.message !== 'cancelled') file.info.distanceError = error?.message ?? String(error);
+        syncColorRows();
+        showInfo();
+        return;
+    }
+    tolerance ??= defaultTolerance(objects.map(object => object.userData.distances[reference.id]));
+    cloudColors.setMode(`distance:${reference.id}`, objects);
+    applyTolerance();
+    comparer?.keep(cloudColors.usedReferences());
+    saveView();
+}
+function applyTolerance() {
+    cloudColors.setClip(tolerance ?? 0, hideWithin);
+    $('hide-within-btn').classList.toggle('active', hideWithin);
+    $('hide-within-btn').setAttribute('aria-pressed', String(hideWithin));
+    if (document.activeElement !== $('tolerance-input')) $('tolerance-input').value = tolerance ?? '';
+    showInfo();
+    wake();
+}
+const shortNumber = value => String(+value.toPrecision(3));
+// Mean, RMS, p95 and max of the file's loaded points (its detail left out, as for color ranges), and the share
+// within tolerance, kept until the distances or the tolerance change.
+function distanceRows(file) {
+    const ref = distanceRef(file.paintables?.length ? cloudColors.modeOf(file.paintables[0]) : null);
+    if (!ref || tolerance === null) return [];
+    const lists = file.paintables.map(object => object.userData.distances?.[ref]).filter(Boolean);
+    const key = `${ref} ${tolerance} ${lists.length}`;
+    if (file.stats?.key !== key) file.stats = { key, value: distanceStats(lists, tolerance) };
+    const stats = file.stats.value;
+    if (!stats) return [];
+    return [
+        [t('distanceTo').replace('{0}', fileById(ref)?.name ?? ref), t('distanceStats').replace('{0}', shortNumber(stats.mean)).replace('{1}', shortNumber(stats.rms)).replace('{2}', shortNumber(stats.p95)).replace('{3}', shortNumber(stats.max))],
+        [t('withinTolerance').replace('{0}', shortNumber(tolerance)), `${(stats.within * 100).toFixed(1)}%`]
+    ];
+}
 
 function syncTheme() {
     const theme = /\bvscode-(high-contrast-)?light\b/.test(document.body.className) ? 'light' : 'dark';
@@ -110,18 +188,55 @@ function syncTheme() {
 syncTheme();
 new MutationObserver(syncTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
-new ResizeObserver(() => {
+// Side by side: one canvas and one camera drawn twice, each half showing only its files, so moving either half moves
+// both; two canvases would upload every geometry twice. A file's side is 'left', 'right' or 'both'.
+let split = false;
+const sideOf = file => file.side ?? (file.index ? 'right' : 'left');
+const onSide = (file, side) => sideOf(file) === 'both' || sideOf(file) === side;
+// Runs `run` with only the files of `side` shown (all of them when not split), each as the user left it otherwise.
+function withSide(side, run) {
+    if (!split || !side) return run();
+    const shown = files.map(file => file.group.visible);
+    files.forEach((file, i) => { file.group.visible = shown[i] && onSide(file, side); });
+    try {
+        return run();
+    } finally {
+        files.forEach((file, i) => { file.group.visible = shown[i]; });
+    }
+}
+function draw() {
+    if (!split) return renderer.render(scene, camera);
+    const size = renderer.getSize(new THREE.Vector2());
+    const half = Math.floor(size.x / 2);
+    renderer.setScissorTest(true);
+    for (const [side, x, width] of [['left', 0, half], ['right', half, size.x - half]]) {
+        renderer.setViewport(x, 0, width, size.y);
+        renderer.setScissor(x, 0, width, size.y);
+        withSide(side, () => renderer.render(scene, camera));
+    }
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, size.x, size.y);
+}
+// The pointer in its own half's coordinates while split, with that half's side.
+function viewNdc(ndc) {
+    if (!split) return { ndc, side: null };
+    const side = ndc.x < 0 ? 'left' : 'right';
+    return { ndc: new THREE.Vector2(side === 'left' ? ndc.x * 2 + 1 : ndc.x * 2 - 1, ndc.y), side };
+}
+function resize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
-    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.aspect = (split ? window.innerWidth / 2 : window.innerWidth) / window.innerHeight;
     camera.updateProjectionMatrix();
     wake();
-}).observe(document.body);
+}
+new ResizeObserver(resize).observe(document.body);
 const raycaster = new THREE.Raycaster();
 const visibleInScene = object => !object || (object.visible && visibleInScene(object.parent));
-const pickAt = ndc => {
+const pickAt = full => {
+    const { ndc, side } = viewNdc(full);
     raycaster.setFromCamera(ndc, camera);
     raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
-    return raycaster.intersectObject(root, true).find(({ object }) => visibleInScene(object));
+    return withSide(side, () => raycaster.intersectObject(root, true).find(({ object }) => visibleInScene(object)));
 };
 const cameraKeys = createCameraKeys({
     camera,
@@ -188,10 +303,11 @@ function setPicking(on) {
 }
 function primAt(event) {
     const rect = renderer.domElement.getBoundingClientRect();
-    raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
+    const { ndc, side } = viewNdc(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1));
+    raycaster.setFromCamera(ndc, camera);
     raycaster.params.Points.threshold = camera.position.distanceTo(controls.target) * 0.01;
     // Hidden prims (Isaac's collision meshes) are left out of the raycast, not filtered after it.
-    return raycaster.intersectObjects(usdStage.pickable.filter(visibleInScene), false)[0]?.object ?? null;
+    return withSide(side, () => raycaster.intersectObjects(usdStage.pickable.filter(visibleInScene), false)[0]?.object ?? null);
 }
 function hoverPrim(prim, event) {
     const label = $('hover-label');
@@ -252,7 +368,7 @@ renderer.setAnimationLoop(() => {
     if (cameraKeys()) wake();
     controls.update();
     if (performance.now() < awakeUntil) {
-        renderer.render(scene, camera);
+        draw();
         if (localBox) saveSoon();
     }
 });
@@ -280,7 +396,12 @@ const viewJson = () => files.some(file => file.object) && JSON.stringify({
     helpers: Object.keys(HELPERS).filter(kind => helpers[kind] || (kind === 'axes' && axesHeldBack)),
     mode: displayMode,
     hues: Object.fromEntries(files.map(file => [file.id, file.hue])),
-    colors: Object.fromEntries(files.filter(file => file.clouds?.length).map(file => [file.id, cloudColors.modeOf(file.clouds[0])]))
+    colors: Object.fromEntries(files.filter(file => file.paintables?.length).map(file => [file.id, cloudColors.modeOf(file.paintables[0])])),
+    split,
+    sides: Object.fromEntries(files.map(file => [file.id, sideOf(file)])),
+    tolerance,
+    hideWithin,
+    distanceTop
 });
 // Saved only once the view is set up: a half-made one (default camera, no helpers) would be taken back by the
 // page an early Add file… brings.
@@ -366,7 +487,10 @@ async function loadObj(info, file) {
 let sparkRenderer = null;
 async function loadSplat(bytes, info, fileName) {
     const { SparkRenderer, SplatMesh } = await import('@sparkjsdev/spark');
-    if (!sparkRenderer) root.add(sparkRenderer = new SparkRenderer({ renderer }));
+    if (!sparkRenderer) {
+        root.add(sparkRenderer = new SparkRenderer({ renderer }));
+        sparkRenderer.userData.splat = true;
+    }
     const splat = new SplatMesh({ fileBytes: bytes, fileName });
     splat.userData.splat = true;
     await splat.initialized;
@@ -532,6 +656,9 @@ async function loadDetail(base, total, file, view, readerOf) {
     }
     const detail = base.userData.detailCloud = cloudOf(points);
     base.add(detail);
+    // Detail under a cloud colored by distance is measured before it shows; a failure leaves it grey.
+    const reference = fileById(distanceRef(cloudColors.modeOf(base)));
+    if (reference) await measureDistances(reference, [detail]).catch(() => {});
     cloudColors.add(detail);
 }
 const loadTextPoints = async (info, file) => {
@@ -769,7 +896,9 @@ function frame() {
     const box = viewBox();
     const center = box.getCenter(new THREE.Vector3());
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
-    const distance = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    // The narrower of the two fields of view, so a half of the split view (taller than wide) still takes it all in.
+    const halfFov = Math.min(THREE.MathUtils.degToRad(camera.fov / 2), Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect));
+    const distance = radius / Math.tan(halfFov);
     camera.near = distance / 1000;
     camera.far = distance * 100;
     camera.updateProjectionMatrix();
@@ -968,8 +1097,13 @@ function showLegend(mode, range) {
     $('color-legend').hidden = !range;
     if (!range) return;
     $('legend-bar').style.background ||= turboGradient();
-    $('legend-name').textContent = mode === 'height' ? t('colorHeight') : fieldLabel(mode.slice('field:'.length));
+    const ref = distanceRef(mode);
+    $('legend-name').textContent = ref ? t('distanceTo').replace('{0}', fileById(ref)?.name ?? ref) : mode === 'height' ? t('colorHeight') : fieldLabel(mode.slice('field:'.length));
     [$('legend-low').textContent, $('legend-high').textContent] = legendLabels(range[0], range[1]);
+    // A distance's top and the tolerance are typed in; the top left empty follows the 98th percentile.
+    $('legend-high').hidden = Boolean(ref);
+    $('legend-top').hidden = $('legend-distance').hidden = !ref;
+    if (ref && document.activeElement !== $('legend-top')) $('legend-top').value = shortNumber(range[1]);
 }
 
 function stats(object) {
@@ -993,7 +1127,7 @@ function stats(object) {
 function showInfo() {
     const format = number => number.toLocaleString();
     const sizeOf = bytes => (bytes < 1048576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1048576).toFixed(1)} MB`);
-    const sections = files.map(({ name, size, info, error }) => [
+    const sections = files.map(({ name, size, info, error }, index) => [
         [t('file'), name],
         [t('format'), info.format],
         [t('fileSize'), sizeOf(size)],
@@ -1014,6 +1148,8 @@ function showInfo() {
         [t('notLoaded'), info.notLoaded],
         [t('missingMaterials'), info.missingMaterials],
         [t('notShown'), info.notShown],
+        ...distanceRows(files[index]),
+        [t('distanceFailed'), info.distanceError],
         [t('failed'), files.length > 1 && error],
         [t('detailInView'), info.detailError && `${t('detailFailed')}: ${info.detailError}`]
     ].filter(([, value]) => value));
@@ -1063,7 +1199,7 @@ function captureScreenshot() {
     const pixelRatio = renderer.getPixelRatio();
     renderer.setPixelRatio(2);
     renderer.setSize(size.x, size.y, false);
-    renderer.render(scene, camera);
+    draw();
     const data = renderer.domElement.toDataURL('image/png').split(',')[1];
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(size.x, size.y, false);
@@ -1156,6 +1292,30 @@ function setupUi(hasMesh, hasPoints, up) {
     document.querySelectorAll('[data-color="rgb"], [data-color="height"]').forEach(button => button.addEventListener('click', () => saveSettings({ colorMode: button.dataset.color })));
     // One color per file is for telling files apart.
     $('color-solid').hidden ||= files.length < 2;
+    $('split-btn').hidden = files.length < 2;
+    $('split-btn').addEventListener('click', () => {
+        setSplit(!split);
+        saveView();
+    });
+    $('legend-top').title = t('scaleTop');
+    $('legend-top').addEventListener('change', () => {
+        const value = Number($('legend-top').value);
+        distanceTop = $('legend-top').value.trim() && value > 0 ? value : null;
+        cloudColors.setDistanceTop(distanceTop);
+        saveView();
+    });
+    $('tolerance-input').addEventListener('input', () => {
+        const value = Number($('tolerance-input').value);
+        if ($('tolerance-input').value.trim() === '' || !(value >= 0)) return;
+        tolerance = value;
+        applyTolerance();
+        saveView();
+    });
+    $('hide-within-btn').addEventListener('click', () => {
+        hideWithin = !hideWithin;
+        applyTolerance();
+        saveView();
+    });
 }
 
 // Hiding every file keeps the last box for the grid and F.
@@ -1182,30 +1342,79 @@ function refit() {
 
 // A file's color menu is made once and updated in place: rebuilding it on every recolor (Load detail finishing)
 // closed it under the pointer.
+// A row offers the distance to every other file with points or faces; a mesh row has no fields.
 function colorMenu(file) {
-    const { clouds } = file;
     if (file.colorMenu) return file.colorMenu;
-    const fields = [...new Set(clouds.flatMap(cloud => Object.keys(cloud.geometry.userData.scalars ?? {})))];
+    const fields = [...new Set(file.clouds.flatMap(cloud => Object.keys(cloud.geometry.userData.scalars ?? {})))];
+    const references = files.filter(other => other !== file && other.object && other.paintables?.length);
     const menu = file.colorMenu = Object.assign(document.createElement('select'), { className: 'prim-color' });
-    menu.append(...[['rgb', t('colorRgb')], ['height', t('colorHeight')], ...fields.map(name => [`field:${name}`, fieldLabel(name)]), ['solid', t('colorSolid')]]
-        .map(([value, text]) => Object.assign(document.createElement('option'), { value, textContent: text })));
+    menu.append(...[
+        ['rgb', t('colorRgb')], ['height', t('colorHeight')], ...fields.map(name => [`field:${name}`, fieldLabel(name)]), ['solid', t('colorSolid')],
+        ...references.map(other => [`distance:${other.id}`, t('distanceTo').replace('{0}', other.name)])
+    ].map(([value, text]) => Object.assign(document.createElement('option'), { value, textContent: text })));
     menu.addEventListener('change', () => {
-        cloudColors.setMode(menu.value, clouds);
+        const reference = fileById(distanceRef(menu.value));
+        if (reference) setDistance(file, reference);
+        else {
+            cloudColors.setMode(menu.value, measurable(file));
+            comparer?.keep(cloudColors.usedReferences());
+        }
         wake();
     });
     syncColorRows();
     return menu;
 }
 function syncColorRows() {
-    for (const { colorMenu: menu, clouds } of files) {
+    for (const { colorMenu: menu, paintables } of files) {
         if (!menu) continue;
-        menu.value = cloudColors.modeOf(clouds[0]);
-        menu.style.borderLeftColor = `#${cloudColors.solidOf(clouds[0]).getHexString()}`;
+        menu.value = cloudColors.modeOf(paintables[0]);
+        menu.title = menu.selectedOptions[0]?.textContent ?? '';
+        menu.style.borderLeftColor = `#${cloudColors.solidOf(paintables[0]).getHexString()}`;
     }
 }
 
+// The side button shows only while split (a class on the panel), so turning the split on rebuilds no row.
+function typeCell(file) {
+    if (file.typeCell) return file.typeCell;
+    const cell = file.typeCell = Object.assign(document.createElement('div'), { className: 'prim-type-cell' });
+    const side = Object.assign(document.createElement('button'), { className: 'prim-side', title: t('side') });
+    const label = () => { side.textContent = t({ left: 'sideLeft', right: 'sideRight', both: 'sideBoth' }[sideOf(file)]); };
+    label();
+    side.addEventListener('click', event => {
+        event.stopPropagation();
+        file.side = { left: 'right', right: 'both', both: 'left' }[sideOf(file)];
+        label();
+        showSplitLabels();
+        saveView();
+        wake();
+    });
+    const content = file.paintables?.length ? colorMenu(file) : Object.assign(document.createElement('span'), { className: 'prim-format', textContent: file.info.format ?? '', title: file.info.format ?? '' });
+    cell.append(side, content);
+    return cell;
+}
+
+// Each half names its files, so a screenshot says which is which.
+function showSplitLabels() {
+    for (const side of ['left', 'right']) {
+        $(`split-${side}`).textContent = files.filter(file => file.group.visible && onSide(file, side)).map(file => file.name).join(' · ');
+    }
+}
+function setSplit(on, reframe = true) {
+    split = on;
+    // OrbitControls measures the pointer against the whole canvas, which is wrong for either half.
+    controls.zoomToCursor = !on;
+    $('split-btn').classList.toggle('active', on);
+    $('split-btn').setAttribute('aria-pressed', String(on));
+    document.querySelectorAll('#split-divider, #split-left, #split-right').forEach(element => { element.hidden = !on; });
+    $('stage-panel').classList.toggle('split', on);
+    showSplitLabels();
+    resize();
+    // The narrower half may no longer take in what was framed for the whole width.
+    if (localBox && reframe) frame();
+}
+
 function fileRow(file, primRows) {
-    const type = file.clouds.length && !file.error ? colorMenu(file) : file.info.format ?? '';
+    const type = file.error ? '' : typeCell(file);
     return {
         object: file.group,
         name: file.name,
@@ -1228,6 +1437,7 @@ async function setupStage() {
     const onToggle = object => {
         if (object.userData.file) refit();
         refitBoxes();
+        showSplitLabels();
     };
     const stage = files.length < 2
         ? buildStage(() => primRows(opened.object), { onToggle, onSelect: selectPrim })
@@ -1286,6 +1496,7 @@ async function main() {
     $('loading-indicator').hidden = true;
     wake();
     loaded();
+    restoreDistances();
 }
 
 // Until this the extension leaves the page alone in a hidden tab (see RELEASE_BYTES in extension.js).
@@ -1295,7 +1506,12 @@ async function setupView(shown) {
     const counted = shown.map(file => file.info);
     for (const file of files) {
         file.clouds = [];
-        file.group.traverse(child => child.isPoints && !child.userData.detail && !child.parent?.isMesh && file.clouds.push(child));
+        file.meshes = [];
+        file.group.traverse(child => {
+            if (child.isPoints && !child.userData.detail && !child.parent?.isMesh) file.clouds.push(child);
+            else if (paintable(child) && child.geometry?.attributes.position) file.meshes.push(child);
+        });
+        file.paintables = [...file.clouds, ...file.meshes];
     }
     const kept = savedView?.camera ? savedView : null;
     // A file keeps its solid color while it stays in the view; one added takes the lowest color no other file has.
@@ -1343,11 +1559,37 @@ async function setupView(shown) {
     // Solid is offered only while the view holds several files: kept for one, it could not be turned off.
     // A file without a kept mode (the one just added, or every file on a fresh page) takes the colouring last left;
     // Original is already the choice for a cloud that has colours, Height applies to any cloud.
-    const keptColor = file => (kept?.colors?.[file.id] === 'solid' && files.length < 2 ? null : kept?.colors?.[file.id]);
-    const colorOf = file => keptColor(file) ?? (savedSettings.colorMode === 'height' ? 'height' : null);
-    const colors = files.filter(file => colorOf(file) && file.clouds.length).map(file => [colorOf(file), file.clouds]);
+    // A distance is measured again once the page is up (restoreDistances); one to a file no longer in the view is dropped.
+    // The Display menu's last colouring is for clouds: a mesh starts in its own colors.
+    const keptColor = file => {
+        const mode = kept?.colors?.[file.id];
+        if (mode === 'solid' && files.length < 2) return null;
+        const reference = fileById(distanceRef(mode));
+        if (distanceRef(mode) && !(reference?.object && reference !== file)) return null;
+        return mode;
+    };
+    tolerance = kept?.tolerance ?? null;
+    hideWithin = Boolean(kept?.hideWithin);
+    distanceTop = kept?.distanceTop ?? null;
+    if (distanceTop) cloudColors.setDistanceTop(distanceTop);
+    const colors = [];
+    for (const file of files) {
+        const mode = keptColor(file);
+        if (distanceRef(mode)) distancesToRestore.push([file, fileById(distanceRef(mode))]);
+        else if (mode && file.paintables.length) colors.push([mode, file.paintables]);
+        else if (savedSettings.colorMode === 'height' && file.clouds.length) colors.push(['height', file.clouds]);
+    }
     if (colors.length) cloudColors.setModes(colors);
+    for (const file of files) if (kept?.sides?.[file.id]) file.side = kept.sides[file.id];
     await setupStage();
+    // The kept camera was framed for the halves already.
+    if (kept?.split && files.length > 1) setSplit(true, false);
+}
+
+const distancesToRestore = [];
+async function restoreDistances() {
+    for (const [file, reference] of distancesToRestore.splice(0)) await setDistance(file, reference);
+    if (hideWithin) applyTolerance();
 }
 
 main();

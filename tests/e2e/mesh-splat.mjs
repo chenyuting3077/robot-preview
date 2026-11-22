@@ -832,6 +832,117 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(scanDir, { recursive: true, force: true });
 }
 
+// Distance colors (#18) and side by side (#19). The scan is the map's disk 2 cm up, with the quarter past x = 0.4
+// lifted 1 m (mean 0.27, 75% within 5 cm):
+// colored by its distance to the map (or to a plane mesh under it), the near part takes the low end and the lifted
+// part the top; the first tolerance (3 medians, 0.06 rounded to 0.05) hides the near part.
+{
+    const started = Date.now();
+    const compareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-compare-'));
+    const at = name => path.join(compareDir, name);
+    const disk = (lift, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = Math.sqrt(i / 3000), a = i * 2.399, x = r * Math.cos(a); return `${x} ${r * Math.sin(a)} ${lift(x)} ${rgb}`; }).join('\n');
+    fs.writeFileSync(at('map.xyz'), disk(() => 0, '255 0 0'));
+    fs.writeFileSync(at('scan.xyz'), disk(x => (x > 0.4 ? 1.02 : 0.02), '0 0 255'));
+    fs.writeFileSync(at('plane.off'), 'OFF\n4 2 0\n-1 -1 0\n1 -1 0\n1 1 0\n-1 1 0\n3 0 1 2\n3 0 2 3\n');
+    await htmlFor(at('map.xyz'));
+    const panel = panels.get('map.xyz');
+    await panel.listener({ type: 'addPaths', uris: [pathToFileURL(at('scan.xyz')).href, pathToFileURL(at('plane.off')).href] });
+    const idOf = i => JSON.parse(panel.webview.html.match(/data-files="([^"]*)"/)[1].replace(/&quot;/g, '"'))[i].id;
+    const show = async key => {
+        pages.set(`/page/${key}`, panel.webview.html.replaceAll('vscode-webview:', "'self'"));
+        await evaluate('sessionStorage.clear()');
+        await send('Page.navigate', { url: `${origin}/page/${key}` });
+        for (let i = 0; i < 300 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+    };
+    const settle = async () => {
+        for (let i = 0; i < 300 && await evaluate("!document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+        await sleep(600);
+    };
+    const choose = (row, value) => evaluate(`(() => { const menu = document.querySelectorAll('#stage-panel .prim-row')[${row}].querySelector('select'); menu.value = ${JSON.stringify(value)}; menu.dispatchEvent(new Event('change')); return menu.value; })()`);
+    const info = () => evaluate("document.getElementById('info-table').innerText");
+    const nonBackground = png => evaluate(`(async () => {
+        const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+        const d = g.getImageData(0, 0, c.width, c.height).data; let n = 0, warm = 0, cold = 0;
+        // The view's dark background is #505050; points are anything off grey.
+        for (let i = 0; i < d.length; i += 4) {
+            const spread = Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]);
+            if (spread < 30) continue;
+            n++;
+            // Turbo's low end near 0 is a dark violet (54 35 86 at 2% of the scale), its top a dark red (144 13 0).
+            if (d[i] > d[i + 2] + 40) warm++;
+            if (d[i + 2] > d[i] + 25) cold++;
+        }
+        return { n, warm, cold };
+    })()`);
+    const shot = async () => nonBackground((await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 900, height: 600, scale: 0.5 } })).data);
+    await show('compare');
+    await evaluate("document.querySelectorAll('#top-control-bar, #stage-bar, #stage-panel, #color-legend').forEach(e => { e.style.visibility = 'hidden'; })");
+    // Only the scan shown, so the picture is its colors alone.
+    await evaluate(`[0, 2].forEach(row => document.querySelectorAll('#stage-panel .prim-row')[row].querySelector('.prim-eye').click())`);
+    const chosen = await choose(1, `distance:${idOf(0)}`);
+    await settle();
+    const legend = await evaluate("[document.getElementById('legend-name').textContent, document.getElementById('legend-low').textContent, document.getElementById('legend-top').value, document.getElementById('tolerance-input').value].join('|')");
+    const colored = await shot();
+    const toMap = await info();
+    await evaluate("document.getElementById('hide-within-btn').click()");
+    await sleep(600);
+    const hidden = await shot();
+    await evaluate("document.getElementById('hide-within-btn').click()");
+    // The plane as the reference: the same split, measured to its triangles.
+    await choose(1, `distance:${idOf(2)}`);
+    await settle();
+    const toPlane = await info();
+    // The plane colored by its distance to the scan (its four corners), then back to its own grey.
+    await evaluate(`document.querySelectorAll('#stage-panel .prim-row')[2].querySelector('.prim-eye').click()`);
+    await choose(2, `distance:${idOf(1)}`);
+    await settle();
+    const planeInfo = await info();
+    const planeBack = await choose(2, 'rgb');
+    await sleep(300);
+    const error = await evaluate("document.getElementById('load-error').hidden ? '' : document.getElementById('load-error').textContent");
+    // The harness's VS Code speaks zh-TW; English is matched too.
+    const distanceTo = name => `(?:Distance to ${name.replace('.', '\\.')}|到 ${name.replace('.', '\\.')} 的距離)`;
+    // A closed Info panel's innerText runs its cells together.
+    const mean = (text, reference) => Number(text.match(new RegExp(`${distanceTo(reference)}\\s*(?:mean|平均) ([\\d.]+)`))?.[1]);
+    const within = text => Number(text.match(/(?:Within|容差) 0\.05(?: 內)?\s*([\d.]+)%/)?.[1]);
+    const planeMeasured = new RegExp(`plane\\.off[\\s\\S]*${distanceTo('scan.xyz')}`).test(planeInfo);
+    const ok = chosen === `distance:${idOf(0)}` && new RegExp(`^${distanceTo('map.xyz')}\\|0\\.0\\|1\\.02\\|0\\.05$`).test(legend) && colored.warm > 50 && colored.cold > 50
+        && hidden.n < colored.n * 0.6 && hidden.warm > 50 && Math.abs(mean(toMap, 'map.xyz') - 0.27) < 0.02 && Math.abs(within(toMap) - 75) < 3
+        && Math.abs(mean(toPlane, 'plane.off') - 0.27) < 0.02 && planeMeasured && planeBack === 'rgb' && !error;
+    results.push(ok);
+    console.log(`${ok ? 'PASS' : 'FAIL'} scan.xyz by distance to map.xyz and plane.off ${Math.round((Date.now() - started) / 100) / 10}s legend ${legend} warm ${colored.warm} cold ${colored.cold} shown ${colored.n} hidden within ${hidden.n} mean ${mean(toMap, 'map.xyz')} / ${mean(toPlane, 'plane.off')} within ${within(toMap)}% plane measured ${planeMeasured} ${error}`);
+    console.log(`  ${toMap.replace(/\n/g, ' | ')}`);
+
+    // Side by side: the map (red) left, the scan (blue, its own colors again) right, then the scan on both sides.
+    const splitAt = Date.now();
+    await choose(1, 'rgb');
+    await evaluate(`[0].forEach(row => document.querySelectorAll('#stage-panel .prim-row')[row].querySelector('.prim-eye').click()); document.querySelectorAll('#stage-panel .prim-row')[2].querySelector('.prim-eye').click()`);
+    await evaluate("document.getElementById('split-btn').click()");
+    await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'f', code: 'KeyF', text: 'f' });
+    await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'f', code: 'KeyF' });
+    await sleep(800);
+    const half = async side => nonBackground((await send('Page.captureScreenshot', { format: 'png', clip: { x: side === 'left' ? 0 : 450, y: 0, width: 450, height: 600, scale: 0.5 } })).data);
+    const [left, right] = [await half('left'), await half('right')];
+    const labels = await evaluate("[document.getElementById('split-left').textContent, document.getElementById('split-right').textContent].join('|')");
+    await evaluate(`document.querySelectorAll('#stage-panel .prim-row')[1].querySelector('.prim-side').click()`);
+    await sleep(600);
+    const bothLeft = await half('left');
+    // A drag in the right half turns the left half too: one camera.
+    const before = await pageShot();
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 700, y: 300, button: 'left', clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 760, y: 320, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 760, y: 320, button: 'left', clickCount: 1 });
+    await sleep(600);
+    const leftAfter = await half('left');
+    const moved = await shotDiff(before, await pageShot());
+    // The axes (red x, blue z) show in both halves, so a few pixels of the other color are theirs.
+    const okSplit = left.warm > 50 && left.cold < left.warm / 20 && right.cold > 50 && right.warm < right.cold / 20 && labels === 'map.xyz|scan.xyz' && bothLeft.cold > 50 && moved > 0.002 && JSON.stringify(leftAfter) !== JSON.stringify(bothLeft);
+    results.push(okSplit);
+    console.log(`${okSplit ? 'PASS' : 'FAIL'} map.xyz | scan.xyz side by side ${Math.round((Date.now() - splitAt) / 100) / 10}s left red ${left.warm} blue ${left.cold}, right red ${right.warm} blue ${right.cold}, labels ${labels}, scan on both: left blue ${bothLeft.cold}, drag moved ${(moved * 100).toFixed(1)}%`);
+    fs.rmSync(compareDir, { recursive: true, force: true });
+}
+
 // Two UTM clouds 3 m apart, each read less its own offset and placed back: in one view they stand side by side.
 {
     const utmDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-utm-'));

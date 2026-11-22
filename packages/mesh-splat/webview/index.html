@@ -99,6 +99,19 @@ canvas { display: block; }
 #legend-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #legend-bar { height: 8px; margin: 5px 0 3px; border-radius: 4px; }
 .legend-ticks { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 12px; color: var(--text-tertiary); }
+.legend-input { width: 72px; padding: 1px 4px; border: 1px solid var(--button-border); border-radius: 4px; background: var(--hover); color: var(--text-primary); font: inherit; text-align: right; }
+#legend-distance { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-top: 6px; }
+#legend-distance label { display: flex; align-items: center; gap: 6px; color: var(--text-tertiary); }
+#legend-distance .control-button { padding: 3px 8px; font-size: 11px; }
+#split-divider { position: fixed; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--glass-border); pointer-events: none; z-index: 5; }
+.split-label { position: fixed; bottom: 20px; max-width: calc(50% - 40px); padding: 4px 10px; border-radius: 10px; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; z-index: 5; }
+#split-left { left: 20px; }
+#split-right { left: calc(50% + 20px); }
+.prim-type-cell { display: flex; align-items: center; gap: 3px; min-width: 0; }
+.prim-type-cell .prim-color { flex: 1; min-width: 0; }
+.prim-format { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prim-side { flex: none; min-width: 22px; padding: 0 3px; border: 1px solid var(--button-border); border-radius: 4px; background: transparent; color: var(--text-primary); font: inherit; font-size: 10px; cursor: pointer; }
+#stage-panel:not(.split) .prim-side { display: none; }
 #load-error { position: fixed; left: 16px; bottom: 16px; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 8px; background: rgba(200, 40, 40, 0.9); color: #fff; font: 12px/1.4 monospace; white-space: pre-wrap; z-index: 10000; }
 [hidden] { display: none !important; }
 </style>
@@ -127,6 +140,7 @@ canvas { display: block; }
       <button class="control-button" data-helper="grid" data-t="grid"></button>
       <button class="control-button" data-helper="axes" data-t="axes"></button>
       <button class="control-button" data-helper="bounds" data-t="bounds"></button>
+      <button class="control-button" id="split-btn" data-t="sideBySide" hidden></button>
     </div>
   </div>
   <div class="control-bar-section">
@@ -174,7 +188,12 @@ canvas { display: block; }
   <div id="stage-rows"></div>
   <div id="prim-path" hidden></div>
 </div>
-<div id="color-legend" class="glass" hidden><div id="legend-name"></div><div id="legend-bar"></div><div class="legend-ticks"><span id="legend-low"></span><span id="legend-high"></span></div></div>
+<div id="split-divider" hidden></div>
+<div id="split-left" class="split-label glass" hidden></div>
+<div id="split-right" class="split-label glass" hidden></div>
+<div id="color-legend" class="glass" hidden><div id="legend-name"></div><div id="legend-bar"></div><div class="legend-ticks"><span id="legend-low"></span><span id="legend-high"></span><input id="legend-top" class="legend-input" type="number" min="0" step="any" hidden></div>
+  <div id="legend-distance" hidden><label><span data-t="tolerance"></span><input id="tolerance-input" class="legend-input" type="number" min="0" step="any"></label><button class="control-button" id="hide-within-btn" data-t="hideWithin" aria-pressed="false"></button></div>
+</div>
 <div id="loading-indicator" data-t="loading"></div>
 <div id="load-error" hidden></div>
 <script type="module" src="./main.js"></script>
