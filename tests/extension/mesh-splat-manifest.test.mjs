@@ -5,16 +5,28 @@ import fs from 'node:fs';
 const { customEditors, commands, menus } = JSON.parse(fs.readFileSync(new URL('../../packages/mesh-splat/package.json', import.meta.url), 'utf8')).contributes;
 const patterns = priority => customEditors.filter(editor => editor.priority === priority).flatMap(editor => editor.selector.map(s => s.filenamePattern));
 
-test('.bin and map .yaml / .yml open only through Reopen Editor With, so other binaries and YAML keep their editor', () => {
-    assert.deepEqual(patterns('option').sort(), ['*.asc', '*.bin', '*.yaml', '*.yml']);
-    assert.ok(!patterns('default').some(pattern => /^\*\.(bin|asc|ya?ml)$/.test(pattern)));
+test('.bin, map .yaml / .yml and text formats people edit open only on request, so those files keep their editor', () => {
+    assert.deepEqual(patterns('option').sort(), ['*.asc', '*.bin', '*.dae', '*.gltf', '*.obj', '*.wrl', '*.xyz', '*.yaml', '*.yml']);
+    assert.ok(!patterns('default').some(pattern => /^\*\.(bin|asc|ya?ml|obj|gltf|dae|wrl|xyz)$/.test(pattern)));
+});
+
+test('an OBJ, glTF, DAE or VRML editor has a title button and an Explorer entry that open the 3D preview', () => {
+    const { icon } = commands.find(({ command }) => command === 'robotPreviewMeshSplat.open3D');
+    assert.deepEqual(icon, commands.find(({ command }) => command === 'robotPreviewMeshSplat.openAsPoints').icon);
+    for (const place of ['editor/title', 'explorer/context']) {
+        const item = menus[place].find(({ command }) => command === 'robotPreviewMeshSplat.open3D');
+        assert.ok(item, place);
+        const shownFor = ext => new RegExp(item.when.match(/resourceExtname =~ \/(.*)\/i/)[1], 'i').test(ext);
+        for (const ext of ['.obj', '.OBJ', '.gltf', '.dae', '.wrl']) assert.ok(shownFor(ext), `${place}: ${ext}`);
+        for (const ext of ['.glb', '.stl', '.xyz', '.bin']) assert.ok(!shownFor(ext), `${place}: ${ext}`);
+    }
 });
 
 test('a nuScenes .pcd.bin opens in the viewer by default: no other file is named that way', () => {
     assert.ok(patterns('default').includes('*.pcd.bin'));
 });
 
-test('a .bin or .asc editor has a title button and an Explorer entry that open it as points', () => {
+test('a .bin, .asc or .xyz editor has a title button and an Explorer entry that open it as points', () => {
     // Its own icon, drawn from this extension's (a mesh triangle and a splat), in the URDF button's style; not a
     // codicon shared with other extensions, nor the URDF one.
     const { icon } = commands.find(({ command }) => command === 'robotPreviewMeshSplat.openAsPoints');
@@ -27,7 +39,7 @@ test('a .bin or .asc editor has a title button and an Explorer entry that open i
         const item = menus[place].find(({ command }) => command === 'robotPreviewMeshSplat.openAsPoints');
         assert.ok(item, place);
         const shownFor = ext => new RegExp(item.when.match(/resourceExtname =~ \/(.*)\/i/)[1], 'i').test(ext);
-        assert.ok(shownFor('.bin') && shownFor('.BIN') && shownFor('.asc') && !shownFor('.yaml') && !shownFor('.pcd'), `${place}: ${item.when}`);
+        assert.ok(shownFor('.bin') && shownFor('.BIN') && shownFor('.asc') && shownFor('.xyz') && !shownFor('.yaml') && !shownFor('.obj') && !shownFor('.pcd'), `${place}: ${item.when}`);
     }
 });
 

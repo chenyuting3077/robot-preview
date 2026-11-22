@@ -218,6 +218,15 @@ test('Open as points reopens a .bin in the point editor, from the title button o
     assert.deepEqual(env.state.executed.at(-1), ['vscode.openWith', scan, 'robotPreviewMeshSplat.textPoints']);
 });
 
+test('Open 3D Preview reopens an OBJ in the editor that is not the default', async () => {
+    const root = workspace({ 'part.obj': 'v 0 0 0' });
+    const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), globalStorage: path.join(root, 'storage') });
+    env.activate();
+    const part = env.vscode.Uri.file(path.join(root, 'part.obj'));
+    await env.state.commands['robotPreviewMeshSplat.open3D'](part);
+    assert.deepEqual(env.state.executed.at(-1), ['vscode.openWith', part, 'robotPreviewMeshSplat.textPoints']);
+});
+
 test('Add to Point Cloud View adds the Explorer selection to the open view, which comes to the front', async () => {
     const { env, panel, at } = await open({ 'map.pcd': 'map', 'a.pcd': 'a', 'b.ply': 'b', 'notes.txt': 'x' });
     const uri = name => env.vscode.Uri.file(at(name));
@@ -227,7 +236,7 @@ test('Add to Point Cloud View adds the Explorer selection to the open view, whic
 });
 
 test('Add to Point Cloud View goes to the view used last, and opens a new one when none is open', async () => {
-    const root = workspace({ 'one.pcd': '1', 'two.pcd': '2', 'scan.bin': 's', 'x.pcd': 'x' });
+    const root = workspace({ 'one.pcd': '1', 'two.pcd': '2', 'scan.bin': 's', 'x.pcd': 'x', 'part.obj': 'v 0 0 0', 'n.pcd.bin': 'n' });
     const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), globalStorage: path.join(root, 'storage') });
     env.activate();
     const uri = name => env.vscode.Uri.file(path.join(root, name));
@@ -250,6 +259,12 @@ test('Add to Point Cloud View goes to the view used last, and opens a new one wh
     panels[1].panel.dispose();
     await add('two.pcd');
     assert.deepEqual(names(panels[0].panel), ['scan.bin', 'one.pcd', 'two.pcd'], 'a closed view is forgotten');
+    panels[0].panel.dispose();
+    await add('part.obj');
+    assert.equal(panels.at(-1).viewType, 'robotPreviewMeshSplat.textPoints', 'an OBJ opens in the editor that lists it');
+    panels.at(-1).panel.dispose();
+    await add('n.pcd.bin');
+    assert.equal(panels.at(-1).viewType, 'robotPreviewMeshSplat.viewer', 'a .pcd.bin opens in the default viewer');
 });
 
 test('Add to Point Cloud View waits out a late delete of the opened file and skips a link to a listed file', async () => {
@@ -269,6 +284,7 @@ test('the USD extension, which ships this file, registers no Open as points comm
     const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), root: usd, globalStorage: path.join(root, 'storage') });
     env.activate();
     assert.equal(env.state.commands?.['robotPreviewMeshSplat.openAsPoints'], undefined);
+    assert.equal(env.state.commands?.['robotPreviewMeshSplat.open3D'], undefined);
     assert.equal(env.state.commands?.['robotPreviewMeshSplat.addToView'], undefined);
 });
 

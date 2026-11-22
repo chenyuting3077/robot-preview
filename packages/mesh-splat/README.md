@@ -15,9 +15,9 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 ## Formats
 
-- Meshes: `.stl` `.ply` `.obj` (+ `.mtl`) `.off` `.dae` `.gltf` `.glb` (including Draco and meshopt compression) `.3mf` `.wrl` `.3ds`
+- Meshes: `.stl` `.ply` `.off` `.glb` (including Draco and meshopt compression) `.3mf` `.3ds`, and text formats `.obj` (+ `.mtl`) `.gltf` `.dae` `.wrl` from the editor title's *Open 3D Preview* button (*Reopen Editor With… → Configure default editor* makes the view their default)
 - CAD: `.stp` `.step` with part and face colors, `.igs` `.iges`
-- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.xyz` `.pts`, and `.asc` and KITTI / nuScenes LiDAR `.bin` through *Reopen Editor With…*
+- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.pts`, and `.xyz` `.asc` and KITTI / nuScenes LiDAR `.bin` from the editor title's *Open as Point Cloud* button
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
 - [ROS occupancy grid maps](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#occupancy-grid-maps): `.pgm`, and `.yaml` `.yml` through *Reopen Editor With…*
 

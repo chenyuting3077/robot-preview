@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `.obj` `.gltf` `.dae` `.wrl` and `.xyz` open in the text editor again: they are text people edit, and `.xyz` is also a molecule format. The editor title's *Open 3D Preview* button (*Open as Point Cloud* for `.xyz`), the Explorer menu or *Reopen Editor With…* opens the view, and *Reopen Editor With… → Configure default editor* brings back the old behavior.
+
 ## 0.5.0
 
 - Now listed as "Robot Preview: Point Cloud & Splat Viewer".

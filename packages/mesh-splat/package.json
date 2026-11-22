@@ -40,16 +40,7 @@
             "filenamePattern": "*.ply"
           },
           {
-            "filenamePattern": "*.obj"
-          },
-          {
             "filenamePattern": "*.off"
-          },
-          {
-            "filenamePattern": "*.dae"
-          },
-          {
-            "filenamePattern": "*.gltf"
           },
           {
             "filenamePattern": "*.glb"
@@ -58,16 +49,10 @@
             "filenamePattern": "*.3mf"
           },
           {
-            "filenamePattern": "*.wrl"
-          },
-          {
             "filenamePattern": "*.3ds"
           },
           {
             "filenamePattern": "*.pcd"
-          },
-          {
-            "filenamePattern": "*.xyz"
           },
           {
             "filenamePattern": "*.pts"
@@ -110,6 +95,21 @@
         "displayName": "Robot Preview: Point Cloud & Splat",
         "selector": [
           {
+            "filenamePattern": "*.obj"
+          },
+          {
+            "filenamePattern": "*.gltf"
+          },
+          {
+            "filenamePattern": "*.dae"
+          },
+          {
+            "filenamePattern": "*.wrl"
+          },
+          {
+            "filenamePattern": "*.xyz"
+          },
+          {
             "filenamePattern": "*.asc"
           },
           {
@@ -136,6 +136,15 @@
         }
       },
       {
+        "command": "robotPreviewMeshSplat.open3D",
+        "title": "Open 3D Preview",
+        "category": "Robot Preview",
+        "icon": {
+          "light": "images/preview-light.svg",
+          "dark": "images/preview-dark.svg"
+        }
+      },
+      {
         "command": "robotPreviewMeshSplat.addToView",
         "title": "Add to Point Cloud View",
         "category": "Robot Preview"
@@ -145,14 +154,23 @@
       "editor/title": [
         {
           "command": "robotPreviewMeshSplat.openAsPoints",
-          "when": "resourceExtname =~ /^\\.(bin|asc)$/i && activeCustomEditorId != robotPreviewMeshSplat.textPoints && activeCustomEditorId != robotPreviewMeshSplat.viewer",
+          "when": "resourceExtname =~ /^\\.(bin|asc|xyz)$/i && activeCustomEditorId != robotPreviewMeshSplat.textPoints && activeCustomEditorId != robotPreviewMeshSplat.viewer",
+          "group": "navigation"
+        },
+        {
+          "command": "robotPreviewMeshSplat.open3D",
+          "when": "resourceExtname =~ /^\\.(obj|gltf|dae|wrl)$/i && activeCustomEditorId != robotPreviewMeshSplat.textPoints && activeCustomEditorId != robotPreviewMeshSplat.viewer",
           "group": "navigation"
         }
       ],
       "explorer/context": [
         {
           "command": "robotPreviewMeshSplat.openAsPoints",
-          "when": "resourceExtname =~ /^\\.(bin|asc)$/i"
+          "when": "resourceExtname =~ /^\\.(bin|asc|xyz)$/i"
+        },
+        {
+          "command": "robotPreviewMeshSplat.open3D",
+          "when": "resourceExtname =~ /^\\.(obj|gltf|dae|wrl)$/i"
         },
         {
           "command": "robotPreviewMeshSplat.addToView",
@@ -163,7 +181,11 @@
       "commandPalette": [
         {
           "command": "robotPreviewMeshSplat.openAsPoints",
-          "when": "resourceExtname =~ /^\\.(bin|asc)$/i"
+          "when": "resourceExtname =~ /^\\.(bin|asc|xyz)$/i"
+        },
+        {
+          "command": "robotPreviewMeshSplat.open3D",
+          "when": "resourceExtname =~ /^\\.(obj|gltf|dae|wrl)$/i"
         },
         {
           "command": "robotPreviewMeshSplat.addToView",

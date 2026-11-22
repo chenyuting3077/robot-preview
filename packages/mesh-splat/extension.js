@@ -343,11 +343,13 @@ function activate(context) {
     };
     const options = { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true };
     context.subscriptions.push(...customEditors.map(({ viewType }) => vscode.window.registerCustomEditorProvider(viewType, provider, options)));
-    // .bin is too common a binary extension to open by default (firmware, weights); a scan opens from the title
-    // button instead. Only this package contributes the command: the USD extension ships this file too.
+    // Formats that are not opened by default open from a title button instead: .bin is too common a binary
+    // extension (firmware, weights), and OBJ, glTF, DAE, VRML and XYZ are text people edit (XYZ is also a
+    // molecule format). Only this package contributes the commands: the USD extension ships this file too.
     const contributes = id => manifest.contributes.commands?.some(({ command }) => command === id);
-    if (contributes('robotPreviewMeshSplat.openAsPoints')) {
-        context.subscriptions.push(vscode.commands.registerCommand('robotPreviewMeshSplat.openAsPoints', uri => {
+    for (const id of ['robotPreviewMeshSplat.openAsPoints', 'robotPreviewMeshSplat.open3D']) {
+        if (!contributes(id)) continue;
+        context.subscriptions.push(vscode.commands.registerCommand(id, uri => {
             uri ??= vscode.window.activeTextEditor?.document.uri ?? vscode.window.tabGroups?.activeTabGroup.activeTab?.input?.uri;
             if (uri) return vscode.commands.executeCommand('vscode.openWith', uri, 'robotPreviewMeshSplat.textPoints');
         }));
@@ -376,7 +378,10 @@ function activate(context) {
                 return view.addUris(uris);
             }
             const [first, ...rest] = uris;
-            const viewType = /\.(bin|asc)$/i.test(first.path) && !/\.pcd\.bin$/i.test(first.path) ? 'robotPreviewMeshSplat.textPoints' : 'robotPreviewMeshSplat.viewer';
+            // The first editor whose pattern names the file: the default one comes first, so a .pcd.bin is its.
+            const name = path.basename(first.path).toLowerCase();
+            const { viewType } = customEditors.find(editor => editor.selector.some(({ filenamePattern }) =>
+                name.endsWith(filenamePattern.slice(1).toLowerCase()))) ?? { viewType: 'robotPreviewMeshSplat.viewer' };
             const opened = waitForView(first);
             await vscode.commands.executeCommand('vscode.openWith', first, viewType);
             view = await opened;
