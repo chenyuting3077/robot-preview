@@ -186,10 +186,11 @@ canvas { display: block; }
         <label><span data-t="compareFile"></span><select id="compare-file"></select></label>
         <label><span data-t="compareReference"></span><select id="compare-reference"></select></label>
         <button class="control-button" id="compare-run" data-t="compareRun"></button>
-        <div class="display-menu-separator"></div>
       </div>
-      <button class="control-button" id="panes-btn" data-t="panes" aria-pressed="false" hidden></button>
     </div>
+  </div>
+  <div class="control-bar-section">
+    <button class="tool-button" id="panes-btn" data-title="panes" aria-pressed="false" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg></button>
   </div>
   <div class="control-bar-section" id="pick-section" hidden>
     <button class="tool-button" id="pick-btn" data-title="pickParts"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg></button>
@@ -198,11 +199,11 @@ canvas { display: block; }
     <button class="tool-button" id="screenshot-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
   </div>
   <div class="control-bar-section">
-    <button class="tool-button" id="info-btn">i</button>
+    <button class="tool-button" id="info-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button>
     <div id="info-panel" class="glass"><table id="info-table"></table></div>
   </div>
   <div class="control-bar-section">
-    <button class="tool-button" id="help-btn">?</button>
+    <button class="tool-button" id="help-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
     <div id="help-panel" class="glass"><table><tr><td data-t="helpKeyOrbit"></td><td data-t="helpOrbit"></td></tr><tr><td data-t="helpKeyPan"></td><td data-t="helpPan"></td></tr><tr><td data-t="helpKeyZoom"></td><td data-t="helpZoom"></td></tr><tr><td data-t="helpKeyPivot"></td><td data-t="helpPivot"></td></tr><tr><td data-t="helpKeyFly"></td><td data-t="helpFly"></td></tr><tr><td data-t="helpKeyTurn"></td><td data-t="helpTurn"></td></tr><tr><td data-t="helpKeyFast"></td><td data-t="helpFast"></td></tr><tr><td data-t="helpKeyFrame"></td><td data-t="helpFrame"></td></tr></table></div>
   </div>
 </div>
