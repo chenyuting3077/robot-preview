@@ -9,6 +9,9 @@ test('a corner reaches a quarter of the view along each edge', () => {
     assert.equal(snapZone(995, 190, v), 'top-right', 'along the right edge, inside the top quarter');
     assert.equal(snapZone(240, 795, v), 'bottom-left', 'along the bottom edge, inside the left quarter');
     assert.equal(snapZone(995, 795, v), 'bottom-right');
+    assert.equal(snapZone(140, 150, v), 'top-left', 'away from the edges, inside 15% of the width and a quarter of the height');
+    assert.equal(snapZone(870, 700, v), 'bottom-right');
+    assert.equal(snapZone(160, 150, v), null, 'past 15% of the width, off the edges');
 });
 
 test('the middle of a side docks to that side; the middle of the top or bottom edge, nothing', () => {

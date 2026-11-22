@@ -11,9 +11,11 @@ const MIN_HEIGHT = 100;
 // never overlaps the graph's pan area.
 const BORDER = 8;
 const SNAP_ZONE = 24;
-// A corner reaches a quarter of the view along each edge. A screen's edge stops the pointer, so sliding along it into
-// a corner is easy; the webview's edge does not, and a 24 px square in the corner was hard to land in.
+// A corner reaches a quarter of the view along each edge, and CORNER_DEPTH of the width in from the side. A screen's
+// edge stops the pointer, so sliding along it into a corner is easy; the webview's edge does not, and the pointer is
+// on the header, often well inside a panel that already looks in the corner.
 const CORNER_REACH = 0.25;
+const CORNER_DEPTH = 0.15;
 // Same gap as the panels' default places and the maximized tree panel.
 const MARGIN = 20;
 const CURSORS = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' };
@@ -55,7 +57,8 @@ export function snapZone(x, y, v = view()) {
     const top = y < SNAP_ZONE, bottom = y > v.height - SNAP_ZONE;
     const nearTop = y < v.height * CORNER_REACH, nearBottom = y > v.height * (1 - CORNER_REACH);
     const nearLeft = x < v.width * CORNER_REACH, nearRight = x > v.width * (1 - CORNER_REACH);
-    if (((left || right) && (nearTop || nearBottom)) || ((top || bottom) && (nearLeft || nearRight))) {
+    const deepSide = x < v.width * CORNER_DEPTH || x > v.width * (1 - CORNER_DEPTH);
+    if (((left || right || deepSide) && (nearTop || nearBottom)) || ((top || bottom) && (nearLeft || nearRight))) {
         return `${nearTop ? 'top' : 'bottom'}-${nearLeft ? 'left' : 'right'}`;
     }
     return left ? 'left' : right ? 'right' : null;
