@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { colorize, colorRange } from './color.mjs';
 import { heights } from './geometry.mjs';
-import { hasColor, POINT_GREY, surfaceMaterial } from './materials.mjs';
+import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mjs';
 
 // One color per file for the Solid mode, Tableau 10 reordered so the first files (a map and a scan) take
 // orange and blue, which stay apart from each other, from turbo's middle and from both backgrounds.
@@ -161,9 +161,11 @@ export function createCloudColors({ root, upAxis, label = name => name, onChange
                 colorize(values[c], mapped().array, ranges.get(mode) ?? colorRange([values[c]]));
                 mapped().needsUpdate = true;
                 geometry.setAttribute('color', mapped());
-            } else if (mode === 'solid') {
-                // THREE.Color keeps linear components already (color management is on).
-                const [r, g, b] = solidOf(object).toArray().map(value => Math.round(value * 255));
+            } else if (mode === 'solid' || (mode === 'grey' && object.isMesh)) {
+                // THREE.Color keeps linear components already (color management is on). Grey is the plain grey a
+                // file without colors shows: a reference behind a distance, so its colors do not read as distances.
+                const color = mode === 'solid' ? solidOf(object) : new THREE.Color().setRGB(...MESH_GREY, THREE.SRGBColorSpace);
+                const [r, g, b] = color.toArray().map(value => Math.round(value * 255));
                 const { array } = mapped();
                 for (let i = 0; i < array.length; i += 3) {
                     array[i] = r;

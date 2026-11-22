@@ -399,3 +399,24 @@ test('quantized or interleaved positions are read as float32 xyz', () => {
     quantized.setAttribute('position', new THREE.BufferAttribute(new Int16Array([32767, 0, -32767]), 3, true));
     assert.deepEqual([...positionsOf(quantized)].map(v => +v.toFixed(3)), [1, 0, -1]);
 });
+
+test('grey shows a cloud without its colors and a mesh in plain grey, its own colors kept for Original', () => {
+    page();
+    const root = new THREE.Group();
+    const colored = cloud(column(0, 1, 5), { rgb: Array(15).fill(200) });
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 1]), 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(9).fill(9), 3, true));
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial());
+    root.add(colored, mesh);
+    const colors = createCloudColors({ root, upAxis: () => '+Z', paintable: () => true });
+    colors.setup();
+    colors.setMode('grey', [colored, mesh]);
+    assert.equal(colored.geometry.attributes.color, undefined);
+    assert.equal(colored.material.color.getHex(), new THREE.Color(POINT_GREY).getHex());
+    assert.notEqual(mesh.geometry, geometry);
+    assert.ok(uniform(mesh), 'the mesh is one grey');
+    colors.setMode('rgb', [colored, mesh]);
+    assert.deepEqual(colorsOf(colored), Array(15).fill(200));
+    assert.equal(mesh.geometry, geometry);
+});

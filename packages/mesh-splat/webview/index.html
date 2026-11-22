@@ -38,8 +38,14 @@ canvas { display: block; }
 .tool-button:hover, .control-button:hover { background: var(--hover); color: var(--text-primary); transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
 .tool-button:active, .control-button:active { transform: scale(0.98); }
 .tool-button.active, .control-button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3); }
-#display-menu, #up-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
-#display-menu.open, #up-menu.open { display: flex; }
+#display-menu, #up-menu, #compare-menu { display: none; position: absolute; top: calc(100% + 12px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 14px; z-index: 200; }
+#display-menu.open, #up-menu.open, #compare-menu.open { display: flex; }
+#compare-menu { width: max-content; max-width: min(320px, calc(100vw - 40px)); font-size: 11px; }
+#compare-menu .compare-hint { color: var(--text-tertiary); padding: 0 4px; }
+#compare-menu label { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 6px; padding: 0 4px; color: var(--text-tertiary); }
+#compare-menu select { min-width: 0; padding: 2px 4px; border: 1px solid var(--button-border); border-radius: 6px; background: var(--hover); color: var(--text-primary); font: inherit; }
+[data-theme="dark"] #compare-menu option { background-color: #2a2a2a; }
+#compare-empty, #compare-distance { display: flex; flex-direction: column; gap: 6px; }
 #stage-bar { position: fixed; top: 20px; right: 20px; padding: 5px 9px; border-radius: 21px; z-index: 100; }
 #stage-panel { position: fixed; top: 70px; right: 20px; width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
 .stage-head, .prim-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 24px; align-items: center; gap: 6px; }
@@ -140,7 +146,6 @@ canvas { display: block; }
       <button class="control-button" data-helper="grid" data-t="grid"></button>
       <button class="control-button" data-helper="axes" data-t="axes"></button>
       <button class="control-button" data-helper="bounds" data-t="bounds"></button>
-      <button class="control-button" id="split-btn" data-t="sideBySide" hidden></button>
     </div>
   </div>
   <div class="control-bar-section">
@@ -172,6 +177,20 @@ canvas { display: block; }
   </div>
   <div class="control-bar-section">
     <button class="tool-button" id="add-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+  </div>
+  <div class="control-bar-section" id="compare-section" hidden>
+    <button class="tool-button" id="compare-btn"><span data-t="compare"></span> ▾</button>
+    <div id="compare-menu" class="glass">
+      <div id="compare-empty" hidden><span class="compare-hint" data-t="compareNeedsTwo"></span><button class="control-button" id="compare-add" data-t="addFile"></button></div>
+      <div id="compare-distance" hidden>
+        <span class="compare-hint" data-t="compareHint"></span>
+        <label><span data-t="compareFile"></span><select id="compare-file"></select></label>
+        <label><span data-t="compareReference"></span><select id="compare-reference"></select></label>
+        <button class="control-button" id="compare-run" data-t="compareRun"></button>
+        <div class="display-menu-separator"></div>
+      </div>
+      <button class="control-button" id="split-btn" data-t="sideBySide" hidden></button>
+    </div>
   </div>
   <div class="control-bar-section">
     <button class="tool-button" id="screenshot-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>

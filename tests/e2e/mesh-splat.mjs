@@ -879,8 +879,21 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     await evaluate("document.querySelectorAll('#top-control-bar, #stage-bar, #stage-panel, #color-legend').forEach(e => { e.style.visibility = 'hidden'; })");
     // Only the scan shown, so the picture is its colors alone.
     await evaluate(`[0, 2].forEach(row => document.querySelectorAll('#stage-panel .prim-row')[row].querySelector('.prim-eye').click())`);
-    const chosen = await choose(1, `distance:${idOf(0)}`);
+    // The first distance through the toolbar's Compare menu, which offers the file added last against the opened one.
+    const menu = await evaluate(`(() => {
+        document.getElementById('compare-btn').click();
+        const shown = document.getElementById('compare-menu').classList.contains('open') && !document.getElementById('compare-distance').hidden;
+        const picked = [document.getElementById('compare-file').selectedOptions[0]?.textContent, document.getElementById('compare-reference').selectedOptions[0]?.textContent].join('>');
+        document.getElementById('compare-file').value = ${JSON.stringify(idOf(1))};
+        document.getElementById('compare-file').dispatchEvent(new Event('change'));
+        document.getElementById('compare-reference').value = ${JSON.stringify(idOf(0))};
+        document.getElementById('compare-run').click();
+        return shown && picked;
+    })()`);
     await settle();
+    const chosen = await evaluate(`document.querySelectorAll('#stage-panel .prim-row')[1].querySelector('select').value`);
+    // Chosen from a row, the reference turns grey, so its colors are not read as distances.
+    const referenceGrey = await evaluate(`document.querySelectorAll('#stage-panel .prim-row')[0].querySelector('select').value`);
     const legend = await evaluate("[document.getElementById('legend-name').textContent, document.getElementById('legend-low').textContent, document.getElementById('legend-top').value, document.getElementById('tolerance-input').value].join('|')");
     const colored = await shot();
     const toMap = await info();
@@ -908,14 +921,15 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const planeMeasured = new RegExp(`plane\\.off[\\s\\S]*${distanceTo('scan.xyz')}`).test(planeInfo);
     const ok = chosen === `distance:${idOf(0)}` && new RegExp(`^${distanceTo('map.xyz')}\\|0\\.0\\|1\\.02\\|0\\.05$`).test(legend) && colored.warm > 50 && colored.cold > 50
         && hidden.n < colored.n * 0.6 && hidden.warm > 50 && Math.abs(mean(toMap, 'map.xyz') - 0.27) < 0.02 && Math.abs(within(toMap) - 75) < 3
-        && Math.abs(mean(toPlane, 'plane.off') - 0.27) < 0.02 && planeMeasured && planeBack === 'rgb' && !error;
+        && Math.abs(mean(toPlane, 'plane.off') - 0.27) < 0.02 && planeMeasured && planeBack === 'rgb' && referenceGrey === 'grey' && menu === 'plane.off>map.xyz' && !error;
     results.push(ok);
-    console.log(`${ok ? 'PASS' : 'FAIL'} scan.xyz by distance to map.xyz and plane.off ${Math.round((Date.now() - started) / 100) / 10}s legend ${legend} warm ${colored.warm} cold ${colored.cold} shown ${colored.n} hidden within ${hidden.n} mean ${mean(toMap, 'map.xyz')} / ${mean(toPlane, 'plane.off')} within ${within(toMap)}% plane measured ${planeMeasured} ${error}`);
+    console.log(`${ok ? 'PASS' : 'FAIL'} scan.xyz by distance to map.xyz and plane.off ${Math.round((Date.now() - started) / 100) / 10}s legend ${legend} warm ${colored.warm} cold ${colored.cold} shown ${colored.n} hidden within ${hidden.n} mean ${mean(toMap, 'map.xyz')} / ${mean(toPlane, 'plane.off')} within ${within(toMap)}% plane measured ${planeMeasured} map ${referenceGrey} compare menu ${menu} ${error}`);
     console.log(`  ${toMap.replace(/\n/g, ' | ')}`);
 
     // Side by side: the map (red) left, the scan (blue, its own colors again) right, then the scan on both sides.
     const splitAt = Date.now();
     await choose(1, 'rgb');
+    await choose(0, 'rgb');
     await evaluate(`[0].forEach(row => document.querySelectorAll('#stage-panel .prim-row')[row].querySelector('.prim-eye').click()); document.querySelectorAll('#stage-panel .prim-row')[2].querySelector('.prim-eye').click()`);
     await evaluate("document.getElementById('split-btn').click()");
     await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'f', code: 'KeyF', text: 'f' });
