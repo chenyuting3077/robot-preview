@@ -38,7 +38,7 @@ jobs:
           echo "package=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           echo "version=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ env.TAG }}
 
@@ -50,9 +50,9 @@ jobs:
           actual=$(node -p "require('./packages/$PACKAGE/package.json').version")
           [ "$actual" = "$VERSION" ] || { echo "::error::$TAG but packages/$PACKAGE/package.json says $actual"; exit 1; }
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -84,7 +84,7 @@ jobs:
             --baseImagesUrl "https://github.com/chenyuting3077/robot-preview/raw/$TAG/packages/$PACKAGE" \
             --out "$RUNNER_TEMP/extension.vsix"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.TAG }}
           path: ${{ runner.temp }}/extension.vsix
