@@ -1273,6 +1273,7 @@ async function main() {
     if (!shown.length && files.length < 2) {
         showError(opened.failure);
         $('loading-indicator').hidden = true;
+        loaded();
         return;
     }
     // A throw while setting the view up would otherwise leave the spinner turning with no word.
@@ -1284,7 +1285,11 @@ async function main() {
     }
     $('loading-indicator').hidden = true;
     wake();
+    loaded();
 }
+
+// Until this the extension leaves the page alone in a hidden tab (see RELEASE_BYTES in extension.js).
+const loaded = () => vscodeApi?.postMessage({ type: 'loaded', render: page.render });
 
 async function setupView(shown) {
     const counted = shown.map(file => file.info);

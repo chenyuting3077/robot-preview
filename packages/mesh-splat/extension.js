@@ -56,6 +56,14 @@ function mergeSettings(saved = {}, message, file) {
     }
     return next;
 }
+// retainContextWhenHidden keeps a hidden tab's page, so switching back is instant, but a GB point cloud then holds
+// its memory (+1.2–1.5 GB for the 1.2 GB Livox map) until the tab closes. A view whose files add up to RELEASE_BYTES
+// drops its page once hidden for RELEASE_AFTER_MS and loads again, the camera kept, when shown: reopening costs
+// seconds (5 s for that map), so a quick look at another tab keeps it, and smaller files always do. A page still
+// loading (OpenCascade can take 25 minutes) is left alone until it says it is done.
+const RELEASE_BYTES = 100 * 1024 * 1024;
+const RELEASE_AFTER_MS = 5 * 60 * 1000;
+const RELEASED_HTML = '<!DOCTYPE html><html><body style="background: var(--vscode-editor-background)"></body></html>';
 const validHelpers = helpers => Object.fromEntries(['cloud', 'map', 'model'].filter(kind => Array.isArray(helpers?.[kind]))
     .map(kind => [kind, helpers[kind].filter(name => HELPER_NAMES.includes(name))]));
 
@@ -170,10 +178,17 @@ function activate(context) {
             const exists = uri => vscode.workspace.fs.stat(uri).then(() => true, () => false);
             // A render still waiting on a stat when the tab closes would find no files (and a disposed webview).
             let disposed = false;
+            // A released page renders again when shown; a change meanwhile only marks the view as not kept.
+            let released = false;
+            let visible = panel.visible !== false;
+            let shownBytes = 0;
+            let loadedRender = null;
+            let releaseTimer = null;
             const render = async (keep = false) => {
                 const turn = ++renders;
                 const seen = deletes;
                 keeps &&= keep;
+                if (released) return;
                 const stats = await Promise.all(files.map(file => vscode.workspace.fs.stat(file.uri).catch(() => null)));
                 if (disposed) return;
                 // A rename-style save removes the file for a moment; the create that follows renders again. A render
@@ -189,7 +204,7 @@ function activate(context) {
                     if (turn === renders) openedGone = true;
                     return;
                 }
-                if (turn !== renders || disposed) return;
+                if (turn !== renders || disposed || released) return;
                 keeps = true;
                 openedGone = false;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
@@ -199,12 +214,25 @@ function activate(context) {
                 files.forEach((file, i) => { file.shownMissing = !stats[i]; });
                 for (const file of files) startReader(file);
                 pageRender = String(turn);
+                shownBytes = stats.reduce((sum, stat) => sum + (stat?.size ?? 0), 0);
+                clearTimeout(releaseTimer);
                 // Roots and page change together: roots changed first might reload the old page before the new
                 // one lands (VS Code compares the options; not checked in a real window), and its reads are dropped.
                 updateRoots();
                 panel.webview.html = html;
             };
             let pageRender = null;
+            const release = () => {
+                if (visible || disposed || loadedRender !== pageRender) return;
+                released = true;
+                for (const file of files) file.reader.dispose();
+                pageRender = null;
+                panel.webview.html = RELEASED_HTML;
+            };
+            const scheduleRelease = () => {
+                clearTimeout(releaseTimer);
+                if (!visible && !released && pageRender && loadedRender === pageRender && shownBytes >= RELEASE_BYTES) releaseTimer = setTimeout(release, RELEASE_AFTER_MS);
+            };
             // A delete event can arrive after the create that follows it, so the file is looked at again; a render
             // started since decides instead. The opened file is marked gone until then.
             // An add or remove refused while that look is pending runs once the file is found there.
@@ -276,6 +304,12 @@ function activate(context) {
                     if (file) return file.reader.read(message.id, message.at, message.mtime);
                     post({ type: 'readReply', file: message.file, id: message.id, at: message.at, error: `no file ${message.file} in this view` });
                 },
+                // Sent once the page has loaded every file (or failed to).
+                loaded: message => {
+                    if (String(message.render) !== pageRender) return;
+                    loadedRender = pageRender;
+                    scheduleRelease();
+                },
                 readDone: message => (message.render === undefined || String(message.render) === pageRender) && fileOf(message.file)?.reader.done(message.id),
                 stepCache: message => writer.receive(message),
                 screenshot: message => saveScreenshot(document.uri, message.data),
@@ -328,12 +362,19 @@ function activate(context) {
             views.unshift(view);
             viewWaiters.forEach(waiter => waiter(view));
             panel.onDidChangeViewState(({ webviewPanel }) => {
+                visible = webviewPanel.visible;
+                if (!visible) scheduleRelease();
+                else if (released) {
+                    released = false;
+                    render(true);
+                } else clearTimeout(releaseTimer);
                 if (!webviewPanel.active) return;
                 views.splice(views.indexOf(view), 1);
                 views.unshift(view);
             });
             panel.onDidDispose(() => {
                 disposed = true;
+                clearTimeout(releaseTimer);
                 views.splice(views.indexOf(view), 1);
                 [...files].forEach(drop);
                 writer.dispose();

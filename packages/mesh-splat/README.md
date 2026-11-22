@@ -29,7 +29,7 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 - [Several files in one view](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#several-files-in-one-view), such as a scan over its map.
 - Save the view as a PNG screenshot.
 - Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls.
-- Draws only while the view changes, so a large model left open does not keep the GPU busy.
+- Draws only while the view changes, so a large model left open does not keep the GPU busy, and a large file in a tab hidden for 5 minutes gives its memory back.
 - Works in Restricted Mode.
 
 Part of the Robot Preview series with [Robot Preview: URDF, Xacro & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) and [Robot Preview: USD Viewer (OpenUSD, Isaac Sim)](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-usd).
