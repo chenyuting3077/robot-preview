@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - The link info shown on hover waits until the pointer rests for half a second, so moving across the robot to orbit or drag a joint no longer flashes it; right after one closes, the next link's info opens at once. The highlight still follows the pointer immediately.
 - A floating panel snaps to a corner when the pointer is within 15% of the width from the side and a quarter of the height from the top or bottom, or along an edge into the quarter nearest the corner, instead of only inside a 24 px square in the corner.
