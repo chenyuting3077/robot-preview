@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - The icon's top layer is jade, close to the green of the URDF / MJCF icon, so the extensions look like one set.
 - Panels and menus have rounded corners, nested ones concentric, and drop-down menus open 2 px below their toolbar.
