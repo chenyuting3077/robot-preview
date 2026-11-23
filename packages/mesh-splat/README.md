@@ -27,7 +27,7 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 - Color point clouds by their original color, height, intensity or any other PLY property (confidence, curvature, ...), with a legend.
 - Grid, axes and bounding box from the Display menu, kept as last left for point clouds, maps and other models.
 - [Several files in one view](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#several-files-in-one-view), such as a scan over its map; drag files onto the *Point Cloud View* list in the Explorer to add them.
-- [Compare files](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#comparing-files) from the toolbar's *Compare* menu: color a cloud or mesh by its distance to another (C2C / C2M) with a tolerance and statistics, or show files in 2 to 4 panes with one camera.
+- [Compare files](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#comparing-files) from the toolbar's *Compare* menu: color a cloud or mesh by its distance to another (C2C / C2M) with a tolerance and statistics, or show files in up to 9 panes with one camera.
 - Save the view as a PNG screenshot.
 - Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls.
 - Draws only while the view changes, so a large model left open does not keep the GPU busy, and a large file in a tab hidden for 5 minutes gives its memory back.
