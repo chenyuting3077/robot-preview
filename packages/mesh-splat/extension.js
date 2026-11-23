@@ -64,6 +64,8 @@ function mergeSettings(saved = {}, message, file) {
 const RELEASE_BYTES = 100 * 1024 * 1024;
 const RELEASE_AFTER_MS = 5 * 60 * 1000;
 const RELEASED_HTML = '<!DOCTYPE html><html><body style="background: var(--vscode-editor-background)"></body></html>';
+// A command from an Explorer or tree menu gets the clicked item and the whole selection, empty for a single item.
+const chosenOf = (clicked, selected) => (Array.isArray(selected) && selected.length ? selected : [clicked]).filter(Boolean);
 const validHelpers = helpers => Object.fromEntries(['cloud', 'map', 'model'].filter(kind => Array.isArray(helpers?.[kind]))
     .map(kind => [kind, helpers[kind].filter(name => HELPER_NAMES.includes(name))]));
 
@@ -447,13 +449,11 @@ function activate(context) {
             if (view && rest.length) await view.addUris(rest);
         };
         context.subscriptions.push(vscode.commands.registerCommand('robotPreviewMeshSplat.addToView', (clicked, selected) =>
-            addToView((Array.isArray(selected) && selected.length ? selected : [clicked]).filter(Boolean))));
+            addToView(chosenOf(clicked, selected))));
         if (contributes('robotPreviewMeshSplat.removeFromView')) context.subscriptions.push(fileList(addToView));
     }
 
-    // A drag from the Explorer never reaches a webview on macOS (docs/mesh-splat.md), but a tree view takes it:
-    // this list in the Explorer shows the files of the view used last and adds what is dropped on it, opening a
-    // view for the first file when none is open.
+    // An Explorer drag never reaches a webview on macOS, but a tree view takes it (#21).
     function fileList(addToView) {
         const changed = new vscode.EventEmitter();
         const current = () => views.find(view => view.takesFiles);
@@ -504,8 +504,7 @@ function activate(context) {
         };
         viewsChanged();
         const remove = vscode.commands.registerCommand('robotPreviewMeshSplat.removeFromView', (clicked, selected) => {
-            const chosen = (Array.isArray(selected) && selected.length ? selected : [clicked]).filter(Boolean);
-            return current()?.remove(chosen.map(file => file.id));
+            return current()?.remove(chosenOf(clicked, selected).map(file => file.id));
         });
         return { dispose: () => [tree, remove, changed].forEach(item => item.dispose()) };
     }

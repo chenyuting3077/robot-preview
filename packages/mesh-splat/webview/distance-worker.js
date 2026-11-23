@@ -1,6 +1,5 @@
 import { referenceOf } from './distance.mjs';
 
-// One reference file per worker, built once and asked again for every file and detail cloud measured against it.
 let reference = null;
 const PROGRESS_EVERY = 250_000;
 

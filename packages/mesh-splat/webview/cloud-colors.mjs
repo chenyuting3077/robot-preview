@@ -36,7 +36,10 @@ export function positionsOf(geometry) {
     return (geometry.userData.positions32 = out);
 }
 
+export const ownGeometry = object => object.userData.own?.geometry ?? object.geometry;
+
 // A distance mode is 'distance:<file id>': each point's distance to that file.
+export const distanceMode = id => `distance:${id}`;
 export const distanceRef = mode => (mode?.startsWith('distance:') ? mode.slice(9) : null);
 
 // Points within the tolerance are dropped in the shader, so moving the tolerance or hiding them recolors nothing.
@@ -92,8 +95,7 @@ function showPainted(mesh, on) {
 
 // A field's mode is 'field:<name>', so a field named "height" stays apart from Height. Height and each field share
 // one range over the clouds in that mode, so one color means one value across files. `fileOf` gives a cloud's
-// file a number that stays when another file is removed, so its solid color does not change. Meshes that
-// `paintable` accepts take every mode but fields from their file's row; the Display menu's buttons are for clouds.
+// file a number that stays when another file is removed, so its solid color does not change.
 export function createCloudColors({ root, upAxis, label = name => name, onChange = () => {}, fileOf = null, paintable = () => false }) {
     const clouds = [];
     const meshes = [];
@@ -112,7 +114,6 @@ export function createCloudColors({ root, upAxis, label = name => name, onChange
         if (distanceRef(mode)) return !!object.userData.distances?.[distanceRef(mode)];
         return true;
     };
-    const ownGeometry = object => object.userData.own?.geometry ?? object.geometry;
     const solidOf = cloud => {
         const parent = clouds.find(other => other !== cloud && other.children.includes(cloud));
         if (parent) return solidOf(parent);

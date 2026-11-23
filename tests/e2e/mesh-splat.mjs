@@ -831,7 +831,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(scanDir, { recursive: true, force: true });
 }
 
-// Distance colors (#18) and side by side (#19). The scan is the map's disk 2 cm up, with the quarter past x = 0.4
+// Distance colors (#18) and panes (#19). The scan is the map's disk 2 cm up, with the quarter past x = 0.4
 // lifted 1 m (mean 0.27, 75% within 5 cm):
 // colored by its distance to the map (or to a plane mesh under it), the near part takes the low end and the lifted
 // part the top; the first tolerance (3 medians, 0.06 rounded to 0.05) hides the near part.

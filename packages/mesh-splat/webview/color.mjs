@@ -1,5 +1,5 @@
 import { Color, SRGBColorSpace } from 'three';
-import { percentile } from './geometry.mjs';
+import { finiteValues, percentile } from './geometry.mjs';
 
 // 8-bit sRGB to the linear bytes three.js keeps for vertex colors.
 let srgbToLinearByte = null;
@@ -35,10 +35,7 @@ function turbo() {
 // The 2nd-98th percentile of the finite values of all `lists`, so a few outliers don't squash the rest into
 // one color, and clouds shown together share one scale.
 export function colorRange(lists) {
-    const finite = new Float32Array(lists.reduce((n, values) => n + values.length, 0));
-    let n = 0;
-    for (const values of lists) for (const value of values) if (Number.isFinite(value)) finite[n++] = value;
-    const sorted = finite.subarray(0, n);
+    const sorted = finiteValues(lists);
     return [percentile(sorted, 0.02), percentile(sorted, 0.98)];
 }
 

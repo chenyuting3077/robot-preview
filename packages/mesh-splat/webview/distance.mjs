@@ -1,11 +1,6 @@
-// Exact nearest distances from points to a reference made of points and triangles, for coloring one file by its
-// distance to another (CloudCompare's C2C and C2M). A bounding-volume hierarchy rather than a grid, because C2C
-// keeps the true nearest however far away it is, which a grid's cell size cannot bound. Each query starts from
-// the primitive nearest the previous query: clouds come in scan or file order, so that first guess is near.
-// 10M points against 10M points: 6.1 s to build, 13.4 s to query; against 10M triangles 7.4 s and 15.0 s
-// (Node 22, Apple M2, one run each, a synthetic floor and wall in scan order).
+// Exact nearest distances from points to a reference cloud or mesh (CloudCompare's C2C / C2M); see docs/mesh-splat.md.
 
-import { percentile } from './geometry.mjs';
+import { finiteValues, percentile } from './geometry.mjs';
 
 const STACK = 128;
 
@@ -23,7 +18,7 @@ export function placedPositions(positions, matrix, out = new Float32Array(positi
 
 // Reorders slots left..right so that the k-th smallest centroid along `axis` sits at k, smaller ones before it.
 // The centroids and bounds move with their slot, so every pass reads memory in order and a point cloud needs no
-// reordered copy afterwards: 10M points build in 6.1 s against 7.7 s selecting through an index.
+// reordered copy afterwards: 10M points build in 6.1 s against 7.7 s selecting through an index (Node 22, Apple M2).
 function select(order, centers, bounds, axis, left, right, k) {
     const swap = (i, j) => {
         const o = order[i]; order[i] = order[j]; order[j] = o;
@@ -56,7 +51,7 @@ function select(order, centers, bounds, axis, left, right, k) {
 // The tree over `count` primitives with centroids `centers` (xyz) and bounds `bounds` (min xyz, max xyz each, or
 // null for points, whose bounds are their centers), both reordered in place into leaf order; `order` gives each
 // slot's original primitive. Splits look only at centroids, and boxes are filled in afterwards from the leaves
-// up, instead of widening every node's box by each of its primitives (1M triangles: 0.6-0.7 s against 1.4 s).
+// up, instead of widening every node's box by each of its primitives (1M triangles: 0.6-0.7 s against 1.4 s, Node 22, Apple M2).
 function buildTree(count, centers, bounds, leafSize) {
     const order = new Uint32Array(count);
     for (let i = 0; i < count; i++) order[i] = i;
@@ -91,13 +86,12 @@ function buildTree(count, centers, bounds, leafSize) {
             const lo = bounds ?? centers;
             for (let i = start; i < end; i++) {
                 const l = bounds ? i * 6 : i * 3, h = bounds ? l + 3 : l;
-                const hi = lo;
                 if (lo[l] < x0) x0 = lo[l];
                 if (lo[l + 1] < y0) y0 = lo[l + 1];
                 if (lo[l + 2] < z0) z0 = lo[l + 2];
-                if (hi[h] > x1) x1 = hi[h];
-                if (hi[h + 1] > y1) y1 = hi[h + 1];
-                if (hi[h + 2] > z1) z1 = hi[h + 2];
+                if (lo[h] > x1) x1 = lo[h];
+                if (lo[h + 1] > y1) y1 = lo[h + 1];
+                if (lo[h + 2] > z1) z1 = lo[h + 2];
             }
             boxes[o] = x0; boxes[o + 1] = y0; boxes[o + 2] = z0;
             boxes[o + 3] = x1; boxes[o + 4] = y1; boxes[o + 5] = z1;
@@ -211,7 +205,7 @@ export function pointTree(points, leafSize = 8) {
     const near = new Float64Array(STACK);
     return {
         ...tree,
-        // Squared distance to the nearest point, starting from the point nearest the previous query.
+        // Starts from the point nearest the previous query: clouds come in scan or file order, so that guess is near.
         nearest2(x, y, z) {
             if (!count) return Infinity;
             let dx = sorted[last * 3] - x, dy = sorted[last * 3 + 1] - y, dz = sorted[last * 3 + 2] - z;
@@ -364,21 +358,15 @@ export function distanceStats(lists, tolerance) {
         if (value <= tolerance) within++;
     }
     if (!count) return null;
-    const finite = new Float32Array(count);
-    let n = 0;
-    for (const values of lists) for (const value of values) if (Number.isFinite(value)) finite[n++] = value;
-    return { count, mean: sum / count, rms: Math.sqrt(squares / count), p95: percentile(finite, 0.95), max, within: within / count };
+    return { count, mean: sum / count, rms: Math.sqrt(squares / count), p95: percentile(finiteValues(lists), 0.95), max, within: within / count };
 }
 
 // A first tolerance from the distances themselves: three times the median, where two registered files' noise
 // usually lies (a guess, not measured on real pairs), rounded to 1, 2 or 5 of a power of ten so it reads as a
 // number someone would type. Files that coincide (median 0) take a tenth of the 98th percentile instead.
 export function defaultTolerance(lists) {
-    const finite = new Float32Array(lists.reduce((n, values) => n + values.length, 0));
-    let n = 0;
-    for (const values of lists) for (const value of values) if (Number.isFinite(value)) finite[n++] = value;
-    if (!n) return 0;
-    const all = finite.subarray(0, n);
+    const all = finiteValues(lists);
+    if (!all.length) return 0;
     const median = percentile(all, 0.5);
     const raw = median > 0 ? median * 3 : percentile(all, 0.98) / 10;
     if (!(raw > 0)) return 0;

@@ -33,6 +33,13 @@ export function flatNormals(positions) {
     return normals;
 }
 
+export function finiteValues(lists) {
+    const finite = new Float32Array(lists.reduce((n, values) => n + values.length, 0));
+    let n = 0;
+    for (const values of lists) for (const value of values) if (Number.isFinite(value)) finite[n++] = value;
+    return finite.subarray(0, n);
+}
+
 // The value a sort would put at floor((n - 1) * q), by quickselect: O(n)
 // instead of sorting millions of splat centres. Reorders `values`.
 export function percentile(values, q) {

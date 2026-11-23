@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import DistanceWorker from './distance-worker.js?worker&inline';
-import { positionsOf } from './cloud-colors.mjs';
+import { ownGeometry, positionsOf } from './cloud-colors.mjs';
 
 // Loaded only when a distance is first chosen. One worker per reference file: its tree is the slow part, built
 // once for every file and detail cloud measured against it, and dropped with the worker when nothing uses it.
@@ -21,7 +21,6 @@ export function createComparer(root) {
         transfer.push(copy.buffer);
         return copy;
     };
-    const geometryOf = object => object.userData.own?.geometry ?? object.geometry;
 
     function referenceFor(file, objects) {
         if (references.has(file.id)) return references.get(file.id);
@@ -53,7 +52,7 @@ export function createComparer(root) {
         };
         const transfer = [];
         const parts = objects.map(object => {
-            const geometry = geometryOf(object);
+            const geometry = ownGeometry(object);
             const part = { positions: sendable(positionsOf(geometry), transfer), matrix: matrixOf(object, origin), mesh: Boolean(object.isMesh) };
             if (object.isMesh && geometry.index) part.indices = sendable(geometry.index.array.subarray(0, geometry.index.count), transfer);
             return part;
@@ -70,7 +69,7 @@ export function createComparer(root) {
             const reference = referenceFor(file, referenceObjects);
             await reference.built;
             const transfer = [];
-            const parts = objects.map(object => ({ positions: sendable(positionsOf(geometryOf(object)), transfer), matrix: matrixOf(object, reference.origin) }));
+            const parts = objects.map(object => ({ positions: sendable(positionsOf(ownGeometry(object)), transfer), matrix: matrixOf(object, reference.origin) }));
             const job = ++jobs;
             return new Promise((resolve, reject) => {
                 reference.pending.set(job, { resolve, reject, onProgress });
