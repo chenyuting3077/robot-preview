@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - The icon's splat is jade, close to the green of the URDF / MJCF icon, so the extensions look like one set.
 - *Add file…* moves from the toolbar's + button into the new *Compare* menu, beside what adding files is for.
