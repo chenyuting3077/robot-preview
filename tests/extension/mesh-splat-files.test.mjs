@@ -81,14 +81,14 @@ test('a change to an added file re-renders with every file still listed', async 
     await watcher.change({ fsPath: at('scan.pcd') });
     assert.deepEqual(names(panel), ['map.pcd', 'scan.pcd']);
     assert.equal(listed(panel)[1].bytes, 'a longer scan'.length);
-    // A render for a change is not one that keeps the camera; one for an added file is.
-    assert.match(panel.webview.html, /data-keep=""/);
+    // A render for a change keeps the colors but not the camera; one for an added file keeps both.
+    assert.match(panel.webview.html, /data-keep="colors"/);
     fs.writeFileSync(at('scan.pcd'), 'saved by rename');
     await watcher.create({ fsPath: at('scan.pcd') });
     assert.equal(listed(panel)[1].bytes, 'saved by rename'.length);
 });
 
-test('a change and an add that render at once keep nothing, whichever starts first', async () => {
+test('a change and an add that render at once keep only the colors, whichever starts first', async () => {
     for (const changeFirst of [true, false]) {
         const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'scan.pcd': 'scan' });
         const watcher = env.state.watchers.find(({ pattern }) => pattern.pattern === 'map.pcd');
@@ -97,7 +97,7 @@ test('a change and an add that render at once keep nothing, whichever starts fir
         const add = () => panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });
         await Promise.all(changeFirst ? [change(), add()] : [add(), change()]);
         assert.deepEqual(names(panel), ['map.pcd', 'scan.pcd']);
-        assert.match(panel.webview.html, /data-keep=""/, `the map changed (${changeFirst ? 'change' : 'add'} first)`);
+        assert.match(panel.webview.html, /data-keep="colors"/, `the map changed (${changeFirst ? 'change' : 'add'} first)`);
         // The next render for an add alone keeps again.
         await panel.listener({ type: 'removeFile', file: listed(panel)[1].id });
         assert.match(panel.webview.html, /data-keep="1"/);
@@ -566,10 +566,10 @@ test('an added file deleted and later written again comes back with the view kep
     await watcher.create({ fsPath: at('scan.pcd') });
     assert.deepEqual(listed(panel).map(file => [file.name, !!file.missing]), [['map.pgm', false], ['scan.pcd', false]]);
     assert.match(panel.webview.html, /data-keep="1"/, 'the page shown missing is replaced, not the view reset');
-    // A change to the file once back resets the view as before.
+    // A change to the file once back keeps only the colors, as any change.
     fs.writeFileSync(at('scan.pcd'), 'changed scan');
     await watcher.change({ fsPath: at('scan.pcd') });
-    assert.match(panel.webview.html, /data-keep=""/);
+    assert.match(panel.webview.html, /data-keep="colors"/);
 });
 
 test('a delete event for an added file that is already back (a rename-style save) does not re-render', async () => {

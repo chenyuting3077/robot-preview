@@ -409,9 +409,12 @@ const saveSoon = () => {
 };
 
 // A re-render for an added or removed file would reset the view; webview state outlives it.
-const savedView = (page.keep && vscodeApi?.getState?.()) || null;
-// A page for a changed file starts afresh; a file added before it is up must not bring back the page before it.
-if (!page.keep) vscodeApi?.setState?.(null);
+const savedState = (page.keep && vscodeApi?.getState?.()) || null;
+const savedView = page.keep === 'colors' && savedState
+    ? { colors: savedState.colors, hues: savedState.hues, tolerance: savedState.tolerance, hideWithin: savedState.hideWithin, distanceTop: savedState.distanceTop }
+    : savedState;
+// A page for a changed file keeps only the colors; a file added before it is up must not bring back the rest.
+if (page.keep !== '1') vscodeApi?.setState?.(page.keep === 'colors' ? savedView : null);
 let lastView = '';
 // A view where nothing loaded has no camera of its own to hand on to the next page.
 const viewJson = () => files.some(file => file.object) && JSON.stringify({
@@ -1633,7 +1636,7 @@ async function setupView(shown) {
     }
     const kept = savedView?.camera ? savedView : null;
     // A file keeps its solid color while it stays in the view; one added takes the lowest color no other file has.
-    const hues = assignHues(files.map(file => file.id), kept?.hues);
+    const hues = assignHues(files.map(file => file.id), savedView?.hues);
     for (const file of files) file.hue = hues[file.id];
     for (const file of files) file.group.visible = !kept?.hidden?.includes(file.id);
     // A kept state that hides every loaded file (the shown ones were removed) would leave nothing to frame.
@@ -1680,15 +1683,15 @@ async function setupView(shown) {
     // A distance is measured again once the page is up (restoreDistances); one to a file no longer in the view is dropped.
     // The Display menu's last colouring is for clouds: a mesh starts in its own colors.
     const keptColor = file => {
-        const mode = kept?.colors?.[file.id];
+        const mode = savedView?.colors?.[file.id];
         if (mode === 'solid' && files.length < 2) return null;
         const reference = fileById(distanceRef(mode));
         if (distanceRef(mode) && !(reference?.object && reference !== file)) return null;
         return mode;
     };
-    tolerance = kept?.tolerance ?? null;
-    hideWithin = Boolean(kept?.hideWithin);
-    distanceTop = kept?.distanceTop ?? null;
+    tolerance = savedView?.tolerance ?? null;
+    hideWithin = Boolean(savedView?.hideWithin);
+    distanceTop = savedView?.distanceTop ?? null;
     if (distanceTop) cloudColors.setDistanceTop(distanceTop);
     const colors = [];
     for (const file of files) {

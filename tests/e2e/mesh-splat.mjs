@@ -995,6 +995,25 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
         && moved > 0.002 && JSON.stringify(firstAfter) !== JSON.stringify(shared) && savedOverlay.label > 0.3 && savedOverlay.line > 0.3;
     results.push(okSplit);
     console.log(`${okSplit ? 'PASS' : 'FAIL'} map.xyz | scan.xyz | plane.off in panes ${Math.round((Date.now() - splitAt) / 100) / 10}s first red ${first.warm} blue ${first.cold}, second red ${second.warm} blue ${second.cold}, third red ${third.warm} blue ${third.cold}, labels ${labels}, pane buttons ${buttons}, scan in the first too: blue ${shared.cold} labels ${sharedLabels}, drag moved ${(moved * 100).toFixed(1)}%, saved PNG label ${Math.round(savedOverlay.label * 100)}% line ${Math.round(savedOverlay.line * 100)}%`);
+
+    // The scan written again keeps its distance colors and the tolerance (#18), measured again.
+    const changedAt = Date.now();
+    await choose(1, `distance:${idOf(0)}`);
+    await settle();
+    await evaluate("(() => { const input = document.getElementById('tolerance-input'); input.value = '0.2'; input.dispatchEvent(new Event('input')); })()");
+    await sleep(800);
+    fs.writeFileSync(at('scan.xyz'), disk(x => (x > 0.4 ? 1.02 : 0.02), '0 0 255') + '\n');
+    await panel.env.state.watchers.find(({ pattern }) => pattern.pattern === 'scan.xyz').change({ fsPath: at('scan.xyz') });
+    const keep = panel.webview.html.match(/data-keep="([^"]*)"/)[1];
+    pages.set('/page/compare-changed', panel.webview.html.replaceAll('vscode-webview:', "'self'"));
+    await send('Page.navigate', { url: `${origin}/page/compare-changed` });
+    for (let i = 0; i < 300 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+    await settle();
+    const afterChange = await evaluate("[document.querySelectorAll('#stage-panel .prim-row')[1].querySelector('select').value, document.getElementById('tolerance-input').value, document.getElementById('panes-btn').classList.contains('active')].join('|')");
+    const changedInfo = await info();
+    const okChanged = keep === 'colors' && afterChange === `distance:${idOf(0)}|0.2|false` && Math.abs(mean(changedInfo, 'map.xyz') - 0.27) < 0.02;
+    results.push(okChanged);
+    console.log(`${okChanged ? 'PASS' : 'FAIL'} scan.xyz written again keeps its distance ${Math.round((Date.now() - changedAt) / 100) / 10}s keep ${keep} row|tolerance|panes ${afterChange} mean ${mean(changedInfo, 'map.xyz')}`);
     fs.rmSync(compareDir, { recursive: true, force: true });
 }
 
@@ -1034,8 +1053,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(utmDir, { recursive: true, force: true });
 }
 
-// A page for a changed file starts the view afresh: a file added before it is up must not bring back the view of
-// the page before it.
+// A page for a changed file keeps only the colors: a file added before it is up must not bring back the rest.
 {
     const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-stale-'));
     const cloud = path.join(staleDir, 'cloud.xyz');

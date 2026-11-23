@@ -69,8 +69,9 @@ const chosenOf = (clicked, selected) => (Array.isArray(selected) && selected.len
 const validHelpers = helpers => Object.fromEntries(['cloud', 'map', 'model'].filter(kind => Array.isArray(helpers?.[kind]))
     .map(kind => [kind, helpers[kind].filter(name => HELPER_NAMES.includes(name))]));
 
-// A file that is gone stays listed (with no stat), so its row can say so. `keep` is only for a render after a file
-// was added or removed: a changed file resets the view, as it did before views held several files.
+// A changed file keeps only the colors: the camera was framed for what it held before.
+const KEEP_NOTHING = 0, KEEP_COLORS = 1, KEEP_VIEW = 2;
+// A file that is gone stays listed (with no stat), so its row can say so.
 async function renderHtml(template, webview, distUri, files, cache, turn, keep, helpers, pick, settings) {
     const source = webview.cspSource;
     const csp = [
@@ -98,7 +99,7 @@ async function renderHtml(template, webview, distUri, files, cache, turn, keep, 
         file: opened.id,
         files: JSON.stringify(list),
         adds: files[0].takesFiles ? 1 : '',
-        keep: keep ? 1 : '',
+        keep: ['', 'colors', '1'][keep],
         key: cache ? path.basename(cache.uri.fsPath) : '',
         piece: READ_PIECE,
         render: turn,
@@ -173,7 +174,7 @@ function activate(context) {
             // A save can fire two events whose renders finish out of order; only the latest one writes the page.
             // It keeps the view only if no render since the last page was for a change.
             let renders = 0;
-            let keeps = true;
+            let keeps = KEEP_VIEW;
             // While the opened file is gone no page can be rendered, so the list stays as the page shows it. A delete
             // marks it at once (an add while its stat is pending would pass); `deletes` tells a render whose stat
             // came before a delete that the file may be gone since.
@@ -188,10 +189,10 @@ function activate(context) {
             let shownBytes = 0;
             let loadedRender = null;
             let releaseTimer = null;
-            const render = async (keep = false) => {
+            const render = async (keep = KEEP_NOTHING) => {
                 const turn = ++renders;
                 const seen = deletes;
-                keeps &&= keep;
+                keeps = Math.min(keeps, keep);
                 if (released) return;
                 const stats = await Promise.all(files.map(file => vscode.workspace.fs.stat(file.uri).catch(() => null)));
                 if (disposed) return;
@@ -209,7 +210,7 @@ function activate(context) {
                     return;
                 }
                 if (turn !== renders || disposed || released) return;
-                keeps = true;
+                keeps = KEEP_VIEW;
                 openedGone = false;
                 if (cache) keys.set(path.basename(cache.uri.fsPath), cache.prefix);
                 // The old page goes without saying its reads are done; their handles would stay open until the tab
@@ -261,7 +262,7 @@ function activate(context) {
             const addedDeleted = async file => {
                 const turn = renders;
                 if (await exists(file.uri) || turn !== renders || disposed || !files.includes(file)) return;
-                await render(true);
+                await render(KEEP_VIEW);
             };
             const startReader = file => {
                 file.reader?.dispose();
@@ -274,7 +275,7 @@ function activate(context) {
                 const file = { id, uri, watcher, reader: null };
                 // A file shown missing that is written again comes back like an added one, the view kept: a tool that
                 // deletes a scan and writes it later would otherwise reset the view it kept over the delete.
-                const changed = event => event && samePath(event.fsPath, uri.fsPath) && render(Boolean(file.shownMissing));
+                const changed = event => event && samePath(event.fsPath, uri.fsPath) && render(file.shownMissing ? KEEP_VIEW : KEEP_COLORS);
                 // Editors that save by writing a new file and renaming it over the old one fire create, not change.
                 watcher.onDidChange(changed);
                 watcher.onDidCreate(changed);
@@ -298,7 +299,7 @@ function activate(context) {
                 if (!fresh.length || disposed) return;
                 if (openedGone) return refuse(() => addUris(uris));
                 fresh.forEach(add);
-                await render(true);
+                await render(KEEP_VIEW);
             };
             // A read without a file id is for the opened file (a page rendered before files had ids).
             const fileOf = id => files.find(file => file.id === String(id ?? files[0].id));
@@ -358,7 +359,7 @@ function activate(context) {
                     if (!file || file === files[0]) return;
                     if (openedGone) return refuse(() => handlers.removeFile(message));
                     drop(file);
-                    await render(true);
+                    await render(KEEP_VIEW);
                 }
             };
             const writer = cacheWriter(cacheDir?.fsPath, keys, post);
@@ -374,7 +375,7 @@ function activate(context) {
                     const gone = files.filter((file, i) => i && ids.includes(file.id));
                     if (!gone.length) return;
                     gone.forEach(drop);
-                    await render(true);
+                    await render(KEEP_VIEW);
                 }
             };
             views.unshift(view);
@@ -385,7 +386,7 @@ function activate(context) {
                 if (!visible) scheduleRelease();
                 else if (released) {
                     released = false;
-                    render(true);
+                    render(KEEP_VIEW);
                 } else clearTimeout(releaseTimer);
                 if (!webviewPanel.active) return;
                 views.splice(views.indexOf(view), 1);
