@@ -954,12 +954,47 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     await sleep(600);
     const [firstAfter] = await thirds();
     const moved = await shotDiff(before, await pageShot());
+    // The saved PNG with and without the labels and lines: their pixels must change.
+    const savedOverlay = await evaluate(`(async () => {
+        const save = async () => {
+            window.__posted = null;
+            document.getElementById('screenshot-btn').click();
+            const image = new Image();
+            image.src = 'data:image/png;base64,' + window.__posted.data;
+            await image.decode();
+            const canvas = Object.assign(document.createElement('canvas'), { width: image.width, height: image.height });
+            canvas.getContext('2d').drawImage(image, 0, 0);
+            return canvas.getContext('2d').getImageData(0, 0, image.width, image.height);
+        };
+        const changed = (a, b, rect) => {
+            const origin = document.querySelector('canvas').getBoundingClientRect();
+            const x0 = Math.round((rect.left - origin.left) * 2), y0 = Math.round((rect.top - origin.top) * 2);
+            const x1 = Math.round((rect.right - origin.left) * 2), y1 = Math.round((rect.bottom - origin.top) * 2);
+            let n = 0, all = 0;
+            for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++, all++) {
+                const i = (y * a.width + x) * 4;
+                if (Math.abs(a.data[i] - b.data[i]) + Math.abs(a.data[i + 1] - b.data[i + 1]) + Math.abs(a.data[i + 2] - b.data[i + 2]) > 6) n++;
+            }
+            return all ? n / all : 0;
+        };
+        const label = document.querySelector('.pane-label:not([hidden])'), line = document.querySelector('.pane-line');
+        const labelRect = label.getBoundingClientRect(), lineRect = line.getBoundingClientRect();
+        const withOverlay = await save();
+        const lines = [...document.getElementById('pane-lines').children];
+        const labels = [...document.querySelectorAll('.pane-label')].filter(element => !element.hidden);
+        labels.forEach(element => { element.hidden = true; });
+        document.getElementById('pane-lines').replaceChildren();
+        const without = await save();
+        labels.forEach(element => { element.hidden = false; });
+        document.getElementById('pane-lines').replaceChildren(...lines);
+        return { label: changed(withOverlay, without, labelRect), line: changed(withOverlay, without, lineRect) };
+    })()`);
     // The axes (red x, blue z) show in every pane, so a few pixels of the other color are theirs.
     const okSplit = first.warm > 50 && first.cold < first.warm / 10 && second.cold > 50 && second.warm < second.cold / 10 && third.warm < 200 && third.cold < 200
         && labels === 'map.xyz|scan.xyz|' && buttons === '3,3,3' && shared.cold > 50 && sharedLabels === 'map.xyz · scan.xyz|scan.xyz|'
-        && moved > 0.002 && JSON.stringify(firstAfter) !== JSON.stringify(shared);
+        && moved > 0.002 && JSON.stringify(firstAfter) !== JSON.stringify(shared) && savedOverlay.label > 0.3 && savedOverlay.line > 0.3;
     results.push(okSplit);
-    console.log(`${okSplit ? 'PASS' : 'FAIL'} map.xyz | scan.xyz | plane.off in panes ${Math.round((Date.now() - splitAt) / 100) / 10}s first red ${first.warm} blue ${first.cold}, second red ${second.warm} blue ${second.cold}, third red ${third.warm} blue ${third.cold}, labels ${labels}, pane buttons ${buttons}, scan in the first too: blue ${shared.cold} labels ${sharedLabels}, drag moved ${(moved * 100).toFixed(1)}%`);
+    console.log(`${okSplit ? 'PASS' : 'FAIL'} map.xyz | scan.xyz | plane.off in panes ${Math.round((Date.now() - splitAt) / 100) / 10}s first red ${first.warm} blue ${first.cold}, second red ${second.warm} blue ${second.cold}, third red ${third.warm} blue ${third.cold}, labels ${labels}, pane buttons ${buttons}, scan in the first too: blue ${shared.cold} labels ${sharedLabels}, drag moved ${(moved * 100).toFixed(1)}%, saved PNG label ${Math.round(savedOverlay.label * 100)}% line ${Math.round(savedOverlay.line * 100)}%`);
     fs.rmSync(compareDir, { recursive: true, force: true });
 }
 

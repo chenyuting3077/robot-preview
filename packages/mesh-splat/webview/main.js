@@ -1225,10 +1225,46 @@ function captureScreenshot() {
     renderer.setPixelRatio(2);
     renderer.setSize(size.x, size.y, false);
     draw();
-    const data = renderer.domElement.toDataURL('image/png').split(',')[1];
+    const data = (panes > 1 ? withPaneLabels(renderer.domElement, 2) : renderer.domElement).toDataURL('image/png').split(',')[1];
     renderer.setPixelRatio(pixelRatio);
     renderer.setSize(size.x, size.y, false);
     vscodeApi.postMessage({ type: 'screenshot', data });
+}
+
+// The pane labels and lines are DOM over the canvas, which toDataURL leaves out, so they are drawn onto a copy.
+function withPaneLabels(canvas, scale) {
+    const out = Object.assign(document.createElement('canvas'), { width: canvas.width, height: canvas.height });
+    const context = out.getContext('2d');
+    context.drawImage(canvas, 0, 0);
+    const origin = canvas.getBoundingClientRect();
+    const box = element => {
+        const rect = element.getBoundingClientRect();
+        return [(rect.left - origin.left) * scale, (rect.top - origin.top) * scale, rect.width * scale, rect.height * scale];
+    };
+    for (const line of $('pane-lines').children) {
+        context.fillStyle = getComputedStyle(line).backgroundColor;
+        context.fillRect(...box(line));
+    }
+    for (const label of $('pane-labels').children) {
+        if (label.hidden) continue;
+        const style = getComputedStyle(label);
+        const [x, y, width, height] = box(label);
+        context.fillStyle = style.backgroundColor;
+        context.beginPath();
+        context.roundRect(x, y, width, height, parseFloat(style.borderTopLeftRadius) * scale);
+        context.fill();
+        context.fillStyle = style.color;
+        context.font = `${style.fontWeight} ${parseFloat(style.fontSize) * scale}px ${style.fontFamily}`;
+        context.textBaseline = 'middle';
+        const padding = parseFloat(style.paddingLeft) * scale;
+        context.save();
+        context.beginPath();
+        context.rect(x, y, width, height);
+        context.clip();
+        context.fillText(label.textContent, x + padding, y + height / 2);
+        context.restore();
+    }
+    return out;
 }
 
 // Dropped files arrive as URIs, VS Code's own list first. A File dropped from the OS carries no path in a
