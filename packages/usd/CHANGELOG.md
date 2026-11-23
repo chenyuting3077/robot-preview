@@ -3,6 +3,9 @@
 ## Unreleased
 
 - The icon's top layer is jade, close to the green of the URDF / MJCF icon, so the extensions look like one set.
+- Panels and menus have rounded corners, nested ones concentric, and drop-down menus open 2 px below their toolbar.
+- `F` fits the whole model in the view's narrower side, so a tall pane takes it all in; a single view frames about 10% farther back than before.
+- A view of a large file (100 MB or more) in a tab hidden for 5 minutes gives its memory back, and loads again with the camera kept when you return.
 
 ## 0.3.0
 

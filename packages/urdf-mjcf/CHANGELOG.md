@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Panels and menus have rounded corners, nested ones concentric, and drop-down menus open 2 px below their toolbar.
+
 ## 0.6.0
 
 - The link info shown on hover waits until the pointer rests for half a second, so moving across the robot to orbit or drag a joint no longer flashes it; right after one closes, the next link's info opens at once. The highlight still follows the pointer immediately.

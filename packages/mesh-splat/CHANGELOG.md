@@ -8,6 +8,8 @@
 - Mesh rows in a view of several files color too: Original, Height, Solid and distance.
 - A *Point Cloud View* list in the Explorer shows the files of the view used last: drag files from the Explorer onto it to add them (a drag onto the 3D view itself does not reach it on macOS), or remove them with its × button.
 - *Split by file* (the grid button in the toolbar, shown once a view holds several files) gives each file a pane of its own, up to 9 (in a row, then a grid), with one camera, and a Stage row's numbered buttons put a file in any of them (a map under each of several scans).
+- Panels and menus have rounded corners, nested ones concentric, and drop-down menus open 2 px below their toolbar.
+- `F` fits the whole model in the view's narrower side, so a tall pane takes it all in; a single view frames about 10% farther back than before.
 - `.obj` `.gltf` `.dae` `.wrl` and `.xyz` open in the text editor again: they are text people edit, and `.xyz` is also a molecule format. The editor title's *Open 3D Preview* button (*Open as Point Cloud* for `.xyz`), the Explorer menu or *Reopen Editor With…* opens the view, and *Reopen Editor With… → Configure default editor* brings back the old behavior.
 - A view of large files (100 MB or more) in a tab hidden for 5 minutes gives its memory back, and loads again with the camera kept when you return.
 
