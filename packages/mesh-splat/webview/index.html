@@ -36,24 +36,29 @@ canvas { display: block; }
 .control-bar-section { position: relative; display: flex; align-items: center; }
 /* A section whose buttons are all hidden would still take a gap in the bar. */
 .control-bar-section:not(:has(> :not([hidden]))) { display: none; }
-.tool-button, .control-button { display: flex; align-items: center; gap: 5px; padding: 5px 12px; background: transparent; border: 1px solid var(--button-border); border-radius: 10px; cursor: pointer; transition: all 0.2s var(--spring); color: var(--text-secondary); font: 500 11px inherit; font-family: inherit; white-space: nowrap; }
+.tool-button, .control-button { display: flex; align-items: center; gap: 5px; padding: 5px 12px; background: transparent; border: 1px solid var(--button-border); border-radius: 10px; cursor: pointer; transition: all 0.2s var(--spring); color: var(--text-secondary); font-family: inherit; font-size: 13px; white-space: nowrap; }
 .tool-button:hover, .control-button:hover { background: var(--hover); color: var(--text-primary); transform: scale(1.05); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12); }
 .tool-button:active, .control-button:active { transform: scale(0.98); }
 .tool-button.active, .control-button.active { background: var(--accent); color: white; box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3); }
-#display-menu, #up-menu, #compare-menu { display: none; position: absolute; top: calc(100% + 8px); left: -4px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px; border-radius: 18px; z-index: 200; }
+/* At least as wide as the button, as macOS menus are: the up menu's +Z and -Z were 33 px targets. */
+#display-menu, #up-menu, #compare-menu { display: none; position: absolute; top: calc(100% + 4px); left: 0; min-width: 100%; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border-radius: 14px; z-index: 200; }
+/* Text in menus and panels starts 13 px from their left edge, as a toolbar button's does, so it lines up under the button. */
+#display-menu > .control-button, #up-menu > .control-button, #compare-menu .control-button { padding: 4px 7.5px; }
+.tool-button { height: 27px; }
 #display-menu.open, #up-menu.open, #compare-menu.open { display: flex; }
 #compare-menu { width: max-content; max-width: min(320px, calc(100vw - 40px)); font-size: 11px; }
-/* It opens over the Stage panel, whose rows showed through the glass's backdrop and the translucent selects. */
-#compare-menu.glass { background: #202020; backdrop-filter: none; -webkit-backdrop-filter: none; }
-[data-theme="light"] #compare-menu.glass { background: #ffffff; }
-#compare-menu .compare-hint { color: var(--text-tertiary); padding: 0 4px; }
-#compare-menu label { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 6px; padding: 0 4px; color: var(--text-tertiary); }
+/* Menus sit inside the toolbar's glass, so their own blur does not reach the view: the Stage rows and the model showed through. */
+#top-control-bar .glass { background: #202020; backdrop-filter: none; -webkit-backdrop-filter: none; }
+[data-theme="light"] #top-control-bar .glass { background: #ffffff; }
+#compare-menu .compare-hint { color: var(--text-tertiary); padding: 0 8.5px; }
+#compare-menu label { display: grid; grid-template-columns: 56px minmax(0, 1fr); align-items: center; gap: 6px; padding: 0 8.5px; color: var(--text-tertiary); }
 #compare-menu select { min-width: 0; padding: 2px 4px; border: 1px solid var(--button-border); border-radius: 6px; background: #2a2a2a; color: var(--text-primary); font: inherit; }
 [data-theme="dark"] #compare-menu option { background-color: #2a2a2a; }
 [data-theme="light"] #compare-menu select { background: #f2f2f2; }
 #compare-distance { display: flex; flex-direction: column; gap: 6px; }
 #stage-bar { position: fixed; top: 20px; right: 20px; padding: 5px 9px; border-radius: 15px; z-index: 100; }
-#stage-panel { position: fixed; top: 62px; right: 20px; width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
+/* Under the Stage button as a menu under its button: 4 px below it, right edges lined up. */
+#stage-panel { position: fixed; top: calc(20px + 0.5px + 5px + 27px + 4px); right: calc(20px + 0.5px + 9px); width: 340px; max-height: min(60vh, 520px); max-width: calc(100vw - 40px); display: flex; flex-direction: column; overflow: hidden; border-radius: 16px; z-index: 50; }
 .stage-head, .prim-row { display: grid; grid-template-columns: minmax(0, 1fr) 104px 24px; align-items: center; gap: 6px; }
 .stage-head { padding: 6px 12px 6px 16px; font-size: 10px; color: var(--text-tertiary); border-bottom: 0.5px solid var(--glass-border); }
 .stage-head span:last-child { text-align: center; }
@@ -88,19 +93,19 @@ canvas { display: block; }
 #prim-path button:last-of-type { color: var(--accent); font-weight: 600; }
 .prim-path-type { margin-left: auto; padding-left: 8px; }
 #hover-label { position: fixed; padding: 3px 8px; border-radius: 8px; font-size: 11px; color: var(--text-primary); pointer-events: none; white-space: nowrap; z-index: 150; }
-#help-panel { display: none; position: absolute; top: calc(100% + 8px); left: -4px; padding: 10px 14px; border-radius: 18px; font-size: 11px; white-space: nowrap; z-index: 200; }
+#help-panel { display: none; position: absolute; top: calc(100% + 4px); left: 0; padding: 8px 12.5px; border-radius: 14px; font-size: 11px; white-space: nowrap; z-index: 200; }
 #help-panel.open { display: block; }
 #help-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
 #help-panel td:first-child { color: var(--text-tertiary); }
 #help-panel td:last-child { color: var(--text-primary); }
-.display-menu-separator { height: 1px; margin: 2px 4px; background: var(--glass-border); }
-.size-row { display: flex; gap: 4px; }
+.display-menu-separator { height: 1px; margin: 2px 0; background: var(--glass-border); }
+.size-row { display: flex; gap: 2px; }
 .size-row .control-button { flex: 1; justify-content: center; height: 24px; padding: 0; }
 .size-row i { border-radius: 50%; background: currentColor; }
 .size-row [data-size="1"] i { width: 3px; height: 3px; }
 .size-row [data-size="2"] i { width: 5px; height: 5px; }
 .size-row [data-size="4"] i { width: 8px; height: 8px; }
-#info-panel { display: none; position: absolute; top: calc(100% + 8px); left: -4px; padding: 10px 14px; border-radius: 18px; font-size: 11px; z-index: 200; width: max-content; max-width: min(420px, calc(100vw - 40px)); }
+#info-panel { display: none; position: absolute; top: calc(100% + 4px); left: 0; padding: 8px 12.5px; border-radius: 14px; font-size: 11px; z-index: 200; width: max-content; max-width: min(420px, calc(100vw - 40px)); }
 #info-panel.open { display: block; }
 #info-panel table { border-spacing: 12px 3px; margin: -3px -12px; }
 #info-panel td:first-child { color: var(--text-tertiary); }

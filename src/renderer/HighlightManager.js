@@ -466,14 +466,14 @@ export class HighlightManager {
 
             const positionBlock =
                 `Position:\n` +
-                `- x = ${linkPos.x.toFixed(num_sig_figs)} m` +
-                `- y = ${linkPos.y.toFixed(num_sig_figs)} m` +
+                `- x = ${linkPos.x.toFixed(num_sig_figs)} m\n` +
+                `- y = ${linkPos.y.toFixed(num_sig_figs)} m\n` +
                 `- z = ${linkPos.z.toFixed(num_sig_figs)} m\n`;
             const orientationBlock =
             `Orientation:\n` +
             `- Quat: x=${quatX} y=${quatY} z=${quatZ} w=${quatW}\n` +
             `- RPY (rad): r=${rollRad} p=${pitchRad} y=${yawRad}\n` +
-            `- RPY (deg): r=${rollDeg} p=${pitchDeg} y=${yawDeg}\n`;
+            `- RPY (deg): r=${rollDeg} p=${pitchDeg} y=${yawDeg}`;
 
             linkPoseEl.textContent = positionBlock + orientationBlock;
             linkPoseEl.style.display = 'block';

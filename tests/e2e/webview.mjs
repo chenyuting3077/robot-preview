@@ -563,12 +563,22 @@ try {
     const settings = await ev(`return window.__out.find(m => m.type === 'settings')?.settings`);
     check('panel toggle saved as setting', settings?.['toggle-joints-panel'] === true && settings['show-collision'] === true && !('show-visual' in settings), JSON.stringify(settings));
 
-    // robot_a spans 0.1-1 m, so its auto cell is 10 cm.
-    const grid = await ev(`const btn = document.getElementById('toggle-grid'), label = () => document.getElementById('grid-label').textContent;
-        const auto = label(); btn.click(); const off = label(); const hidden = !window.app.sceneManager.referenceGrid.visible; btn.click();
-        return { auto, off, hidden, restored: label() };`);
-    check('grid button reads auto with the cell size, or off', grid.auto === '網格：自動（10 cm）' && grid.off === '網格：關閉' && grid.hidden && grid.restored === grid.auto, JSON.stringify(grid));
-
+    const grid = await ev(`const btn = document.getElementById('toggle-grid'); btn.click(); const hidden = !window.app.sceneManager.referenceGrid.visible; btn.click();
+        return { hidden, shown: window.app.sceneManager.referenceGrid.visible, label: btn.textContent.trim() };`);
+    check('grid button hides and shows the horizon grid', grid.hidden && grid.shown && grid.label === '格線', JSON.stringify(grid));
+    const up = await ev(`document.getElementById('up-menu-btn').click(); document.querySelector('[data-up="+Y"]').click();
+        const after = { label: document.getElementById('up-label').textContent, select: document.getElementById('up-select').value, closed: !document.getElementById('up-menu').classList.contains('open') };
+        document.getElementById('up-menu-btn').click(); document.querySelector('[data-up="+Z"]').click(); return after;`);
+    check('up menu sets the axis and closes', up.label === '+Y' && up.select === '+Y' && up.closed, JSON.stringify(up));
+    const gap = await ev(`const button = document.getElementById('display-menu-btn'); button.click();
+        const b = button.getBoundingClientRect(), m = document.getElementById('display-menu').getBoundingClientRect(); document.body.click();
+        return { below: m.top - b.bottom, left: m.left - b.left };`);
+    check('a menu opens 4 px below its button, left edges lined up', Math.abs(gap.below - 4) < 0.5 && Math.abs(gap.left) < 0.5, JSON.stringify(gap));
+    const info = await ev(`document.getElementById('info-btn').click(); const text = document.getElementById('info-table').innerText; document.body.click(); return text;`);
+    check('info lists the robot', /robot_a\.urdf\.xacro/.test(info) && /Xacro/.test(info) && /Links/.test(info) && /尺寸/.test(info), JSON.stringify(info));
+    const esc = await ev(`const highlight = window.app.sceneManager.highlightManager; let cleared = false; const clear = highlight.clearHighlight.bind(highlight);
+        highlight.clearHighlight = () => { cleared = true; return clear(); }; document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); highlight.clearHighlight = clear; return cleared;`);
+    check('Esc clears the selection', esc);
 
     await ev(`window.__out.length = 0; window.postMessage({ type: 'exportUrdf', requestId: 7 }, '*')`);
     await waitFor(`window.__out.some(m => m.type === 'urdf')`, 3000);

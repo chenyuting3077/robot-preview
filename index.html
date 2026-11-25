@@ -233,70 +233,32 @@
         }
 
         .control-bar-section {
+            position: relative;
             display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
             align-items: center;
             gap: 6px;
         }
 
-        @media (max-width: 900px) {
-            .control-bar-divider {
-                display: none;
-            }
-        }
-
-        .control-bar-section:first-child {
-            margin-left: 0;
-        }
-
-        .control-bar-divider {
-            width: 1px;
-            height: 28px;
-            background: var(--glass-border);
-            margin: 0 8px;
-        }
-
-        .control-bar-select {
-            padding: 6px 28px 6px 10px;
-            height: 32px;
-            background: transparent;
-            border: none;
-            border-radius: 10px;
-            color: var(--text-primary);
-            font-size: 11px;
-            cursor: pointer;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23ffffff' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 8px center;
-            transition: background-color 0.2s, border-color 0.2s;
-        }
-
-        .control-bar-select:hover {
-            background-color: rgba(255, 255, 255, 0.1);
-        }
-
-        .control-bar-select:focus {
-            outline: none;
-            background-color: rgba(255, 255, 255, 0.12);
+        /* A section whose buttons are all hidden would still take a gap in the bar. */
+        .control-bar-section:not(:has(> :not([hidden]))) {
+            display: none;
         }
 
         .tool-button {
             display: flex;
             align-items: center;
+            height: 27px;
             justify-content: center;
             gap: 5px;
             padding: 5px 12px;
-            height: auto;
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             cursor: pointer;
             transition: all 0.3s var(--spring);
             color: var(--text-secondary);
-            font-size: 11px;
-            font-weight: 500;
+            font-family: inherit;
+            font-size: 13px;
             white-space: nowrap;
         }
 
@@ -341,11 +303,17 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             color: var(--text-secondary);
-            font-size: 11px;
-            font-weight: 500;
+            font-family: inherit;
+            font-size: 13px;
             cursor: pointer;
             transition: all 0.2s var(--spring);
             white-space: nowrap;
+        }
+
+        /* The toolbar and its menus take 13 px, as in Mesh & Splat; a panel header keeps room for its title. */
+        .floating-panel .control-button {
+            font-size: 11px;
+            font-weight: 500;
         }
 
         .control-button:hover {
@@ -426,20 +394,21 @@
 
         /* Hover info panel */
         /* Placed beside the pointer by HighlightManager, as a context menu is: fixed at the bottom it covered the model. */
+        /* The same card as the Mesh & Splat and USD viewers' hover label, a line per fact. */
         #hover-info {
             position: fixed;
             left: 0;
             top: 0;
-            padding: 12px 16px;
+            padding: 6px 8px;
             background: var(--glass-bg);
             backdrop-filter: blur(20px) saturate(150%);
             -webkit-backdrop-filter: blur(20px) saturate(150%);
             border: 0.5px solid var(--glass-border);
-            border-radius: 16px;
+            border-radius: 8px;
             box-shadow: var(--glass-shadow);
-            font-size: 12px;
-            color: var(--text-secondary);
-            min-width: 200px;
+            font-size: 11px;
+            line-height: 1.45;
+            color: var(--text-tertiary);
             opacity: 0;
             visibility: hidden;
             transition: opacity 0.15s, visibility 0.15s;
@@ -447,18 +416,8 @@
             z-index: 60;
         }
 
-        #hover-info::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 1px;
-            background: linear-gradient(90deg,
-                transparent 0%,
-                rgba(255, 255, 255, 0.2) 50%,
-                transparent 100%);
-            border-radius: 16px 16px 0 0;
+        [data-theme="light"] #hover-info {
+            background: rgba(255, 255, 255, 0.9);
         }
 
         #hover-info.visible {
@@ -468,36 +427,21 @@
 
         #hover-link-name {
             font-weight: 600;
-            font-size: 13px;
-            color: var(--accent);
-            margin-bottom: 6px;
-            letter-spacing: -0.2px;
+            color: var(--text-primary);
         }
 
         #hover-joint-name {
-            font-size: 11px;
             color: var(--text-primary);
-            margin-bottom: 4px;
-        }
-
-        #hover-link-mass {
-            font-size: 11px;
-            color: var(--text-tertiary);
-            margin-bottom: 4px;
-        }
-
-        #hover-merged-links {
-            font-size: 10px;
-            color: var(--text-tertiary);
-            margin-top: 6px;
-            padding-top: 6px;
-            border-top: 0.5px solid var(--glass-border);
         }
 
         #hover-link-pose {
-            font-size: 11px;
-            color: var(--text-tertiary);
             white-space: pre-wrap;
+        }
+
+        #hover-merged-links {
+            margin-top: 4px;
+            padding-top: 4px;
+            border-top: 0.5px solid var(--glass-border);
         }
 
         /* Model tree floating panel */
@@ -841,13 +785,13 @@
 
         #mujoco-simulation-bar button {
             padding: 5px 12px;
-            height: auto;
+            height: 27px;
             background: transparent;
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 10px;
             color: var(--text-secondary);
-            font-size: 11px;
-            font-weight: 500;
+            font-family: inherit;
+            font-size: 13px;
             cursor: pointer;
             transition: all 0.3s var(--spring);
             white-space: nowrap;
@@ -1579,79 +1523,6 @@
             color: var(--text-primary);
         }
 
-        #up-select {
-            padding: 5px 24px 5px 12px;
-            height: auto;
-            background-color: rgba(255, 255, 255, 0.08);
-            border: none;
-            border-radius: 10px;
-            color: var(--text-primary);
-            font-size: 11px;
-            cursor: pointer;
-            transition: background-color 0.2s, border-color 0.2s;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23aaaaaa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 7px center;
-        }
-
-        #up-select:hover {
-            background-color: rgba(255, 255, 255, 0.12);
-        }
-
-        #up-select:focus {
-            outline: none;
-            background-color: rgba(255, 255, 255, 0.12);
-            background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M9 5L5 1L1 5' stroke='%23aaaaaa' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-        }
-
-        [data-theme="dark"] #up-select option {
-            background-color: #2a2a2a;
-            color: var(--text-primary);
-            padding: 8px 12px;
-        }
-
-        [data-theme="dark"] #up-select option:hover {
-            background-color: rgba(10, 132, 255, 0.15);
-        }
-
-        [data-theme="dark"] #up-select option:checked {
-            background: linear-gradient(135deg, var(--accent) 0%, rgba(10, 132, 255, 0.8) 100%);
-            color: white;
-        }
-
-        [data-theme="light"] #up-select {
-            background-color: rgba(0, 0, 0, 0.04);
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23666666' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-        }
-
-        [data-theme="light"] #up-select:hover {
-            background-color: rgba(0, 0, 0, 0.08);
-            border-color: rgba(0, 0, 0, 0.15);
-        }
-
-        [data-theme="light"] #up-select:focus {
-            background-color: rgba(0, 0, 0, 0.08);
-            border-color: var(--accent);
-            background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M9 5L5 1L1 5' stroke='%23666666' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-        }
-
-        [data-theme="light"] #up-select option {
-            background-color: #ffffff;
-            color: var(--text-primary);
-            padding: 8px 12px;
-        }
-
-        [data-theme="light"] #up-select option:hover {
-            background-color: rgba(0, 132, 255, 0.08);
-        }
-
-        [data-theme="light"] #up-select option:checked {
-            background: linear-gradient(135deg, var(--accent) 0%, rgba(10, 132, 255, 0.8) 100%);
-            color: white;
-        }
-
         .empty-state {
             color: var(--text-tertiary);
             text-align: center;
@@ -1679,9 +1550,9 @@
         #loading-indicator {
             position: fixed;
             left: 50%;
-            bottom: 16px;
-            transform: translateX(-50%);
-            padding: 4px 12px;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            padding: 8px 18px;
             border-radius: 999px;
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
@@ -1691,81 +1562,87 @@
             z-index: 10000;
         }
 
-        #loading-indicator.overlay {
-            top: 50%;
-            bottom: auto;
-            transform: translate(-50%, -50%);
-            padding: 8px 18px;
-            font-size: 14px;
-        }
-
-        .control-bar-views {
-            position: relative;
-        }
-
-        #display-menu {
+        #display-menu, #up-menu, #help-panel, #info-panel {
             display: none;
             position: absolute;
-            top: calc(100% + 8px);
-            left: -4px;
-            flex-direction: column;
-            align-items: stretch;
-            gap: 4px;
-            padding: 8px;
+            top: calc(100% + 4px);
+            left: 0;
             background: var(--glass-bg);
             backdrop-filter: blur(20px) saturate(150%);
             -webkit-backdrop-filter: blur(20px) saturate(150%);
             border: 0.5px solid var(--glass-border);
-            border-radius: 18px;
+            border-radius: 14px;
             box-shadow: var(--glass-shadow);
             z-index: 200;
         }
 
-        .control-bar-help {
-            position: relative;
+        /* Menus sit inside the toolbar's glass, so their own blur does not reach the view: the gizmo and the model showed through. */
+        #display-menu, #up-menu, #help-panel, #info-panel {
+            background: #202020;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+        }
+
+        [data-theme="light"] #display-menu, [data-theme="light"] #up-menu, [data-theme="light"] #help-panel, [data-theme="light"] #info-panel {
+            background: #ffffff;
+        }
+
+        /* At least as wide as the button, as macOS menus are: the up menu's +Z and -Z were 33 px targets. */
+        #display-menu, #up-menu {
+            min-width: 100%;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 2px;
+            padding: 4px;
+        }
+
+        /* Text in menus and panels starts 13 px from their left edge, as a toolbar button's does, so it lines up under the button. */
+        #display-menu > .control-button, #up-menu > .control-button {
+            padding: 4px 7.5px;
+        }
+
+        #display-menu.open, #up-menu.open {
+            display: flex;
+        }
+
+        #help-panel, #info-panel {
+            padding: 8px 12.5px;
+            font-size: 11px;
         }
 
         #help-panel {
-            display: none;
-            position: absolute;
-            top: calc(100% + 8px);
-            left: -4px;
-            padding: 10px 14px;
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px) saturate(150%);
-            -webkit-backdrop-filter: blur(20px) saturate(150%);
-            border: 0.5px solid var(--glass-border);
-            border-radius: 18px;
-            box-shadow: var(--glass-shadow);
-            font-size: 11px;
             white-space: nowrap;
-            z-index: 200;
         }
 
-        #help-panel.open {
+        #info-panel {
+            width: max-content;
+            max-width: min(420px, calc(100vw - 40px));
+        }
+
+        #help-panel.open, #info-panel.open {
             display: block;
         }
 
-        #help-panel table {
+        #help-panel table, #info-panel table {
             border-spacing: 12px 3px;
             margin: -3px -12px;
         }
 
-        #help-panel td:first-child {
+        #help-panel td:first-child, #info-panel td:first-child {
             color: var(--text-tertiary);
         }
 
-        #help-panel td:last-child {
+        #help-panel td:last-child, #info-panel td:last-child {
             color: var(--text-primary);
         }
 
-        #display-menu.open {
-            display: flex;
+        #info-panel td:last-child {
+            overflow-wrap: anywhere;
         }
 
         .display-menu-separator {
             height: 1px;
-            margin: 2px 4px;
+            margin: 2px 0;
             background: var(--glass-border);
         }
 
@@ -1773,6 +1650,10 @@
             justify-content: flex-start;
             text-align: left;
             white-space: nowrap;
+        }
+
+        [hidden] {
+            display: none !important;
         }
 
         #load-error {
@@ -1796,7 +1677,7 @@
         <div id="canvas-container">
             <div id="top-bars">
             <div id="top-control-bar">
-                <div class="control-bar-section control-bar-views">
+                <div class="control-bar-section">
                     <button class="tool-button" id="display-menu-btn">
                         <span class="tool-button-text" data-i18n="display"></span> ▾
                     </button>
@@ -1827,15 +1708,23 @@
                         <span data-i18n="lighting"></span>
                     </button>
                     <button class="control-button active" id="toggle-grid" data-checked="true">
-                        <span id="grid-label" data-i18n="gridAuto"></span>
+                        <span data-i18n="grid"></span>
                     </button>
                     </div>
                 </div>
 
-                <div class="control-bar-divider"></div>
-
-                <div class="control-bar-section control-bar-direction">
-                    <select id="up-select" class="control-bar-select">
+                <div class="control-bar-section">
+                    <button class="tool-button" id="up-menu-btn"><span id="up-label">+Z</span> ▾</button>
+                    <div id="up-menu">
+                        <button class="control-button" data-up="+Z">+Z</button>
+                        <button class="control-button" data-up="-Z">-Z</button>
+                        <button class="control-button" data-up="+Y">+Y</button>
+                        <button class="control-button" data-up="-Y">-Y</button>
+                        <button class="control-button" data-up="+X">+X</button>
+                        <button class="control-button" data-up="-X">-X</button>
+                    </div>
+                    <!-- Holds the axis for the code that reads it; the menu above is what shows. -->
+                    <select id="up-select" hidden>
                         <option value="+Z">+Z</option>
                         <option value="-Z">-Z</option>
                         <option value="+Y">+Y</option>
@@ -1845,9 +1734,7 @@
                     </select>
                 </div>
 
-                <div class="control-bar-divider"></div>
-
-                <div class="control-bar-section control-bar-panels">
+                <div class="control-bar-section">
                     <button class="tool-button" id="toggle-joints-panel">
                         <span class="tool-button-text" data-i18n="joints"></span>
                     </button>
@@ -1856,22 +1743,19 @@
                     </button>
                 </div>
 
-                <div class="control-bar-section control-bar-help">
-                    <button class="tool-button active" id="pick-btn" aria-pressed="true">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M4 4l7 17 2.5-7.5L21 11z"/>
-                        </svg>
-                    </button>
-                    <button class="tool-button" id="screenshot-btn">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                            <circle cx="12" cy="13" r="4"/>
-                        </svg>
-                    </button>
-                    <button class="tool-button" id="help-btn">?</button>
-                    <div id="help-panel" class="popover-panel"><table><tr><td data-i18n="helpKeyOrbit"></td><td data-i18n="helpOrbit"></td></tr><tr><td data-i18n="helpKeyPan"></td><td data-i18n="helpPan"></td></tr><tr><td data-i18n="helpKeyZoom"></td><td data-i18n="helpZoom"></td></tr><tr><td data-i18n="helpKeyPivot"></td><td data-i18n="helpPivot"></td></tr><tr><td data-i18n="helpKeyFly"></td><td data-i18n="helpFly"></td></tr><tr><td data-i18n="helpKeyTurn"></td><td data-i18n="helpTurn"></td></tr><tr><td data-i18n="helpKeyFast"></td><td data-i18n="helpFast"></td></tr><tr><td data-i18n="helpKeyFrame"></td><td data-i18n="helpFrame"></td></tr><tr><td data-i18n="helpKeySelect"></td><td data-i18n="helpSelect"></td></tr><tr><td data-i18n="helpKeyJoint"></td><td data-i18n="helpJoint"></td></tr></table></div>
+                <div class="control-bar-section">
+                    <button class="tool-button active" id="pick-btn" aria-pressed="true"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg></button>
+                </div>
+                <div class="control-bar-section">
+                    <button class="tool-button" id="screenshot-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
+                </div>
+                <div class="control-bar-section">
+                    <button class="tool-button" id="info-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></button>
+                    <div id="info-panel"><table id="info-table"></table></div>
+                </div>
+                <div class="control-bar-section">
+                    <button class="tool-button" id="help-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+                    <div id="help-panel"><table><tr><td data-i18n="helpKeyOrbit"></td><td data-i18n="helpOrbit"></td></tr><tr><td data-i18n="helpKeyPan"></td><td data-i18n="helpPan"></td></tr><tr><td data-i18n="helpKeyZoom"></td><td data-i18n="helpZoom"></td></tr><tr><td data-i18n="helpKeyPivot"></td><td data-i18n="helpPivot"></td></tr><tr><td data-i18n="helpKeyFly"></td><td data-i18n="helpFly"></td></tr><tr><td data-i18n="helpKeyTurn"></td><td data-i18n="helpTurn"></td></tr><tr><td data-i18n="helpKeyFast"></td><td data-i18n="helpFast"></td></tr><tr><td data-i18n="helpKeyFrame"></td><td data-i18n="helpFrame"></td></tr><tr><td data-i18n="helpKeySelect"></td><td data-i18n="helpSelect"></td></tr><tr><td data-i18n="helpKeyJoint"></td><td data-i18n="helpJoint"></td></tr></table></div>
                 </div>
             </div>
 

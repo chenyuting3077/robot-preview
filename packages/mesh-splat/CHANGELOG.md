@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Toolbar menus are opaque, so the model no longer shows through their text, and one opened near the view's right edge stays inside it.
+- Drop-down menus are tighter, at least as wide as their button, and open 4 px below it, lined up with its left edge, instead of 2 px below the toolbar.
+- Text in menus and panels lines up with its button's, icon buttons are as tall as the others, and the Stage panel opens under its button as the menus do, right edges lined up.
+
 ## 0.6.0
 
 - The icon's splat is jade, close to the green of the URDF / MJCF icon, so the extensions look like one set.

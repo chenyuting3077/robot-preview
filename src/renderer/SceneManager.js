@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { fitDistance } from '../utils/framing.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerJointDragControls } from '../utils/JointDragControls.js';
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
@@ -30,7 +31,7 @@ export class SceneManager {
         // Camera
         const width = canvas.clientWidth;
         const height = canvas.clientHeight;
-        this.camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+        this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 1000);
         this.camera.position.set(2, 2, 2);
         this.camera.lookAt(0, 0, 0);
 
@@ -76,7 +77,7 @@ export class SceneManager {
         // Environment manager
         this.environmentManager = new EnvironmentManager(this.scene);
         this.environmentManager.setupLights();
-        this.environmentManager.setupGroundPlane();
+        this.environmentManager.setupGroundPlane(() => this.controls.target);
 
         // Initialize environment map with renderer for reflections
         this.environmentManager.initializeEnvironmentMap(this.renderer);
@@ -365,8 +366,6 @@ export class SceneManager {
         // If camera adjustment needed, perform auto-zoom and positioning
         if (fitCamera) {
             this.fitCameraToModel(bboxGlobal, center, size);
-            const gridCell = this.environmentManager.fitGridToModel(Math.max(size.x, size.y, size.z));
-            if (gridCell) this.onGridCellChange?.(gridCell);
         }
 
         // If ground position changed, trigger measurement update callback
@@ -396,45 +395,13 @@ export class SceneManager {
         this.redraw();
     }
 
-    /**
-     * Auto-adjust camera position to fit model size
-     * View angle: oblique from side-back (looking at model from side-back)
-     * @param {THREE.Box3} bbox - Model bounding box
-     * @param {THREE.Vector3} center - Model center point
-     * @param {THREE.Vector3} size - Model dimensions
-     */
+    /** Frame the model as Mesh & Splat's F does: its bounding sphere in the narrower field of view, from front-right above. */
     fitCameraToModel(bbox, center, size) {
-        // Calculate model's maximum dimension
-        const maxDim = Math.max(size.x, size.y, size.z);
-
-        if (maxDim < 0.001) {
+        if (Math.max(size.x, size.y, size.z) < 0.001) {
             return;
         }
-
-        // Calculate appropriate camera distance (based on FOV and model size)
-        // Single mesh uses larger distance multiplier to avoid clipping
-        const fov = this.camera.fov * (Math.PI / 180);
-
-        // Check if single mesh model (no joints)
-        const isSingleMesh = !this.currentModel || !this.currentModel.joints || this.currentModel.joints.size === 0;
-        const distanceMultiplier = isSingleMesh ? 2.5 : 1.8;  // Single mesh: 2.5x distance, robot model: 1.8x distance
-
-        const limitingFovTangent = Math.tan(fov / 2) * Math.min(1, this.camera.aspect);
-        const distance = maxDim / (2 * limitingFovTangent) * distanceMultiplier;
-
-        // Side-back oblique view:
-        // - From right-back (X positive + Z negative)
-        // - Slightly looking down (Y positive)
-        // Standard oblique angle: horizontal 135 degrees (back-side), vertical about 35 degrees
-        const horizontalAngle = Math.PI * 3 / 4;  // 135 degrees (right-back)
-        const verticalAngle = Math.PI / 6;        // 30 degrees (slightly looking down)
-
-        // Calculate camera position (relative to model center)
-        const cameraOffset = new THREE.Vector3(
-            distance * Math.cos(verticalAngle) * Math.sin(horizontalAngle),  // X: positive direction (right side)
-            distance * Math.sin(verticalAngle),                               // Y: positive direction (top)
-            -distance * Math.cos(verticalAngle) * Math.cos(horizontalAngle)  // Z: negative direction (back)
-        );
+        const distance = fitDistance(this.camera, size.length() / 2);
+        const cameraOffset = new THREE.Vector3(1, 0.7, 1).normalize().multiplyScalar(distance);
 
         // Set camera position and target
         this.camera.position.copy(center).add(cameraOffset);
@@ -956,11 +923,6 @@ export class SceneManager {
         } else {
             // Dark theme: medium gray background (easier to see model and shadows)
             this.scene.background = new THREE.Color(0x505050);
-        }
-
-        // Also update grid color to match theme
-        if (this.environmentManager) {
-            this.environmentManager.updateGridColorForTheme(theme);
         }
 
         // Trigger render immediately to show background color change

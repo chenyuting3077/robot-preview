@@ -3,8 +3,7 @@
  * Includes lighting, ground plane, coordinate system, etc.
  */
 import * as THREE from 'three';
-
-const GRID_DIVISIONS = 40;
+import { createHorizonGrid } from '../utils/horizon-grid.js';
 
 export class EnvironmentManager {
     constructor(scene) {
@@ -134,7 +133,8 @@ export class EnvironmentManager {
     /**
      * Setup ground plane
      */
-    setupGroundPlane() {
+    /** @param target () => Vector3 the camera orbits, for the grid's line spacing */
+    setupGroundPlane(target) {
         const planeGeometry = new THREE.PlaneGeometry(40, 40);
         // No depth write: the plane only catches shadows, and the grid lies in the
         // same plane, so its depth made grid lines z-fight and flicker on camera
@@ -156,89 +156,10 @@ export class EnvironmentManager {
 
         this.scene.add(this.groundPlane);
 
-        // Create reference grid
-        this.createReferenceGrid();
-    }
-
-    /**
-     * Create reference grid
-     */
-    createReferenceGrid() {
-        // Unit grid scaled by setGridCellSize, so the fade below works in local units.
-        this.referenceGrid = new THREE.GridHelper(1, GRID_DIVISIONS, 0xffffff, 0xcccccc);
+        this.referenceGrid = createHorizonGrid(THREE, target);
         this.referenceGrid.name = 'referenceGrid';
-        this.referenceGrid.position.y = 0; // Fixed at Y = 0, aligned with ground
-        this.setGridCellSize(0.25); // 10 m across until a model is fitted
-
-        // Fade lines toward the edge: at grazing views the far lines pile into an aliased, flickering band.
-        // The radius is taken per fragment: each line's two vertices sit on the edge, so an interpolated radius never drops below it.
-        this.referenceGrid.material.onBeforeCompile = shader => {
-            shader.vertexShader = 'varying vec2 vGridXZ;\n' + shader.vertexShader
-                .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGridXZ = position.xz;');
-            shader.fragmentShader = 'varying vec2 vGridXZ;\n' + shader.fragmentShader
-                .replace('#include <opaque_fragment>', 'diffuseColor.a *= 1.0 - smoothstep(0.2, 0.5, length(vGridXZ));\n#include <opaque_fragment>');
-        };
-
-        // Increase opacity to make grid lines more visible (appear thicker)
-        this.referenceGrid.material.opacity = 0.7;
-        this.referenceGrid.material.transparent = true;
-
-        // Disable depth write to avoid interference with ground
-        this.referenceGrid.material.depthWrite = false;
-
-        // Set higher render order to ensure grid lines display above ground
         this.referenceGrid.renderOrder = 1;
-
         this.scene.add(this.referenceGrid);
-    }
-
-    /**
-     * Pick the cell size from the model: 0.5 m cells give no scale for a 9 cm camera.
-     * @returns {number|null} cell size in meters, or null when the model has no size
-     */
-    fitGridToModel(maxDim) {
-        if (!(maxDim > 0)) return null;
-        const cellMeters = Math.min(0.5, 10 ** Math.floor(Math.log10(maxDim)));
-        this.setGridCellSize(cellMeters);
-        return cellMeters;
-    }
-
-    setGridCellSize(cellMeters) {
-        const size = cellMeters * GRID_DIVISIONS;
-        this.referenceGrid?.scale.set(size, 1, size);
-    }
-
-    /**
-     * Update grid color based on theme
-     * @param {string} theme - 'light' or 'dark'
-     */
-    updateGridColorForTheme(theme) {
-        if (!this.referenceGrid) return;
-
-        if (theme === 'light') {
-            // Light theme: black grid
-            this.referenceGrid.material.color.setHex(0x000000); // Center line black
-            // GridHelper uses two materials, need to update both
-            const colors = this.referenceGrid.geometry.attributes.color;
-            if (colors) {
-                // Update all vertex colors to black and dark gray
-                for (let i = 0; i < colors.count; i++) {
-                    colors.setXYZ(i, 0, 0, 0); // Black
-                }
-                colors.needsUpdate = true;
-            }
-        } else {
-            // Dark theme: white grid
-            this.referenceGrid.material.color.setHex(0xffffff); // Center line white
-            const colors = this.referenceGrid.geometry.attributes.color;
-            if (colors) {
-                // Update all vertex colors to white and light gray
-                for (let i = 0; i < colors.count; i++) {
-                    colors.setXYZ(i, 1, 1, 1); // White
-                }
-                colors.needsUpdate = true;
-            }
-        }
     }
 
     /**

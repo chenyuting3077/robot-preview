@@ -18,6 +18,8 @@ import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
 import { createCameraKeys, pointerNdc } from './utils/camera-keys.js';
 import { pickDisplayed, isGround } from './utils/picking.js';
+import { modelInfoRows } from './ui/model-info.js';
+import { bindPopover } from './ui/popover.js';
 import './ui/view-gizmo.css';
 
 window.d3 = d3;
@@ -130,8 +132,10 @@ class App {
             this.mujocoSimulationManager = new MujocoSimulationManager(this.sceneManager);
 
             this.setupModelTreePanel();
-            const helpButton = document.getElementById('help-btn');
-            helpButton.title = helpButton.ariaLabel = window.i18n.t('help');
+            for (const [id, key] of [['help-btn', 'help'], ['info-btn', 'info'], ['up-menu-btn', 'upAxis']]) {
+                const button = document.getElementById(id);
+                button.title = button.ariaLabel = window.i18n.t(key);
+            }
             const screenshotButton = document.getElementById('screenshot-btn');
             screenshotButton.title = screenshotButton.ariaLabel = window.i18n.t('screenshot');
             screenshotButton.addEventListener('click', () => this.captureScreenshot());
@@ -145,19 +149,14 @@ class App {
                 const simulationDrag = this.mujocoSimulationManager?.dragStateManager;
                 if (simulationDrag) simulationDrag.picking = on;
             });
-            for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['help-btn', 'help-panel']]) {
-                const button = document.getElementById(buttonId);
-                const panel = document.getElementById(panelId);
-                button.addEventListener('click', () => {
-                    panel.classList.toggle('open');
-                    button.classList.toggle('active', panel.classList.contains('open'));
-                });
-                document.addEventListener('click', event => {
-                    if (panel.contains(event.target) || button.contains(event.target)) return;
-                    panel.classList.remove('open');
-                    button.classList.remove('active');
-                });
+            for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['up-menu-btn', 'up-menu'], ['info-btn', 'info-panel'], ['help-btn', 'help-panel']]) {
+                bindPopover(document.getElementById(buttonId), document.getElementById(panelId), () => this.showInfo());
             }
+            this.setupUpMenu();
+            // Esc clears the selection, as in the USD viewer.
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && !event.target.closest?.('input, select, textarea')) this.clearSelection();
+            });
             const toolbar = document.getElementById('top-bars');
             new ResizeObserver(() => {
                 document.documentElement.style.setProperty('--toolbar-bottom', `${toolbar.offsetTop + toolbar.offsetHeight}px`);
@@ -172,6 +171,37 @@ class App {
             console.error('Initialization error:', error);
             vscode.postMessage({ type: 'error', message: error.stack || String(error) });
         }
+    }
+
+    setupUpMenu() {
+        const select = document.getElementById('up-select');
+        const show = () => {
+            document.getElementById('up-label').textContent = select.value;
+            document.querySelectorAll('[data-up]').forEach(button => button.classList.toggle('active', button.dataset.up === select.value));
+        };
+        show();
+        select.addEventListener('change', show);
+        document.querySelectorAll('[data-up]').forEach(button => button.addEventListener('click', () => {
+            document.getElementById('up-menu').classList.remove('open');
+            document.getElementById('up-menu-btn').classList.remove('active');
+            if (select.value === button.dataset.up) return;
+            select.value = button.dataset.up;
+            select.dispatchEvent(new Event('change'));
+        }));
+    }
+
+    showInfo() {
+        const model = this.currentModel;
+        if (!document.getElementById('info-panel').classList.contains('open') || !model?.threeObject) return;
+        const box = this.sceneManager.getModelBoundingBox(model.threeObject);
+        // The up axis turns the model by right angles, so the box taken back into its parent keeps the model's own sizes.
+        if (model.threeObject.parent) box.applyMatrix4(model.threeObject.parent.matrixWorld.clone().invert());
+        const size = box.isEmpty() ? null : box.getSize(new THREE.Vector3());
+        document.getElementById('info-table').replaceChildren(...modelInfoRows(model, this.currentFileName, size, key => i18n.t(key)).map(cells => {
+            const row = document.createElement('tr');
+            row.append(...cells.map(text => Object.assign(document.createElement('td'), { textContent: text })));
+            return row;
+        }));
     }
 
     setupTheme() {
@@ -264,7 +294,6 @@ class App {
     async runLoads() {
         const indicator = document.getElementById('loading-indicator');
         indicator.textContent = `${i18n.t('loading')}…`;
-        indicator.classList.toggle('overlay', !this.currentModel);
         indicator.style.display = 'block';
         try {
             await this.drainLoads();
@@ -406,6 +435,7 @@ class App {
             this.sceneManager.removeModel(this.currentModel, model);
         }
         this.currentModel = model;
+        this.currentFileName = (file?.name || model.name || '').split('/').pop();
         this.poseController.setModel(model);
 
         if (this.isUpdate) {
@@ -417,6 +447,7 @@ class App {
             if (jointList) jointList.scrollTop = scrollTop;
             this.modelGraphView.drawModelGraph(model, { keepView: true });
             this.sceneManager.redraw();
+            this.showInfo();
             return;
         }
 
@@ -452,6 +483,7 @@ class App {
         this.sceneManager.setGroundVisible(!model.isMesh);
         this.jointControlsUI.setupJointControls(model);
         this.modelGraphView.drawModelGraph(model);
+        this.showInfo();
     }
 
     pickMesh(ndc) {
@@ -504,9 +536,7 @@ class App {
             if (hit && isGround(hit.object)) hit = null;
 
             if (!hit) {
-                this.sceneManager.highlightManager.clearHighlight();
-                this.modelGraphView.clearAllSelections(d3.select('#model-graph-svg'));
-                this.measurementController.clearMeasurement();
+                this.clearSelection();
                 return;
             }
 
@@ -529,11 +559,15 @@ class App {
             if (target === floatingPanel ||
                 target.classList?.contains('graph-controls-hint') ||
                 target.classList?.contains('empty-state')) {
-                this.modelGraphView.clearAllSelections(d3.select('#model-graph-svg'));
-                this.measurementController.clearMeasurement();
-                this.sceneManager.highlightManager.clearHighlight();
+                this.clearSelection();
             }
         });
+    }
+
+    clearSelection() {
+        this.sceneManager.highlightManager.clearHighlight();
+        this.modelGraphView.clearAllSelections(d3.select('#model-graph-svg'));
+        this.measurementController.clearMeasurement();
     }
 
     handleAngleUnitChanged(unit) {
