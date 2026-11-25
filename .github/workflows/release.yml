@@ -1,9 +1,5 @@
 # Publishes one extension per release tag (urdf-mjcf-v*, mesh-splat-v*, usd-v*).
-# Marketplace: Trusted Publishing (`vsce publish --oidc`, vsce 4.x). The publisher's policy names this repo and
-# `release.yml` with no environment; renaming the file or adding an environment needs the policy changed too.
-# Global Azure DevOps PATs are being retired, and this publisher's Microsoft account cannot create the Azure
-# DevOps organization a PAT needs (it asks for an Azure subscription).
-# Open VSX: Trusted Publishing too, one registration per extension with the same repo, file and no environment.
+# Both registries trust this repo and the file name `release.yml` with no environment; changing either breaks publishing.
 # Both registries refuse to replace a version, so an already published version is skipped, not failed.
 name: Release
 
