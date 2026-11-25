@@ -45,6 +45,8 @@ canvas { display: block; }
 /* Text in menus and panels starts 13 px from their left edge, as a toolbar button's does, so it lines up under the button. */
 #display-menu > .control-button, #up-menu > .control-button, #compare-menu .control-button { padding: 4px 7.5px; }
 .tool-button { height: 27px; }
+/* A button keeps its size while its menu is open: grown on hover it stood out past the menu's edges. */
+.tool-button[aria-expanded="true"] { transform: none !important; }
 #display-menu.open, #up-menu.open, #compare-menu.open { display: flex; }
 #compare-menu { width: max-content; max-width: min(320px, calc(100vw - 40px)); font-size: 11px; }
 /* Menus sit inside the toolbar's glass, so their own blur does not reach the view: the Stage rows and the model showed through. */

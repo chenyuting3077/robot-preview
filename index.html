@@ -1646,7 +1646,12 @@
             background: var(--glass-border);
         }
 
-        #display-menu .control-button {
+        /* A button keeps its size while its menu is open: grown on hover it stood out past the menu's edges. */
+        .tool-button[aria-expanded="true"] {
+            transform: none !important;
+        }
+
+        #display-menu .control-button, #up-menu .control-button {
             justify-content: flex-start;
             text-align: left;
             white-space: nowrap;

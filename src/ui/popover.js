@@ -3,6 +3,7 @@ export function bindPopover(button, panel, onToggle) {
     button.addEventListener('click', () => {
         panel.classList.toggle('open');
         button.classList.toggle('active', panel.classList.contains('open'));
+        button.setAttribute('aria-expanded', String(panel.classList.contains('open')));
         panel.style.left = '';
         onToggle?.();
         // A button near the right edge, as in a narrow editor pane, opened its panel partly off screen.
@@ -13,5 +14,6 @@ export function bindPopover(button, panel, onToggle) {
         if (panel.contains(event.target) || button.contains(event.target)) return;
         panel.classList.remove('open');
         button.classList.remove('active');
+        button.setAttribute('aria-expanded', 'false');
     });
 }
