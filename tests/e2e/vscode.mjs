@@ -139,6 +139,12 @@ for (const id of process.env.CLICK?.split(',') ?? []) {
     await evaluate(send, `document.getElementById('active-frame').contentDocument.getElementById('${id}').click()`);
     await sleep(300);
 }
+// HOVER=<id> rests the real pointer on that element, for :hover styles in the shot.
+if (process.env.HOVER) {
+    const [x, y] = await evaluate(send, `(() => { const b = document.getElementById('active-frame').contentDocument.getElementById('${process.env.HOVER}').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; })()`);
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await sleep(500);
+}
 // EVAL=<expression> prints what it returns, evaluated in the viewer's document as `doc`, to measure the layout.
 if (process.env.EVAL) console.log(JSON.stringify(await evaluate(send, `(() => { const doc = document.getElementById('active-frame').contentDocument; return ${process.env.EVAL}; })()`)));
 if (process.env.SHOT) await screenshot(process.env.SHOT);
