@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - Toolbar menus are opaque, so the model no longer shows through their text, and one opened near the view's right edge stays inside it.
 - Drop-down menus are tighter, at least as wide as their button, and open 4 px below it, lined up with its left edge, instead of 2 px below the toolbar.
