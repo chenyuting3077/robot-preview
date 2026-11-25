@@ -68,7 +68,7 @@ const connect = url => new Promise(resolve => {
     ws.onopen = () => resolve(send);
 });
 const workbench = async () => connect((await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === 'page' && t.url.includes('workbench')).webSocketDebuggerUrl);
-const evaluate = async (send, expression) => (await send('Runtime.evaluate', { returnByValue: true, expression }))?.result?.value;
+const evaluate = async (send, expression) => (await send('Runtime.evaluate', { returnByValue: true, awaitPromise: true, expression }))?.result?.value;
 let state;
 while (!state && Date.now() - start < 60000) {
     const fresh = (await iframes()).find(t => !before.has(t.id));
@@ -134,6 +134,13 @@ if (process.env.DETAIL) {
 }
 sampling = false;
 await sleep(300);
+// CLICK=<id>,<id> clicks those elements of the viewer first, to shoot an open menu or panel.
+for (const id of process.env.CLICK?.split(',') ?? []) {
+    await evaluate(send, `document.getElementById('active-frame').contentDocument.getElementById('${id}').click()`);
+    await sleep(300);
+}
+// EVAL=<expression> prints what it returns, evaluated in the viewer's document as `doc`, to measure the layout.
+if (process.env.EVAL) console.log(JSON.stringify(await evaluate(send, `(() => { const doc = document.getElementById('active-frame').contentDocument; return ${process.env.EVAL}; })()`)));
 if (process.env.SHOT) await screenshot(process.env.SHOT);
 // With SPLIT, the cache the two editors wrote: one .meshopt for the file and no .part left over.
 let cache;
