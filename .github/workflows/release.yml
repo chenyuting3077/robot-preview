@@ -3,7 +3,7 @@
 # `release.yml` with no environment; renaming the file or adding an environment needs the policy changed too.
 # Global Azure DevOps PATs are being retired, and this publisher's Microsoft account cannot create the Azure
 # DevOps organization a PAT needs (it asks for an Azure subscription).
-# Open VSX: the OVSX_PAT repository secret; the step is skipped when the secret is absent.
+# Open VSX: Trusted Publishing too, one registration per extension with the same repo, file and no environment.
 # Both registries refuse to replace a version, so an already published version is skipped, not failed.
 name: Release
 
@@ -93,11 +93,8 @@ jobs:
         run: npx --yes @vscode/vsce@4.1.1 publish --oidc --skip-duplicate --packagePath "$RUNNER_TEMP/extension.vsix"
 
       - name: Publish to Open VSX
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: |
-          if [ -z "$OVSX_PAT" ]; then echo "::warning::OVSX_PAT is not set; Open VSX skipped"; exit 0; fi
-          if out=$(npx --yes ovsx@0.10.6 publish "$RUNNER_TEMP/extension.vsix" --skip-duplicate 2>&1); then echo "$out"; exit 0; fi
+          if out=$(npx --yes ovsx@1.4.0 publish "$RUNNER_TEMP/extension.vsix" --trusted-publishing --skip-duplicate 2>&1); then echo "$out"; exit 0; fi
           echo "$out"
           # A version still in Open VSX's review fails as "already published, but currently isn't active";
           # --skip-duplicate does not cover that state.
