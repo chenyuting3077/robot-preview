@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - Panels and menus have rounded corners, nested ones concentric.
 - Drop-down menus are tighter, at least as wide as their button, and open 4 px below it, lined up with its left edge.
