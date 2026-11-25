@@ -365,7 +365,7 @@ export class SceneManager {
 
         // If camera adjustment needed, perform auto-zoom and positioning
         if (fitCamera) {
-            this.fitCameraToModel(bboxGlobal, center, size);
+            this.fitCameraToModel(center, size);
         }
 
         // If ground position changed, trigger measurement update callback
@@ -395,7 +395,7 @@ export class SceneManager {
         this.redraw();
     }
 
-    fitCameraToModel(bbox, center, size) {
+    fitCameraToModel(center, size) {
         if (Math.max(size.x, size.y, size.z) < 0.001) {
             return;
         }

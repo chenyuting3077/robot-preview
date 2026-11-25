@@ -18,7 +18,7 @@ import { UP, relativeUp } from './up.mjs';
 import { turboGradient } from './color.mjs';
 import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mjs';
 import { parsePointsText, parseOff } from './text-formats.mjs';
-import { createCameraKeys } from '../../../src/utils/camera-keys.js';
+import { createCameraKeys, isTyping } from '../../../src/utils/camera-keys.js';
 import { createHorizonGrid } from '../../../src/utils/horizon-grid.js';
 import { fitDistance, FRAME_RISE } from '../../../src/utils/framing.js';
 import { bindPopover, bindUpMenu, closePopover } from '../../../src/ui/popover.js';
@@ -389,7 +389,7 @@ renderer.domElement.addEventListener('pointerleave', () => {
     if (usdStage) hoverPrim(null);
 });
 document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && selected) selectPrim(null);
+    if (event.key === 'Escape' && selected && !isTyping(event)) selectPrim(null);
 });
 controls.addEventListener('change', wake);
 renderer.setAnimationLoop(() => {

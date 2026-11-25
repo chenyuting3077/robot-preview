@@ -39,7 +39,7 @@ test('camera fits wide, tall and deep models in phone and desktop viewports', ()
             const manager = createManager(aspect);
             const center = manager.controls.target.clone();
             const box = new Box3().setFromCenterAndSize(center, size);
-            manager.fitCameraToModel(box, center, size);
+            manager.fitCameraToModel(center, size);
             assertBoundsVisible(manager, box);
         }
     }
@@ -53,7 +53,7 @@ test('drawer and orientation resizing keeps the model visible and restores the c
         const center = manager.controls.target.clone();
         const size = new Vector3(4, 1, 1);
         const box = new Box3().setFromCenterAndSize(center, size);
-        manager.fitCameraToModel(box, center, size);
+        manager.fitCameraToModel(center, size);
         const originalPosition = manager.camera.position.clone();
         for (const [width, height] of [[390, 720], [844, 260], [390, 320]]) {
             manager.handleResize(width, height);

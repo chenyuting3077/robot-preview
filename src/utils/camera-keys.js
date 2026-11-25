@@ -3,7 +3,7 @@ const SPEED = 0.8;
 const TURN_SPEED = Math.PI / 2;
 const FAST = 4;
 
-const isTyping = event => event.target.closest?.('input, select, textarea, [contenteditable]');
+export const isTyping = event => event.target.closest?.('input, select, textarea, [contenteditable]');
 
 export function pointerNdc(element, event) {
     const rect = element.getBoundingClientRect();

@@ -17,6 +17,11 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 - Point-cloud PLY keeps up to 16 vertex properties besides position, normal, uv, color and alpha as colorable fields; meshes keep none, so a 181 MB mesh does not grow.
 - `.asc`, `.bin`, `.usda`, `.yaml` and `.yml` are optional editors (PGP signatures, firmware and model weights, hand-edited text, config files that are not maps). `retainContextWhenHidden` is on: re-reading a 200 MB splat on a tab switch takes seconds. A view whose files add up to 100 MB or more drops its page after 5 minutes hidden, and loads again with the camera kept when shown, so a GB cloud left in a background tab does not hold its 1–1.5 GB until the tab closes. A page still loading is left alone until it reports done, so a hidden OpenCascade run is not thrown away.
 
+## Ground grid
+
+- Shared with the URDF / MJCF view (`src/utils/horizon-grid.js`). Like Isaac Sim's: a plane under the camera whose shader draws minor and major (10x) lines in powers of ten picked by the camera's distance to its target, minor lines fading out as the view zooms out until the major ones take their place, and everything fading with distance. A `GridHelper` sized to the model left a patch floating in the void when zoomed out, and its 10–100 cells jumped with the model's size.
+- Coordinates stay small on the GPU: the plane's own xz plus an offset reduced in JS doubles. World xz in float32 is 0.25 m coarse at UTM northings (4e6), which drew the lines as speckled noise.
+
 ## Large point clouds
 
 - VS Code reads a fetched webview resource whole before handing it over: a 1.2 GB PCD grew the webview by 1.6 GB with the viewer keeping one point. PCD (binary, ASCII and `binary_compressed`) is therefore read by the extension in 16 MB pieces, three in flight (one at a time: 17 s against 7.6 s). `binary_compressed` stores columns, so it is inflated whole before its points are read. A 7.1M-point map against PCDLoader: ASCII 238 MB 3.8–4.1 s, +1.1–1.2 GB against 4.4–5.7 s, +2.4–2.5 GB; `binary_compressed` 84 MB 2.1 s, +0.9 GB against 2.4–3.0 s, +1.4–1.7 GB.

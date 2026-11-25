@@ -16,7 +16,7 @@ const isMJCF = model => model?.userData?.type === 'mjcf';
 const emptyLoadReport = () => ({ loadError: null, loadErrorLocation: null, missingMeshes: [], missingIncludes: [], guessedMeshes: [], checks: [] });
 import { PoseController } from './animation/runtime/PoseController.js';
 import { ViewGizmo } from './ui/ViewGizmo.js';
-import { createCameraKeys, pointerNdc } from './utils/camera-keys.js';
+import { createCameraKeys, pointerNdc, isTyping } from './utils/camera-keys.js';
 import { pickDisplayed, isGround } from './utils/picking.js';
 import { modelInfoRows } from './ui/model-info.js';
 import { bindPopover, bindUpMenu } from './ui/popover.js';
@@ -156,7 +156,7 @@ class App {
             bindPopover(document.getElementById('info-btn'), document.getElementById('info-panel'), () => this.showInfo());
             bindUpMenu();
             document.addEventListener('keydown', event => {
-                if (event.key === 'Escape' && !event.target.closest?.('input, select, textarea')) this.clearSelection();
+                if (event.key === 'Escape' && !isTyping(event)) this.clearSelection();
             });
             const toolbar = document.getElementById('top-bars');
             new ResizeObserver(() => {

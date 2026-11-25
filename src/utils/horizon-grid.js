@@ -1,11 +1,6 @@
 /** Ground grid that reaches the horizon, shared by the robot and the Mesh & Splat views. Usage: scene.add(createHorizonGrid(THREE, () => controls.target)) */
 
-// Like Isaac Sim's: a plane under the camera whose shader draws minor and major (10x) lines in powers of ten picked by
-// the camera's distance to its target, minor lines fading out as the view zooms out until the major ones take their
-// place, and everything fading with distance. A GridHelper sized to the model left a patch floating in the void when
-// zoomed out, and its 10-100 cells jumped with the model's size.
-// Coordinates stay small on the GPU: the plane's own xz plus an offset reduced in JS doubles. World xz in float32
-// is 0.25 m coarse at UTM northings (4e6), which drew the lines as speckled noise.
+// Why a shader plane with a JS-reduced offset, not a GridHelper: docs/mesh-splat.md, Ground grid.
 const GRID_VERTEX = `
 uniform float size;
 varying vec2 vLocal;
