@@ -524,37 +524,6 @@ export class SceneManager {
         }
     }
 
-    /**
-     * Focus object (center camera on object)
-     */
-    focusObject(object) {
-        if (!object) return;
-
-        // Calculate object's bounding box
-        const box = new THREE.Box3().setFromObject(object);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-
-        // Calculate appropriate camera distance
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = this.camera.fov * (Math.PI / 180);
-        let cameraDistance = Math.abs(maxDim / Math.sin(fov / 2)) * 1.5;
-
-        // Get current camera direction
-        const direction = new THREE.Vector3();
-        this.camera.getWorldDirection(direction);
-
-        // Set camera position
-        const newCameraPosition = center.clone().sub(direction.multiplyScalar(cameraDistance));
-        this.camera.position.copy(newCameraPosition);
-
-        // Update controls target
-        this.controls.target.copy(center);
-        this.controls.update();
-
-        this.redraw();
-    }
-
     // ==================== Drag Controls ====================
 
     setPoseController(poseController) {

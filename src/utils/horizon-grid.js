@@ -42,8 +42,7 @@ export function createHorizonGrid(THREE, target) {
         uniforms: { cell: { value: 1 }, blend: { value: 0 }, fade: { value: 1 }, size: { value: 1 }, offset: { value: new THREE.Vector2() }, height: { value: 0 }, minorColor: { value: new THREE.Color(0x8c8c8c) }, majorColor: { value: new THREE.Color(0xa0a0a0) } },
         transparent: true,
         depthWrite: false,
-        side: THREE.DoubleSide,
-        extensions: { derivatives: true }
+        side: THREE.DoubleSide
     });
     const grid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), material);
     grid.frustumCulled = false;
