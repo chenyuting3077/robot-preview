@@ -9,10 +9,6 @@ function formatOf(model, fileName) {
     return { world: 'SDF', xacro: 'Xacro' }[ext] || ext.toUpperCase();
 }
 
-/**
- * @param size {x, y, z} in meters in the model's frame, or null
- * @returns [label, value] pairs with empty values left out
- */
 export function modelInfoRows(model, fileName, size, t) {
     const joints = model.isMesh ? [] : [...model.joints.values()];
     const mass = model.isMesh ? 0 : [...model.links.values()].reduce((sum, link) => sum + (link.inertial?.mass || 0), 0);

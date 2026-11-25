@@ -1,6 +1,8 @@
-/** How far back F puts the camera, shared by the robot and the Mesh & Splat views. Usage: fitDistance(camera, radius) */
+/** Where F puts the camera, shared by the robot and the Mesh & Splat views. Usage: fitDistance(camera, radius) */
 
-/** Distance at which a sphere of `radius` fills the narrower of the camera's two fields of view. */
+// The camera looks from (1, FRAME_RISE, 1) off the center, in the y-up scene: front right, a little above.
+export const FRAME_RISE = 0.7;
+
 export function fitDistance(camera, radius) {
     const half = camera.fov * Math.PI / 360;
     // The narrower of the two fields of view, so a pane taller than wide still takes it all in.

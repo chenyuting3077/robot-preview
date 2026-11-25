@@ -567,9 +567,9 @@ try {
         return { hidden, shown: window.app.sceneManager.referenceGrid.visible, label: btn.textContent.trim() };`);
     check('grid button hides and shows the horizon grid', grid.hidden && grid.shown && grid.label === '格線', JSON.stringify(grid));
     const up = await ev(`document.getElementById('up-menu-btn').click(); document.querySelector('[data-up="+Y"]').click();
-        const after = { label: document.getElementById('up-label').textContent, select: document.getElementById('up-select').value, closed: !document.getElementById('up-menu').classList.contains('open') };
+        const after = { label: document.getElementById('up-label').textContent, select: document.getElementById('up-select').value, closed: !document.getElementById('up-menu').classList.contains('open'), expanded: document.getElementById('up-menu-btn').getAttribute('aria-expanded') };
         document.getElementById('up-menu-btn').click(); document.querySelector('[data-up="+Z"]').click(); return after;`);
-    check('up menu sets the axis and closes', up.label === '+Y' && up.select === '+Y' && up.closed, JSON.stringify(up));
+    check('up menu sets the axis and closes', up.label === '+Y' && up.select === '+Y' && up.closed && up.expanded === 'false', JSON.stringify(up));
     const gap = await ev(`const button = document.getElementById('display-menu-btn'); button.click();
         const b = button.getBoundingClientRect(), m = document.getElementById('display-menu').getBoundingClientRect(); document.body.click();
         return { below: m.top - b.bottom, left: m.left - b.left };`);

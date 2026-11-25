@@ -20,8 +20,9 @@ import { hasColor, MESH_GREY, POINT_GREY, surfaceMaterial } from './materials.mj
 import { parsePointsText, parseOff } from './text-formats.mjs';
 import { createCameraKeys } from '../../../src/utils/camera-keys.js';
 import { createHorizonGrid } from '../../../src/utils/horizon-grid.js';
-import { fitDistance } from '../../../src/utils/framing.js';
-import { bindPopover } from '../../../src/ui/popover.js';
+import { fitDistance, FRAME_RISE } from '../../../src/utils/framing.js';
+import { bindPopover, bindUpMenu, closePopover } from '../../../src/ui/popover.js';
+import '../../../src/ui/toolbar.css';
 import { pcdReader, dropNaNPoints } from './pcd.mjs';
 import { binReader, binLayout } from './kitti.mjs';
 import { createTransport } from './transport.mjs';
@@ -937,7 +938,7 @@ function frame() {
         // Over a cloud below its plane at 0, the camera rises until it sees the plane above the center at the default
         // slope: from the default direction a 0.1 x 0.1 x 1 m pole at z = -1..0 put the camera at y = -0.02, the grid
         // edge-on and off screen.
-        const slope = 0.7 / Math.SQRT2;
+        const slope = FRAME_RISE / Math.SQRT2;
         const below = cloudGround === 0 ? Math.min(center.y, 0) : 0;
         const run = (slope * below + Math.sqrt(Math.max(0, (1 + slope ** 2) * distance ** 2 - below ** 2))) / (1 + slope ** 2);
         camera.position.copy(center).add(new THREE.Vector3(run / Math.SQRT2, slope * run - below, run / Math.SQRT2));
@@ -1251,21 +1252,9 @@ function setupUi(hasMesh, hasPoints, up) {
     $('screenshot-btn').title = $('screenshot-btn').ariaLabel = t('screenshot');
     $('screenshot-btn').hidden = !vscodeApi;
     $('screenshot-btn').addEventListener('click', captureScreenshot);
-    const showUp = axis => {
-        $('up-label').textContent = axis;
-        document.querySelectorAll('[data-up]').forEach(button => button.classList.toggle('active', button.dataset.up === axis));
-    };
     $('up-select').value = up;
-    showUp(up);
-    document.querySelectorAll('[data-up]').forEach(button => button.addEventListener('click', () => {
-        $('up-menu').classList.remove('open');
-        $('up-menu-btn').classList.remove('active');
-        if ($('up-select').value === button.dataset.up) return;
-        $('up-select').value = button.dataset.up;
-        $('up-select').dispatchEvent(new Event('change'));
-    }));
+    bindUpMenu();
     $('up-select').addEventListener('change', () => {
-        showUp($('up-select').value);
         setUp($('up-select').value);
         saveSettings({ up: $('up-select').value });
         cloudColors.refresh();
@@ -1415,8 +1404,7 @@ function setupCompare() {
         const file = fileById($('compare-file').value);
         const reference = fileById($('compare-reference').value);
         if (!file || !reference) return;
-        $('compare-menu').classList.remove('open');
-        $('compare-btn').classList.remove('active');
+        closePopover($('compare-menu'));
         setDistance(file, reference, { greyReference: true });
     });
 }

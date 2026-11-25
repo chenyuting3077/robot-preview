@@ -166,7 +166,7 @@ const server = http.createServer((req, res) => {
     }
     fs.readFile(file, (error, data) => {
         if (error) return res.writeHead(404).end();
-        res.setHeader('Content-Type', url.pathname.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
+        res.setHeader('Content-Type', url.pathname.endsWith('.js') ? 'text/javascript' : url.pathname.endsWith('.css') ? 'text/css' : 'application/octet-stream');
         res.end(data);
     });
 });

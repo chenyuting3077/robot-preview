@@ -374,7 +374,7 @@ async function listFiles(fileUri, live) {
                 if (version) add(toKey(name, dir, fsPath), fsPath, version);
             }
         }
-        // The walk skips hidden folders, but the opened file goes even from one (.devcontainer); its meshes follow as outside files.
+        // The walk skips hidden folders (#30).
         if (!paths.has(fileUri.fsPath)) {
             const version = await versionOf(fileUri.fsPath, live);
             if (version) add(toKey(rootName, rootDir, fileUri.fsPath), fileUri.fsPath, version);

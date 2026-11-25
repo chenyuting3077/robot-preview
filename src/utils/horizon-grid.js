@@ -38,10 +38,7 @@ void main() {
     #include <colorspace_fragment>
 }`;
 
-/**
- * @param THREE the caller's three.js: the two views bundle different versions, and a mesh of one breaks the other's renderer
- * @param target () => Vector3 the camera orbits, which sets the line spacing
- */
+// THREE comes from the caller (#23).
 export function createHorizonGrid(THREE, target) {
     const material = new THREE.ShaderMaterial({
         vertexShader: GRID_VERTEX,

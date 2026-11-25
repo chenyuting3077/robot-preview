@@ -19,8 +19,9 @@ import { ViewGizmo } from './ui/ViewGizmo.js';
 import { createCameraKeys, pointerNdc } from './utils/camera-keys.js';
 import { pickDisplayed, isGround } from './utils/picking.js';
 import { modelInfoRows } from './ui/model-info.js';
-import { bindPopover } from './ui/popover.js';
+import { bindPopover, bindUpMenu } from './ui/popover.js';
 import './ui/view-gizmo.css';
+import './ui/toolbar.css';
 
 window.d3 = d3;
 window.i18n = i18n;
@@ -149,11 +150,11 @@ class App {
                 const simulationDrag = this.mujocoSimulationManager?.dragStateManager;
                 if (simulationDrag) simulationDrag.picking = on;
             });
-            for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['up-menu-btn', 'up-menu'], ['info-btn', 'info-panel'], ['help-btn', 'help-panel']]) {
-                bindPopover(document.getElementById(buttonId), document.getElementById(panelId), () => this.showInfo());
+            for (const [buttonId, panelId] of [['display-menu-btn', 'display-menu'], ['up-menu-btn', 'up-menu'], ['help-btn', 'help-panel']]) {
+                bindPopover(document.getElementById(buttonId), document.getElementById(panelId));
             }
-            this.setupUpMenu();
-            // Esc clears the selection, as in the USD viewer.
+            bindPopover(document.getElementById('info-btn'), document.getElementById('info-panel'), () => this.showInfo());
+            bindUpMenu();
             document.addEventListener('keydown', event => {
                 if (event.key === 'Escape' && !event.target.closest?.('input, select, textarea')) this.clearSelection();
             });
@@ -171,23 +172,6 @@ class App {
             console.error('Initialization error:', error);
             vscode.postMessage({ type: 'error', message: error.stack || String(error) });
         }
-    }
-
-    setupUpMenu() {
-        const select = document.getElementById('up-select');
-        const show = () => {
-            document.getElementById('up-label').textContent = select.value;
-            document.querySelectorAll('[data-up]').forEach(button => button.classList.toggle('active', button.dataset.up === select.value));
-        };
-        show();
-        select.addEventListener('change', show);
-        document.querySelectorAll('[data-up]').forEach(button => button.addEventListener('click', () => {
-            document.getElementById('up-menu').classList.remove('open');
-            document.getElementById('up-menu-btn').classList.remove('active');
-            if (select.value === button.dataset.up) return;
-            select.value = button.dataset.up;
-            select.dispatchEvent(new Event('change'));
-        }));
     }
 
     showInfo() {

@@ -133,7 +133,6 @@ export class EnvironmentManager {
     /**
      * Setup ground plane
      */
-    /** @param target () => Vector3 the camera orbits, for the grid's line spacing */
     setupGroundPlane(target) {
         const planeGeometry = new THREE.PlaneGeometry(40, 40);
         // No depth write: the plane only catches shadows, and the grid lies in the

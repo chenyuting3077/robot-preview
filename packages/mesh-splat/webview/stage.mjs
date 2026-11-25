@@ -10,7 +10,6 @@ export const primRows = group => prims(group).map(primRow);
 
 // A prim's name selects it (`onSelect`); a file row's name, which selects nothing, opens and closes it.
 export function buildStage(rows, { files = false, removeLabel = '', allLabel = '', onToggle = () => {}, onSelect = () => {} } = {}) {
-    // The column's eye hides every top row while any is shown, else shows them all.
     const allEye = Object.assign(document.createElement('button'), { className: 'prim-eye', title: allLabel, ariaLabel: allLabel });
     document.querySelector('.stage-head span:nth-child(3)').replaceChildren(allEye);
     allEye.addEventListener('click', () => {
@@ -97,6 +96,7 @@ export function buildStage(rows, { files = false, removeLabel = '', allLabel = '
     const show = open => {
         $('stage-panel').hidden = !open;
         $('stage-btn').classList.toggle('active', open);
+        $('stage-btn').setAttribute('aria-expanded', String(open));
         if (open) reveal();
     };
     if (rows().length) {

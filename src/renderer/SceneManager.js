@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fitDistance } from '../utils/framing.js';
+import { fitDistance, FRAME_RISE } from '../utils/framing.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerJointDragControls } from '../utils/JointDragControls.js';
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
@@ -395,13 +395,12 @@ export class SceneManager {
         this.redraw();
     }
 
-    /** Frame the model as Mesh & Splat's F does: its bounding sphere in the narrower field of view, from front-right above. */
     fitCameraToModel(bbox, center, size) {
         if (Math.max(size.x, size.y, size.z) < 0.001) {
             return;
         }
         const distance = fitDistance(this.camera, size.length() / 2);
-        const cameraOffset = new THREE.Vector3(1, 0.7, 1).normalize().multiplyScalar(distance);
+        const cameraOffset = new THREE.Vector3(1, FRAME_RISE, 1).normalize().multiplyScalar(distance);
 
         // Set camera position and target
         this.camera.position.copy(center).add(cameraOffset);
