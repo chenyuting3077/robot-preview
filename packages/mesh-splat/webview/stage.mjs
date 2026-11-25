@@ -9,8 +9,19 @@ export const primRow = object => ({ object, prim: true, name: object.name || obj
 export const primRows = group => prims(group).map(primRow);
 
 // A prim's name selects it (`onSelect`); a file row's name, which selects nothing, opens and closes it.
-export function buildStage(rows, { files = false, removeLabel = '', onToggle = () => {}, onSelect = () => {} } = {}) {
-    document.querySelector('.stage-head span:nth-child(3)').innerHTML = EYE;
+export function buildStage(rows, { files = false, removeLabel = '', allLabel = '', onToggle = () => {}, onSelect = () => {} } = {}) {
+    // The column's eye hides every top row while any is shown, else shows them all.
+    const allEye = Object.assign(document.createElement('button'), { className: 'prim-eye', title: allLabel, ariaLabel: allLabel });
+    document.querySelector('.stage-head span:nth-child(3)').replaceChildren(allEye);
+    allEye.addEventListener('click', () => {
+        const show = !rows().some(node => node.object.visible);
+        for (const { object } of rows()) {
+            if (object.visible === show) continue;
+            object.visible = show;
+            onToggle(object);
+        }
+        render();
+    });
     $('stage-panel').classList.toggle('files', files);
     const expanded = new Set();
     let selected = null;
@@ -58,6 +69,9 @@ export function buildStage(rows, { files = false, removeLabel = '', onToggle = (
         });
         walk(rows(), 0, false);
         $('stage-rows').replaceChildren(...out);
+        const anyShown = rows().some(node => node.object.visible);
+        allEye.innerHTML = anyShown ? EYE : EYE_OFF;
+        allEye.setAttribute('aria-pressed', String(anyShown));
         renderPath();
     };
     // The path runs from the USD stage's top prim, whatever file row it sits under.

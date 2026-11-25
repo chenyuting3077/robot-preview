@@ -615,8 +615,17 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                     document.querySelector('#stage-panel .prim-toggle').click();
                     return allOff && document.querySelectorAll('#stage-panel .prim-row').length === 1;
                 })()`);
-                state.treeOk = tree === 'World:Xform:true,Tri:Mesh:true,Hidden:Mesh:false,Gaussians:ParticleField3DGaussianSplat:true' && changed > 0.05 && parentOff && pickOk && reframed < 0.002;
-                camera += ` tree ${tree} hide ${(changed * 100).toFixed(1)}% parentOff ${parentOff}`;
+                // The column's eye shows every top row when all are hidden, then hides them all.
+                const allEye = await evaluate(`(() => {
+                    const head = () => document.querySelector('#stage-panel .stage-head .prim-eye');
+                    const top = () => document.querySelector('#stage-panel .prim-row .prim-eye').getAttribute('aria-pressed');
+                    head().click(); const shown = !head().querySelector('line') && top() === 'true';
+                    head().click(); const hidden = !!head().querySelector('line') && top() === 'false';
+                    head().click();
+                    return shown && hidden;
+                })()`);
+                state.treeOk = tree === 'World:Xform:true,Tri:Mesh:true,Hidden:Mesh:false,Gaussians:ParticleField3DGaussianSplat:true' && changed > 0.05 && parentOff && allEye && pickOk && reframed < 0.002;
+                camera += ` tree ${tree} hide ${(changed * 100).toFixed(1)}% parentOff ${parentOff} allEye ${allEye}`;
             }
             if (/^(cube\.stl|cloud\.ply|pole\.xyz|table\.xyz)$/.test(name)) {
                 // Past the settle after the last input, the view draws nothing; a click on the grid draws it.

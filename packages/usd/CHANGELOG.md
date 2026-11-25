@@ -4,6 +4,7 @@
 
 - Toolbar menus are opaque, so the model no longer shows through their text, and one opened near the view's right edge stays inside it.
 - Drop-down menus are tighter, at least as wide as their button, and open 4 px below it, lined up with its left edge, instead of 2 px below the toolbar.
+- The eye in the Stage panel's header hides every row while any is shown, and shows them all again.
 - Text in menus and panels lines up with its button's, icon buttons are as tall as the others, and the Stage panel opens under its button as the menus do, right edges lined up.
 
 ## 0.3.1
