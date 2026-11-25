@@ -44,23 +44,26 @@ Already there: joint panel and dragging joints in the view, visual / collision /
 
 3D Mesh Viewer, the one other extension that renders USD, targets art assets: animation timeline, UV and material inspection, skin weights. No extension offers joint sliders for Isaac Sim articulations.
 
-## Proposed order
+## Order
 
-1. Point picking with coordinates and two-point distance, shared by Mesh & Splat and USD: nearly every competitor has it.
-2. LAS / LAZ (#11).
-3. EDL, normals display and default settings, as one small issue.
-4. NuRec screenshot and README (#13).
-5. URDF: remember joint values and camera per file; export joint values as JSON.
-6. USD: joint sliders for articulations, which no competitor has.
-7. COLMAP (#12); MJCF contact forces and keyframes.
-8. PointCloud2 from MCAP (#14): nobody has it, but it is the largest.
+Ordered by what users asked for in [user-needs.md](user-needs.md), not by what competitors offer:
 
-Left out for now:
+1. No silent blank view when WebGL fails (#24).
+2. Settings for background, point size and up axis (#25).
+3. Works in a Dev Container (#26).
+4. Xacro coverage (#27) and RViz parity (#28).
+5. Point picking and two-point distance (#29).
+6. Showing how to open each viewer on its Marketplace page (#13).
+7. LAS / LAZ (#11) and COLMAP (#12): weak demand.
+8. PointCloud2 from MCAP (#14): real demand, but met by Foxglove and Rerun.
+
+Dropped, as no user asked for them: EDL, saved joint poses or JSON export (the joint reset and numeric input users asked for already exist), USD joint sliders, MJCF contact forces and keyframes, an MCP server.
+
+Also left out:
 - Clipping: only CAD Preview has it.
 - FBX, glTF animation, UV: art-asset needs, not robotics.
 - Depth images: only 3D Visualizer has it.
 - Live rosbridge: viewing a running system is outside opening files.
-- MCP server: a trend (3D Visualizer, Robot Developer Extensions, CAD Preview), not a basic feature.
 - SRDF / MoveIt: advanced.
 - Writing inspector edits back to the XML: large.
 
