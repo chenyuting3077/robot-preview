@@ -45,6 +45,24 @@ test('opens beside the editor and sends every referenced package', async () => {
     assert.ok(load.files.every(file => file.data instanceof Uint8Array && file.data.constructor === Uint8Array));
 });
 
+test('a model in a hidden folder is sent with its meshes', async () => {
+    const workspace = await copyFixture();
+    const dir = path.join(workspace, '.devcontainer', 'demo');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(path.join(workspace, 'src/robot_b/meshes/arm.stl'), path.join(dir, 'part.stl'));
+    const primary = path.join(dir, 'demo.urdf');
+    fs.writeFileSync(primary, '<robot name="demo"><link name="base"><visual><geometry><mesh filename="part.stl"/></geometry></visual></link></robot>');
+    const env = loadExtension({ workspace });
+    env.open(primary);
+    env.activate();
+    const panel = await waitFor(() => env.state.panels[0]?.webview.html && env.state.panels[0]);
+    panel.receive({ type: 'ready' });
+    const load = await waitFor(() => env.lastOf('load'));
+    const paths = load.files.map(file => file.path);
+    assert.ok(paths.includes(load.primary), `${load.primary} in ${paths.join(', ')}`);
+    assert.ok(paths.some(p => p.endsWith('/.devcontainer/demo/part.stl')), paths.join(', '));
+});
+
 test('the cursor position at open is highlighted once the preview loads', async () => {
     const workspace = await copyFixture();
     const env = loadExtension({ workspace });

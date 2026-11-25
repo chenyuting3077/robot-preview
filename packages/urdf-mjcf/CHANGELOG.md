@@ -8,6 +8,7 @@
 - The toolbar matches the Mesh & Splat and USD viewers: the up axis is a `+Z ▾` menu, help is an icon, buttons and menus use the same type size, and the dividers are gone.
 - An Info button lists the file, format, links, joints, movable joints, total mass, size and unit.
 - Esc clears the selection, as in the USD viewer.
+- A model in a hidden folder of the workspace (`.devcontainer`, `.cache`) opens in the preview instead of `File not found`.
 - The loading word is always in the middle of the view, as in the other viewers, also while an edit reloads the model.
 - The link info on hover is the small card of the other viewers, and its position lists x, y and z on lines of their own instead of one.
 - The ground grid reaches the horizon, with minor and 10x major lines whose spacing follows the zoom, as in the Mesh & Splat and USD viewers. The Grid entry no longer names a cell size.
