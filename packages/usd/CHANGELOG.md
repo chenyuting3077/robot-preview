@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
 - The Marketplace page's captures are recorded and played at real speed.
 
