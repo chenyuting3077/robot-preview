@@ -3,7 +3,7 @@ node_modules/**
 webview/**
 vite.config.js
 package-lock.json
-images/preview.png
+images/readme/**
 vendor/**
 !vendor/**/LICENSE*
 !vendor/**/license*

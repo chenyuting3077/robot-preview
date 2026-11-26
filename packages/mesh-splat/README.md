@@ -1,8 +1,12 @@
 # Robot Preview: Point Cloud & Splat Viewer
 
-Open point clouds and LiDAR scans, Gaussian splats, ROS maps, STEP and IGES CAD models and meshes in VS Code as a 3D view, including the large files other viewers give up on.
+Click a point cloud, Gaussian splat, ROS map, STEP model or mesh in the Explorer and it opens as a 3D view, including the large files other viewers give up on.
 
-![preview](images/preview.png)
+![Opening an 8.6M-point LiDAR street scan from the Explorer and orbiting it](images/readme/open.gif)
+
+## Open it
+
+Click the file. Text formats that people also edit (`.obj` `.gltf` `.dae` `.wrl` `.xyz` `.asc`, `.yaml` maps) and `.bin` scans open from the *Open 3D Preview* / *Open as Point Cloud* button in the editor title, or *Reopen Editor With…*.
 
 ## Highlights
 
@@ -10,8 +14,13 @@ Open point clouds and LiDAR scans, Gaussian splats, ROS maps, STEP and IGES CAD 
 - **Fast STEP**: a 39 MB assembly opens in about 3 s and a 161 MB one in about 16 s; unchanged files reopen from cache in about 1 s.
 - **3DGS and 2DGS**: 2D Gaussian splatting PLY renders as flat discs, and 881k splats show in about 2 s at 60 fps.
 - **Large meshes**: a 181 MB, 4.5M-face binary PLY opens in about 2 s.
+- **Robotics data as it is**: ROS occupancy maps at their origin and resolution, KITTI / nuScenes scans, clouds at UTM coordinates without jitter.
 
 Times are measured in VS Code 1.144; see the [design notes](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md).
+
+| Gaussian splats | STEP and IGES CAD |
+|---|---|
+| ![A Gaussian splat of a marble bust](images/readme/splat.png) | ![A STEP assembly of a robot arm with part colors](images/readme/step.png) |
 
 ## Formats
 
@@ -35,4 +44,4 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 Part of the Robot Preview series with [Robot Preview: URDF, Xacro & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) ([Open VSX](https://open-vsx.org/extension/chenyuting3077/robot-preview-urdf-mjcf)) and [Robot Preview: USD Viewer (OpenUSD, Isaac Sim)](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-usd) ([Open VSX](https://open-vsx.org/extension/chenyuting3077/robot-preview-usd)).
 
-Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs, STEP with [foxtrot](https://github.com/Formlabs/foxtrot) and [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)); format coverage follows [MeshLab](https://www.meshlab.net/). Screenshot: a splat derived from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0).
+Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs, STEP with [foxtrot](https://github.com/Formlabs/foxtrot) and [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)); format coverage follows [MeshLab](https://www.meshlab.net/). Captures: a street scan merged from [PandaSet](https://pandaset.org/) sequence 001 by Hesai and Scale AI (CC BY 4.0), a splat sampled from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0), and the [SO-101 arm](https://github.com/TheRobotStudio/SO-ARM100) assembly by TheRobotStudio (Apache-2.0).
