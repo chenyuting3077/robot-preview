@@ -2,7 +2,7 @@
   "name": "robot-preview-usd",
   "displayName": "Robot Preview: USD Viewer (OpenUSD, Isaac Sim)",
   "description": "OpenUSD viewer for USD, USDA, USDC and USDZ inside VS Code: Isaac Sim robots, NuRec Gaussian splats and meshes, with a Stage tree and click-to-select prims",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
   "license": "Apache-2.0",

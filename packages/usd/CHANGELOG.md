@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.3
 
 - A stage's own lights no longer light the view: Isaac Sim's Franka, which carries a 30000-intensity SphereLight, was washed out white. Light prims are listed under *Not shown*.
 - The ground grid no longer shows through a Gaussian splat standing on it.
