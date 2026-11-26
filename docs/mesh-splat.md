@@ -20,6 +20,7 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 ## Ground grid
 
 - Shared with the URDF / MJCF view (`src/utils/horizon-grid.js`). Like Isaac Sim's: a plane under the camera whose shader draws minor and major (10x) lines in powers of ten picked by the camera's distance to its target, minor lines fading out as the view zooms out until the major ones take their place, and everything fading with distance. A `GridHelper` sized to the model left a patch floating in the void when zoomed out, and its 10–100 cells jumped with the model's size.
+- Drawn before every other see-through object, so a splat covers it (#35).
 - Coordinates stay small on the GPU: the plane's own xz plus an offset reduced in JS doubles. World xz in float32 is 0.25 m coarse at UTM northings (4e6), which drew the lines as speckled noise.
 
 ## Large point clouds
@@ -71,6 +72,7 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 - NuRec `zh_lounge` (1M Gaussians, SH degree 3, 118 MB `.nurec`) takes 37 s in headless Chrome on SwiftShader, but opens acceptably in VS Code on real hardware, and looks right once framed. Isaac's metallic (`metallic_constant = 1`) parts look dark without an environment map; accepted for now.
 - Composition matches `usdcat --flatten` on 50 hand-made and 391 random stages except: a cycle through a variant composes one level more, a variant selection authored only on a weaker reference is not applied, and a relationship to the referencing prim through an internal reference is kept where pxr drops it.
 - Variant fallbacks from plugin metadata are not known here: a variant set with no selection applies no variant; a selection authored inside another variant is not read.
+- Stage lights are not applied (#34).
 - Not supported: MaterialX and MDL shaders other than OmniPBR, PointInstancer, `specializes`, `inherits`, time-sampled visibility, `!resetXformStack!`, `omniverse://` paths.
 
 ## STEP

@@ -100,6 +100,14 @@ async function launch(folder, narrow = true) {
         },
         // The visible webview's box in the window; element boxes inside the viewer are relative to it.
         frame: () => c.ev(`(() => { const b = [...document.querySelectorAll('iframe.webview.ready')].map(f => f.getBoundingClientRect()).filter(b => b.width > 50).pop(); return { x: b.left, y: b.top, w: b.width, h: b.height, cx: b.left + b.width / 2, cy: b.top + b.height / 2 }; })()`),
+        async key(key) { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key, code: `Key${key.toUpperCase()}`, windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0), text: type === 'keyDown' ? key : undefined }); },
+        // Clicks an element of the viewer, found by a selector in its document.
+        async press(v, selector) {
+            const [x, y] = await v(`(b => [b.left + b.width / 2, b.top + b.height / 2])(doc.querySelector(${JSON.stringify(selector)}).getBoundingClientRect())`);
+            const f = await c.frame();
+            await c.click(f.x + x, f.y + y);
+            await sleep(400);
+        },
         async shot(file, crop) {
             fs.writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
             if (crop) { execSync(`ffmpeg -y -loglevel error -i ${file} -vf "crop=${crop},scale=${crop.split(':')[0] > 1000 ? 880 : 760}:-1:flags=lanczos" ${file}.png`); fs.renameSync(`${file}.png`, file); }
@@ -171,10 +179,11 @@ const SCENES = {
     },
     async stills() {
         const viewer = '922:704:353:63'; // the webview with the Explorer at its default width
-        const still = async (folder, file, out, crop, drag, zoom = 0) => {
+        const still = async (folder, file, out, crop, drag, zoom = 0, up) => {
             const c = await launch(folder, crop !== viewer);
-            await c.open(file);
+            const v = await c.open(file);
             await sleep(2500);
+            if (up) { await c.press(v, '#up-menu-btn'); await c.press(v, `[data-up="${up}"]`); await c.key('f'); await sleep(1500); }
             const { cx, cy } = await c.frame();
             await c.move(cx, cy, 200); await c.wheel(zoom);
             if (drag) await c.drag(cx + drag[0], cy + drag[1], cx + drag[2], cy + drag[3], 600);
@@ -183,7 +192,7 @@ const SCENES = {
             await c.shot(out, crop);
         };
         await still(`${SAMPLES}/perception`, 'marble_bust.ply', `${OUT('mesh-splat')}/splat.png`, viewer, [0, 0, 130, 10], 1);
-        await still(`${SAMPLES}/perception`, 'so101_assembly.step', `${OUT('mesh-splat')}/step.png`, viewer, [0, 0, -60, 0], 1);
+        await still(`${SAMPLES}/perception`, 'so101_assembly.step', `${OUT('mesh-splat')}/step.png`, viewer, [0, 150, -50, 150], 1, '+Z'); // STEP names no up axis and opens +Y; this arm is drawn z-up
         await still(`${SAMPLES}/isaac/FrankaPanda`, 'franka.usd', `${OUT('usd')}/franka.png`, viewer);
         await still(`${SAMPLES}/so101`, 'scene.xml', `${OUT('urdf-mjcf')}/mujoco.png`, '1040:736:236:31', [-100, 280, -20, 250], 2);
     }

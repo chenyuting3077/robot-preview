@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The ground grid no longer shows through a Gaussian splat standing on it.
+
 ## 0.7.2
 
 - The Marketplace page's captures are recorded and played at real speed.
