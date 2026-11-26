@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The Marketplace page's captures are recorded and played at real speed.
+
 ## 0.7.1
 
 - The Marketplace page opens with a capture of a URDF being opened, a link clicked to jump to its source and a joint dragged, and says how the preview opens.

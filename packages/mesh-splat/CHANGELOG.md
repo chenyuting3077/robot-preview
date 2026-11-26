@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The Marketplace page's captures are recorded and played at real speed.
+
 ## 0.7.1
 
 - A model whose meshes carry one material per face group opens again instead of failing with `Cannot read properties of undefined (reading 'clip')`: STEP files with face colors, broken since 0.6.0.
