@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.3
 
 - The ground grid no longer shows through a Gaussian splat standing on it.
 
