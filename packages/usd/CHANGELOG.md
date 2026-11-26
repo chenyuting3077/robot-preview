@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - A model whose meshes carry one material per face group opens again instead of failing with `Cannot read properties of undefined (reading 'clip')`.
 - The Marketplace page opens with a capture of an Isaac Sim robot being opened from the Explorer, and says how each format opens.
