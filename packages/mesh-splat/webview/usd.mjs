@@ -523,7 +523,7 @@ class XformUSDComposer extends USDComposer {
 // Prim types three's USDComposer builds (its _buildHierarchy, three 0.187) or that only organise others; anything else on
 // the stage is listed as not shown. Re-check against the composer when three is bumped.
 const DRAWN = new Set(['Xform', 'Scope', 'Mesh', 'Cube', 'Sphere', 'Cylinder', 'Cone', 'Capsule', 'Material', 'Shader', 'NodeGraph', 'GeomSubset',
-    'Camera', 'DistantLight', 'SphereLight', 'RectLight', 'DiskLight', 'SkelRoot', 'Skeleton', 'SkelAnimation', 'ParticleField3DGaussianSplat', 'OmniNuRecFieldAsset']);
+    'Camera', 'SkelRoot', 'Skeleton', 'SkelAnimation', 'ParticleField3DGaussianSplat', 'OmniNuRecFieldAsset']);
 // Render settings and the physics scene are stage configuration, not geometry anyone expects to see.
 const NOT_VISUAL = /^(Render|PhysicsScene$)/;
 
@@ -582,6 +582,10 @@ export async function composeUsd(bytes, basePath = '', read = noFile) {
     // three turns upAxis "Z" into Y-up by rotating the root; the viewer's up menu does that instead.
     group.rotation.set(0, 0, 0);
     await Promise.all(composer.texturePromises);
+    // A stage's lights are in nits (Isaac's Franka carries a 30000 SphereLight): as three lights they wash the model out white.
+    group.traverse(object => {
+        if (object.isLight) object.intensity = 0;
+    });
     const gaussians = [];
     const nurecVolumes = [];
     const walk = (object, path) => {

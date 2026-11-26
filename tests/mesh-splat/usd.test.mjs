@@ -553,3 +553,12 @@ test('nurecPly copies raw 3DGUT parameters and regroups SH by channel', () => {
     assert.deepEqual([row.opacity, row.scale_0], [2, -1]);
     assert.deepEqual([row.rot_0, row.rot_1, row.rot_2, row.rot_3], [0, 0, 0, 1]);
 });
+
+test('a stage light does not light the view and is listed as not shown', async () => {
+    const usda = '#usda 1.0\ndef Cube "Box"\n{\n}\ndef SphereLight "Lamp"\n{\n    float inputs:intensity = 30000\n}\n';
+    const { group, notShown } = await composeUsd(new TextEncoder().encode(usda));
+    const lit = [];
+    group.traverse(object => object.isLight && object.intensity > 0 && lit.push(object.name));
+    assert.deepEqual(lit, []);
+    assert.deepEqual(notShown, [['SphereLight', 1]]);
+});
