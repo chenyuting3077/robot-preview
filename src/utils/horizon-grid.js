@@ -46,6 +46,8 @@ export function createHorizonGrid(THREE, target) {
     });
     const grid = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), material);
     grid.frustumCulled = false;
+    // Drawn before the other see-through things: after them, its lines showed through a Gaussian splat, which writes no depth.
+    grid.renderOrder = -1;
     grid.onBeforeRender = (renderer, scene, viewer) => {
         const distance = Math.max(viewer.position.distanceTo(target()), 1e-6);
         // Minor cells of about a tenth of the viewing distance: G1 framed whole gets 10 cm cells and 1 m major lines.
