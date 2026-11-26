@@ -125,7 +125,7 @@ export function createCloudColors({ root, upAxis, label = name => name, onChange
         for (const object of everything()) {
             const values = object.userData.distances?.[distanceRef(modes.get(object))];
             const on = Boolean(hideWithin && values);
-            const materials = [object.material, object.isMesh ? object.userData.points?.material : null].filter(Boolean);
+            const materials = [].concat(object.material, object.isMesh ? object.userData.points?.material : null).filter(Boolean);
             for (const material of materials) if (on || material.userData.clip) clipOf(material).value = on ? 1 : 0;
         }
     }

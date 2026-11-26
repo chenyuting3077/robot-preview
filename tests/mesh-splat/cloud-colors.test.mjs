@@ -356,6 +356,16 @@ test('hiding within the tolerance turns the shader clip on only for objects in a
     assert.equal(scan.material.userData.clip.value, 0);
 });
 
+test('a mesh with one material per group, as STEP face colors give, sets up', () => {
+    page();
+    const root = new THREE.Group();
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 1]), 3));
+    geometry.addGroup(0, 3, 0);
+    root.add(new THREE.Mesh(geometry, [new THREE.MeshStandardMaterial()]));
+    createCloudColors({ root, upAxis: () => '+Y', paintable: () => true }).setup();
+});
+
 test('a mesh paints through a copy of its geometry and gets its own geometry and material back on Original', () => {
     page();
     const root = new THREE.Group();
