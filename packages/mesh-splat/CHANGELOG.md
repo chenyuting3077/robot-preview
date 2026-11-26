@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.1
 
 - A model whose meshes carry one material per face group opens again instead of failing with `Cannot read properties of undefined (reading 'clip')`: STEP files with face colors, broken since 0.6.0.
 - The Marketplace page opens with a capture of a file being opened from the Explorer, and says how each format opens.
