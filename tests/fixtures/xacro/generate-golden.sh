@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Regenerates the golden URDFs with ROS 2 Jazzy's xacro in Docker. Usage: ./generate-golden.sh
+# Regenerates the golden URDFs with ROS 2 Jazzy's xacro in Docker, or with PyPI's xacro when Docker is not running. Usage: ./generate-golden.sh
 set -euo pipefail
 cd "$(dirname "$0")"
+if ! docker info > /dev/null 2>&1; then
+  ROS_OUT=ur5e.urdf node ../../../scripts/xacro-vs-ros.mjs ur_description urdf/ur.urdf.xacro ur_type:=ur5e name:=ur5e || true
+  ROS_OUT=fr3.urdf node ../../../scripts/xacro-vs-ros.mjs franka_description robots/fr3/fr3.urdf.xacro || true
+  exit
+fi
 # A throwaway ament index, so $(find) resolves to these fixtures, not to an apt package of another version.
 docker run --rm -v "$PWD:/fx" ros:jazzy bash -c '
   set -e

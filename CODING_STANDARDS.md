@@ -8,3 +8,4 @@
 - 測試 fixture 和截圖素材只用開源授權的模型，附 LICENSE 和來源；README 致謝用到的開源專案。
 - `packages/*/README.md` 是 Marketplace 商品頁，可以列支援格式和功能。三個 extension 的工具列、面板、用詞和翻譯以 Mesh & Splat 版為準。
 - 回報裡的「已知問題」只留修不了的，並寫為什麼修不了；能修的先修。
+- 改 xacro 展開（`src/adapters/XacroAdapter.js`、`patches/xacro-parser*`）時，用 `scripts/xacro-vs-ros.mjs` 和 ROS 2 xacro 比對 `test-files/urdf/` 的機型；Python 語意對不上的寫法要報錯，不能算出別的值（#36 的 `split(sep, maxsplit)`）。
