@@ -190,6 +190,17 @@ test('Python that xacro allows but the preview cannot evaluate fails naming the 
     await assert.rejects(expand(`${props}<link name="\${dict(l)}"/>`), /dict\(\) without keyword arguments/);
 });
 
+test('builtins compare strings as Python does and refuse what they cannot match', async () => {
+    assert.equal(linkName(await expand(`<link name="\${min('b', 'a')}\${max(['x', 'y'])}"/>`)), 'ay');
+    await assert.rejects(expand(`<link name="\${int('12abc', 10)}"/>`), /unsupported Python int\(\) with a base/);
+    await assert.rejects(expand('<link name="${len(3)}"/>'), /len\(\) of a number/);
+    await assert.rejects(expand(`<link name="\${python.sum(['a'])}"/>`), /sum\(\) of non-numbers/);
+    assert.equal(linkName(await expand(`<link name="l\${int(' -1_000 ')}"/>`)), 'l-1000');
+    await assert.rejects(expand(`<link name="\${int('3.0')}"/>`), /invalid literal for int\(\)/);
+    await assert.rejects(expand(`<link name="\${str(dict(a=1))}"/>`), /str\(\) of a dict/);
+    await assert.rejects(expand(`<link name="\${'%d' % 'x'}"/>`), /%d of string/);
+});
+
 test('operators keep their meaning inside strings and in $(eval)', async () => {
     assert.equal(linkName(await expand(`<link name="\${'a // b &lt;= c not in d'}"/>`)), 'a // b &lt;= c not in d');
     assert.equal(linkName(await expand('<xacro:arg name="n" default="7"/><link name="l$(eval n // 2)"/>')), 'l3');

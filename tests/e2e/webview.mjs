@@ -659,7 +659,7 @@ try {
     check('xArm with len() and >= loads', await waitFor(`window.app.currentModel?.links?.has('link_eef')`, 15000));
     await ev(`await window.__send('xacro', m => { m.primary = '/kortex_description/robots/gen3.xacro'; m.xacroArgs = { dof: '7' }; })`);
     check('Kinova Gen3 with dict() defaults loads', await waitFor(`window.app.currentModel?.links?.has('end_effector_link')`, 15000));
-    for (const [name, expected] of [['vendor', ['True False', 'True 1300', 'b2 3', 'True', '0.5']], ['python', ['True False True False True False False True True True', 'arm_link arm_joint armarm a m', 'arm_7 0.25 7% True True', '4 [2, 3] [0, 1, 2]']]]) {
+    for (const [name, expected] of [['vendor', ['True False', 'True 1300', 'b2 3', 'True', '0.5']], ['python', ['True False True False True False False True True True', 'arm_link arm_joint armarm a m', 'arm_7 0.25 7% True True', '4 [2, 3] [0, 1, 2] 8 3 True']]]) {
         await ev(`window.app.currentModel = null; await window.__send('xacro', m => { m.primary = '/expressions/${name}.urdf.xacro'; })`);
         await waitFor(`window.app.currentModel?.links?.has('checks')`, 15000);
         const values = await ev(`return Array.from(window.app.currentModel.expandedUrdf.matchAll(/<check name="\\w+" value="([^"]*)"/g), m => m[1])`);
