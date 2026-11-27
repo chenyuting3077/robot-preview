@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!-- Python operators, builtins and math that description packages use -->
+<robot name="python" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="n" value="7"/>
+  <xacro:property name="w" value="0.25"/>
+  <xacro:property name="name" value="arm"/>
+  <xacro:property name="flag" value="true"/>
+  <xacro:property name="items" value="${[1, 2, 3]}"/>
+  <check name="arithmetic" value="${n // 2} ${-n // 2} ${n % 3} ${-n % 3} ${n / 2} ${(n + 1) * w - 1}"/>
+  <check name="builtins" value="${python.abs(-w)} ${min(n, 3)} ${max(w, 1, n)} ${len(items)} ${len(name)} ${python.sum(items)}"/>
+  <check name="math" value="${math.pi} ${math.sqrt(16)} ${sqrt(2)} ${math.cos(0)} ${math.radians(180)} ${radians(90)} ${math.atan2(1, 1)} ${math.fabs(-2)} ${math.floor(w * 10)} ${math.ceil(w)} ${pi / 4} ${math.degrees(pi)} ${math.exp(0)} ${math.hypot(3, 4)}"/>
+  <check name="logic" value="${n > 3 and w &lt; 1} ${not flag} ${n == 7 or False} ${n != 7} ${1 &lt;= n &lt;= 10} ${0 &lt;= n &lt;= 5} ${0 &lt; n != 7} ${name == 'arm'} ${'r' in name} ${3 in items}"/>
+  <check name="strings" value="${name + '_link'} ${'%s_joint' % name} ${name * 2} ${name[0]} ${name[-1]}"/>
+  <check name="tuples" value="${'%s_%d' % (name, n)} ${'%.2f' % w} ${'%d%%' % n} ${name in ('arm', 'leg')} ${n not in (1, 2)}"/>
+  <check name="lists" value="${items[0] + items[-1]} ${items[1:]} ${list(python.range(3))}"/>
+  <check name="conditional" value="${'big' if n > 5 else 'small'} ${w * (2 if flag else 1)}"/>
+</robot>

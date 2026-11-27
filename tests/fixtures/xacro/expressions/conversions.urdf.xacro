@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<!-- int(), float(), str(), round(), bool() as in rde-urdf #100 -->
+<robot name="conversions" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="some_argument" value="2"/>
+  <xacro:property name="length_value" value="${int(some_argument * 0.85)}"/>
+  <xacro:property name="radius_value" value="${length_value * 0.50}"/>
+  <xacro:property name="count" value="7"/>
+  <link name="test_link">
+    <visual>
+      <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 -${pi/2}"/>
+      <geometry>
+        <cylinder length="${length_value}" radius="${radius_value}"/>
+      </geometry>
+    </visual>
+  </link>
+  <check name="int" value="${int(3.7)} ${int(-3.7)} ${int('42')} ${python.int(count / 2)} ${int(True)}"/>
+  <check name="float" value="${float('2.5') * 2} ${float(count) / 2}"/>
+  <check name="str" value="${str(count) + 'x'}"/>
+  <check name="round" value="${round(2.567, 2)} ${round(-0.5)} ${round(count / 3)} ${round(2.5)}"/>
+  <check name="bool" value="${bool(0)} ${bool(count)}"/>
+</robot>

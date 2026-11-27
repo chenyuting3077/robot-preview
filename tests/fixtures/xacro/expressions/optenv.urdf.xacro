@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- $(optenv) falls back to its default when the variable is unset, as in clearpath/husky descriptions -->
+<robot name="optenv" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="extend" value="$(optenv ROBOT_PREVIEW_TEST_EXTEND 0)"/>
+  <xacro:property name="laser" value="$(optenv ROBOT_PREVIEW_TEST_LASER false)"/>
+  <xacro:property name="xyz" value="$(optenv ROBOT_PREVIEW_TEST_XYZ 0.1 0 0.2)"/>
+  <check name="text" value="$(optenv ROBOT_PREVIEW_TEST_NAME base)_link x$(optenv ROBOT_PREVIEW_TEST_EMPTY)y"/>
+  <check name="math" value="${0.5 + extend} ${float(extend) * 2} ${xyz.split()[2]}"/>
+  <check name="spaces" value="${xyz}"/>
+  <xacro:if value="${laser}">
+    <check name="laser_on"/>
+  </xacro:if>
+  <xacro:unless value="$(optenv ROBOT_PREVIEW_TEST_LASER false)">
+    <check name="laser_off"/>
+  </xacro:unless>
+</robot>

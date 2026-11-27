@@ -16,6 +16,15 @@ test('UR5e from ur_description 4.4.1 expands like ROS 2 xacro', async () => {
     assertSameUrdf(urdf, fs.readFileSync(path.join(fixtures, 'ur5e.urdf'), 'utf8'));
 });
 
+for (const name of fs.readdirSync(path.join(fixtures, 'expressions')).filter(file => file.endsWith('.urdf.xacro'))) {
+    test(`expressions/${name} expands like ROS 2 xacro`, async () => {
+        const files = packageFiles('expressions');
+        const primary = `/expressions/${name}`;
+        const urdf = await XacroAdapter.expand(await files.get(primary).text(), primary, files);
+        assertSameUrdf(urdf, fs.readFileSync(path.join(fixtures, 'expressions', name.replace(/\.xacro$/, '')), 'utf8'));
+    });
+}
+
 test('FR3 from franka_description 2.9.0 expands like ROS 2 xacro', async () => {
     const files = packageFiles('franka_description');
     const primary = '/franka_description/robots/fr3/fr3.urdf.xacro';
