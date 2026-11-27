@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 - Xacro evaluates the Python that vendor descriptions use: `**`, `//`, `%` (also as string formatting), `not in`, `>=`, `<=`, chained comparisons, `int`, `float`, `round`, `len`, `min`, `max`, `sum`, `sorted`, `range`, `math.*`, `xacro.arg()` and `dict(k=v)`. xArm, Kinova Gen3, PMB2, TIAGo and TurtleBot3 now open, and 55 robots from 17 ROS 2 description packages match ROS xacro.
 - The robots of franka_description (FR3 and the 7 others) open: Python string methods, YAML `d.key`, slices and negative indices are evaluated as ROS 2 xacro does.
