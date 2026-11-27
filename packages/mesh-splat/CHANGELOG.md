@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 - Without WebGL (the snap build of VS Code, GPU acceleration turned off, remote desktop) the view says so and what to try, instead of staying blank; a lost GPU context says so too, and the view draws again when it comes back.
 - LAS point clouds (`.las`, LAS 1.2–1.4, point formats 0–10) open in the viewer. A UTM tile shows its millimetre detail: X and Y are taken relative to the middle of the file's bounds before they are stored, and Info shows that offset with the LAS version, point format and coordinate system. Color by intensity, classification, return number, GPS time (over the file's own time span) or point source ID; a file with RGB starts in its own colors, one without by intensity. Past 10M points an even 10M show, with *Load detail in view*, as for PCD.
