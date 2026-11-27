@@ -6,6 +6,7 @@ const show = event => {
     // ResizeObserver's loop notice and other script errors carry no error object, and are no reason to stop.
     if (!error) return;
     let box = document.getElementById('load-error');
+    // The URDF page makes its box only when it first shows an error.
     if (!box) {
         box = document.createElement('div');
         box.id = 'load-error';
