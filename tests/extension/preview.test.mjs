@@ -211,6 +211,35 @@ test('settings, xacro arguments and the open preview survive a reload', async ()
     assert.deepEqual(load.xacroArgs, { side: 'right' });
 });
 
+test('a .urdf containing xacro gets its includes, environment and xacro arguments, as a .xacro does', async () => {
+    const workspace = await copyFixture();
+    const primary = path.join(workspace, 'src/robot_a/urdf/tutorial.urdf');
+    fs.writeFileSync(primary, `<robot name="tutorial" xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="side" default="left"/>
+  <xacro:include filename="$(find robot_b)/urdf/arm.xacro"/>
+  <link name="$(optenv ROBOT_PREVIEW_TEST_BASE base)_link"/>
+</robot>`);
+    process.env.ROBOT_PREVIEW_TEST_BASE = 'tutorial';
+    try {
+        const env = loadExtension({ workspace });
+        env.open(primary);
+        env.activate();
+        const panel = await waitFor(() => env.state.panels[0]?.webview.html && env.state.panels[0]);
+        panel.receive({ type: 'ready' });
+        const load = await waitFor(() => env.lastOf('load'));
+        const paths = load.files.map(file => file.path);
+        assert.equal(load.primary, '/robot_a/urdf/tutorial.urdf');
+        for (const expected of ['/robot_b/urdf/arm.xacro', '/robot_b/meshes/arm.stl']) assert.ok(paths.includes(expected), expected);
+        assert.deepEqual(load.env, { ROBOT_PREVIEW_TEST_BASE: 'tutorial' });
+
+        env.state.inputBoxValue = 'side:=right';
+        await env.state.commands['robotPreviewUrdf.setXacroArgs'](env.vscode.Uri.file(primary));
+        assert.deepEqual(env.lastOf('load').xacroArgs, { side: 'right' });
+    } finally {
+        delete process.env.ROBOT_PREVIEW_TEST_BASE;
+    }
+});
+
 test('the floating panels open where the last previews left them, each panel from the page that moved it', async () => {
     const env = await start();
     // A second window: another extension host on the same global state.

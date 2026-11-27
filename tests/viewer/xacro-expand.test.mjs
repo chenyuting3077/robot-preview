@@ -195,6 +195,13 @@ test('operators keep their meaning inside strings and in $(eval)', async () => {
     assert.equal(linkName(await expand('<xacro:arg name="n" default="7"/><link name="l$(eval n // 2)"/>')), 'l3');
 });
 
+test('a .urdf is expanded as xacro when it declares the xacro namespace, as tutorials and TurtleBot3 write it', async () => {
+    const { ModelLoaderFactory } = await import('../../src/loaders/ModelLoaderFactory.js');
+    assert.equal(ModelLoaderFactory.detectFileType('sam_bot.urdf', robot('<link name="base"/>')), 'xacro');
+    assert.equal(ModelLoaderFactory.detectFileType('burger.URDF', '<robot name="b" xmlns:xacro="http://ros.org/wiki/xacro"><link name="base"/></robot>'), 'xacro');
+    assert.equal(ModelLoaderFactory.detectFileType('plain.urdf', '<robot name="p"><link name="base"/></robot>'), 'urdf');
+});
+
 test('a missing yaml file is reported plainly, with the path it was looked up under', async () => {
     await assert.rejects(
         expand(`<xacro:property name="u" value="\${xacro.load_yaml('$(find pkg)/config/missing.yaml')}"/><link name="\${u['m']}"/>`),
