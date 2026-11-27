@@ -5,6 +5,7 @@
 <!-- =================================================================================== -->
 <!-- Python from vendor description packages, one construct per check -->
 <robot name="vendor">
+  <link name="checks"/>
   <!-- pmb2_description -->
   <check name="pmb2_not_in" value="True False"/>
   <!-- xarm_description -->
