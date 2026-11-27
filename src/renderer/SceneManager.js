@@ -11,6 +11,7 @@ import { CoordinateAxesManager } from './CoordinateAxesManager.js';
 import { HighlightManager } from './HighlightManager.js';
 import { MeasurementManager } from './MeasurementManager.js';
 import { disposeModel } from './disposeModel.js';
+import { createRenderer } from '../utils/webgl.js';
 
 /**
  * SceneManager - Core scene management and coordination
@@ -36,10 +37,10 @@ export class SceneManager {
         this.camera.lookAt(0, 0, 0);
 
         // Renderer
-        this.renderer = new THREE.WebGLRenderer({
+        this.renderer = createRenderer(() => new THREE.WebGLRenderer({
             canvas: canvas,
             antialias: true
-        });
+        }));
         this.renderer.setSize(width, height);
         this.renderer.setPixelRatio(window.devicePixelRatio);
 

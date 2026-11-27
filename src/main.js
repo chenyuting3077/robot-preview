@@ -170,7 +170,8 @@ class App {
             this.animate();
         } catch (error) {
             console.error('Initialization error:', error);
-            vscode.postMessage({ type: 'error', message: error.stack || String(error) });
+            this.showError(error.message || String(error));
+            if (error.name !== 'WebGLUnavailable') vscode.postMessage({ type: 'error', message: error.stack || String(error) });
         }
     }
 
