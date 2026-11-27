@@ -3,3 +3,4 @@ vite.config.js
 images/readme/**
 dist/occt-import-js*
 dist/foxtrot*
+dist/laz-*

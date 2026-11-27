@@ -14,7 +14,7 @@ Click the file. Text formats that people also edit (`.obj` `.gltf` `.dae` `.wrl`
 - **Fast STEP**: a 39 MB assembly opens in about 3 s and a 161 MB one in about 16 s; unchanged files reopen from cache in about 1 s.
 - **3DGS and 2DGS**: 2D Gaussian splatting PLY renders as flat discs, and 881k splats show in about 2 s at 60 fps.
 - **Large meshes**: a 181 MB, 4.5M-face binary PLY opens in about 2 s.
-- **Robotics data as it is**: ROS occupancy maps at their origin and resolution, KITTI / nuScenes scans, LAS tiles and clouds at UTM coordinates without jitter.
+- **Robotics data as it is**: ROS occupancy maps at their origin and resolution, KITTI / nuScenes scans, LAS / LAZ tiles and clouds at UTM coordinates without jitter.
 
 Times are measured in VS Code 1.144; see the [design notes](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md).
 
@@ -26,7 +26,7 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 - Meshes: `.stl` `.ply` `.off` `.glb` (including Draco and meshopt compression) `.3mf` `.3ds`, and text formats `.obj` (+ `.mtl`) `.gltf` `.dae` `.wrl` from the editor title's *Open 3D Preview* button (*Reopen Editor With… → Configure default editor* makes the view their default)
 - CAD: `.stp` `.step` with part and face colors, `.igs` `.iges`
-- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.las` (LAS 1.2–1.4, point formats 0–10) `.pts`, and `.xyz` `.asc` and KITTI / nuScenes LiDAR `.bin` from the editor title's *Open as Point Cloud* button
+- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.las` `.laz` (LAS 1.2–1.4) `.pts`, and `.xyz` `.asc` and KITTI / nuScenes LiDAR `.bin` from the editor title's *Open as Point Cloud* button
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
 - [ROS occupancy grid maps](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#occupancy-grid-maps): `.pgm`, and `.yaml` `.yml` through *Reopen Editor With…*
 
@@ -44,4 +44,4 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 Part of the Robot Preview series with [Robot Preview: URDF, Xacro & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) ([Open VSX](https://open-vsx.org/extension/chenyuting3077/robot-preview-urdf-mjcf)) and [Robot Preview: USD Viewer (OpenUSD, Isaac Sim)](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-usd) ([Open VSX](https://open-vsx.org/extension/chenyuting3077/robot-preview-usd)).
 
-Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs, STEP with [foxtrot](https://github.com/Formlabs/foxtrot) and [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)); format coverage follows [MeshLab](https://www.meshlab.net/). Captures: a street scan merged from [PandaSet](https://pandaset.org/) sequence 001 by Hesai and Scale AI (CC BY 4.0), a splat sampled from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0), and the [SO-101 arm](https://github.com/TheRobotStudio/SO-ARM100) assembly by TheRobotStudio (Apache-2.0).
+Built with [three.js](https://threejs.org/) and [Spark](https://sparkjs.dev/) by World Labs, STEP with [foxtrot](https://github.com/Formlabs/foxtrot) and [OpenCascade](https://dev.opencascade.org/) ([occt-import-js](https://github.com/kovacsv/occt-import-js)), LAZ with [laz-perf](https://github.com/hobuinc/laz-perf); format coverage follows [MeshLab](https://www.meshlab.net/). Captures: a street scan merged from [PandaSet](https://pandaset.org/) sequence 001 by Hesai and Scale AI (CC BY 4.0), a splat sampled from [Marble Bust 01](https://polyhaven.com/a/marble_bust_01) by James Ray Cock, Poly Haven (CC0), and the [SO-101 arm](https://github.com/TheRobotStudio/SO-ARM100) assembly by TheRobotStudio (Apache-2.0).

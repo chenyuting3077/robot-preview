@@ -31,4 +31,4 @@ pnpm test:e2e
 - [docs/mjcf-parallel-mechanisms.md](docs/mjcf-parallel-mechanisms.md) — supported MJCF constraints and closed-chain behaviour
 - [docs/research/competitors.md](docs/research/competitors.md) — competing VS Code extensions, their installs and our feature gaps
 - [tests/fixtures/mjcf/](tests/fixtures/mjcf/) — regression models with licenses
-- Based on [fan-ziqi/robot_viewer](https://github.com/fan-ziqi/robot_viewer) (Apache-2.0), using [three.js](https://threejs.org/), [urdf-loader](https://github.com/gkjohnson/urdf-loaders), [xacro-parser](https://github.com/gkjohnson/xacro-parser), [mujoco_wasm](https://github.com/zalo/mujoco_wasm), [d3](https://d3js.org/) and [Spark](https://sparkjs.dev/)
+- Based on [fan-ziqi/robot_viewer](https://github.com/fan-ziqi/robot_viewer) (Apache-2.0), using [three.js](https://threejs.org/), [urdf-loader](https://github.com/gkjohnson/urdf-loaders), [xacro-parser](https://github.com/gkjohnson/xacro-parser), [mujoco_wasm](https://github.com/zalo/mujoco_wasm), [d3](https://d3js.org/), [Spark](https://sparkjs.dev/) and [laz-perf](https://github.com/hobuinc/laz-perf)
