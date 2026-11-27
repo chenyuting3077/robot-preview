@@ -122,9 +122,9 @@ window.__send = async (name, patch) => {
     return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)));
 }
 
-async function connect(port) {
+async function connect(port, flags = []) {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-chrome-'));
-    const chrome = spawn(chromeBinary, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--enable-unsafe-swiftshader', '--window-size=1400,900', 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const chrome = spawn(chromeBinary, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--enable-unsafe-swiftshader', '--window-size=1400,900', ...flags, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
     const wsUrl = await new Promise((resolve, reject) => {
         chrome.stderr.on('data', chunk => {
             const match = String(chunk).match(/ws:\/\/\S+/);
@@ -137,6 +137,7 @@ async function connect(port) {
     await new Promise(resolve => { ws.onopen = resolve; });
     let id = 0;
     const pending = new Map();
+    const exceptions = [];
     ws.onmessage = ({ data }) => {
         const message = JSON.parse(data);
         if (message.id && pending.has(message.id)) {
@@ -144,7 +145,8 @@ async function connect(port) {
             pending.delete(message.id);
         }
         if (message.method === 'Runtime.exceptionThrown') {
-            console.log('EXCEPTION', message.params.exceptionDetails.exception?.description?.slice(0, 300));
+            exceptions.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+            console.log('EXCEPTION', exceptions.at(-1)?.slice(0, 300));
         }
     };
     const send = (method, params = {}) => new Promise(resolve => {
@@ -179,7 +181,7 @@ async function connect(port) {
         await sleep(1000);
         try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
     };
-    return { send, ev, waitFor, finalDiagnostics, close };
+    return { send, ev, waitFor, finalDiagnostics, close, exceptions };
 }
 
 const messages = await captureMessages();
@@ -895,6 +897,20 @@ try {
 } finally {
     await page.close();
     server.close();
+}
+
+// #24: without WebGL the view says why it is empty instead of staying blank.
+{
+    const bareServer = await serve(messages);
+    const bare = await connect(bareServer.address().port, ['--disable-3d-apis']);
+    try {
+        const shown = await bare.waitFor(`document.getElementById('load-error')?.checkVisibility() && /WebGL/.test(document.getElementById('load-error').textContent)`, 10000);
+        const text = await bare.ev(`return document.getElementById('load-error')?.textContent`);
+        check('without WebGL the view says so, with no uncaught error', shown && bare.exceptions.length === 0, JSON.stringify({ text, exceptions: bare.exceptions }));
+    } finally {
+        await bare.close();
+        bareServer.close();
+    }
 }
 
 const failed = results.filter(ok => !ok).length;
