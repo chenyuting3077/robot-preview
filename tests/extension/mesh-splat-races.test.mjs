@@ -11,21 +11,19 @@ test('two saves whose renders finish out of order leave the page for the newer f
     fs.writeFileSync(step, 'ISO-10303-21;');
     const { env, panel } = await openMeshSplat(root, step);
     const stat = env.vscode.workspace.fs.stat;
-    // The first render's stat answers late, with the size the file had then.
-    let first = true;
+    // Only the render started by `change` gets this stat: it answers after the newer page is written, with the size the file had then.
+    let answerLate;
+    const lateAnswer = new Promise(resolve => { answerLate = resolve; });
     env.vscode.workspace.fs.stat = async uri => {
-        const result = await stat(uri);
-        if (first) {
-            first = false;
-            await new Promise(resolve => setTimeout(resolve, 50));
-            return { ...result, size: 1 };
-        }
-        return result;
+        await lateAnswer;
+        return { ...(await stat(uri)), size: 1 };
     };
     fs.writeFileSync(step, 'ISO-10303-21; saved');
     const late = env.state.watched.change({ fsPath: step });
-    const prompt = env.state.watched.create({ fsPath: step });
-    await Promise.all([late, prompt]);
+    env.vscode.workspace.fs.stat = stat;
+    await env.state.watched.create({ fsPath: step });
+    answerLate();
+    await late;
     assert.equal(panel.webview.html.match(/data-bytes="(\d+)"/)[1], String(fs.statSync(step).size));
     fs.rmSync(root, { recursive: true, force: true });
 });
@@ -42,7 +40,6 @@ test('a new page starting its cache while the old write is mid-piece keeps its o
     const old = panel.listener({ type: 'stepCache', key, at: 0, size: big.length * 3, chunk: big.buffer });
     const fresh = panel.listener({ type: 'stepCache', key, at: 0, size: 4, chunk: new Uint8Array([1, 2, 3, 4]).buffer });
     await Promise.all([old, fresh]);
-    await new Promise(resolve => setTimeout(resolve, 100));
     const cacheDir = path.join(root, 'storage', 'step-cache');
     assert.deepEqual([...fs.readFileSync(path.join(cacheDir, key))], [1, 2, 3, 4]);
     assert.deepEqual(fs.readdirSync(cacheDir).filter(f => f.endsWith('.part')), []);
