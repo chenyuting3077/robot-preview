@@ -215,16 +215,58 @@ function callMethod(value, method, ...args) {
     return fn(value, ...args);
 }
 
-const toExprEval = expression => Object.values(SPELLED)
-    .reduce((text, { mark, op, sentinel }) => text.replaceAll(mark, ` ${op} ${sentinel} ${op} `), rewriteExpression(expression));
+// An unsupported construct fails only when xacro would evaluate it, so one in a comment or an unused branch passes.
+function toExprEval(expression) {
+    try {
+        return Object.values(SPELLED)
+            .reduce((text, { mark, op, sentinel }) => text.replaceAll(mark, ` ${op} ${sentinel} ${op} `), rewriteExpression(expression));
+    } catch (error) {
+        return `__unsupported__("${error.message}")`;
+    }
+}
 
-const XML_ENTITIES = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&amp;': '&' };
+const XML_ENTITIES = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'", '&amp;': '&' };
 const decodeXml = text => text.replace(/&(?:lt|gt|quot|amp);/g, entity => XML_ENTITIES[entity]);
 const encodeXml = text => text.replace(/[&<"]/g, char => ({ '&': '&amp;', '<': '&lt;', '"': '&quot;' })[char]);
 
-// The rewrite runs on the file's text, where <= is written &lt;=; ' stays as written, since either quote may delimit the attribute.
-function rewritePythonExpressions(text) {
-    return text.replace(/\$\{([^}]*)\}/g, (whole, expression) => `\${${encodeXml(toExprEval(decodeXml(expression)))}}`);
+/**
+ * Rewrites one file's ${} for xacro-parser and keeps what it needs to show a failing expression where and as it was written.
+ * Usage: const sources = new XacroSources(); text = sources.rewrite(text, key); error = sources.locate(error);
+ */
+class XacroSources {
+    files = new Map();
+    written = new Map();
+
+    // ' stays as written: either quote may delimit the attribute.
+    rewrite(text, key) {
+        const rewritten = text.replace(/\$\{([^}]*)\}/g, (whole, expression) => {
+            const original = decodeXml(expression);
+            const forParser = toExprEval(original.replace(/\b(?:xacro\.)?load_yaml\s*\(/g, '__load_yaml__('));
+            this.written.set(forParser, original);
+            return `\${${encodeXml(forParser)}}`;
+        });
+        this.files.set(key, rewritten.replace(/&(?:lt|gt|quot|apos|amp);/g, entity => XML_ENTITIES[entity]));
+        return rewritten;
+    }
+
+    // xacro-parser reports the failing attribute as rewritten; its line is the same in the file as written.
+    locate(error) {
+        const failed = /^XacroParser: Failed to process expression "([\s\S]*)"\. \n([\s\S]*)$/.exec(error.message);
+        if (!failed) return error;
+        const [, attribute, reason] = failed;
+        const asWritten = attribute.replace(/\$\{([^}]*)\}/g, (whole, expression) => `\${${this.written.get(expression) ?? expression}}`);
+        const limit = /^unsupported /.test(reason.trim()) ? ' (a limit of the preview; ROS xacro evaluates it)' : '';
+        const message = `Failed to process expression "${asWritten}": ${reason.trim()}${limit}`;
+        for (const needle of [attribute, ...(attribute.match(/\$[{(][^})]*[})]/g) || [])]) {
+            for (const [key, text] of this.files) {
+                const at = text.indexOf(needle);
+                if (at === -1) continue;
+                const before = text.slice(0, at).split('\n');
+                return Object.assign(new Error(message), { location: { key, line: before.length - 1, column: before.at(-1).length } });
+            }
+        }
+        return new Error(message);
+    }
 }
 
 // Prints as Python prints a list, where a plain array would print as 1,2.
@@ -315,6 +357,9 @@ const PY_FUNCTIONS = {
     __xacro_message__: (...args) => (console.log(...args), ''),
     __xacro_fatal__: (...args) => {
         throw new Error(args.map(pyStr).join(' '));
+    },
+    __unsupported__: message => {
+        throw new Error(message);
     }
 };
 
@@ -434,12 +479,13 @@ export class XacroAdapter {
                 throw error;
             }
         };
-        const renameLoadYaml = text => rewritePythonExpressions(text.replace(/\b(?:xacro\.)?load_yaml\s*\(/g, '__load_yaml__('));
-        xacroContent = await readYamlOnce(renameLoadYaml(xacroContent));
+        const sources = new XacroSources();
+        xacroContent = await readYamlOnce(sources.rewrite(xacroContent, fileName));
 
         if (fileMap) {
             parser.getFileContents = async (path) => {
-                return readYamlOnce(renameLoadYaml(await this.loadFileFromMap(path, fileMap, workingPath)));
+                const { key, text } = await this.loadFileFromMap(path, fileMap, workingPath);
+                return readYamlOnce(sources.rewrite(text, key));
             };
         }
 
@@ -447,7 +493,7 @@ export class XacroAdapter {
         try {
             urdfXML = await parser.parse(xacroContent);
         } catch (error) {
-            if (!yamlError) throw error;
+            if (!yamlError) throw sources.locate(error);
             throw Object.assign(new Error(yamlError.message), { location: yamlError.location });
         }
 
@@ -481,7 +527,7 @@ export class XacroAdapter {
      * @param {string} path - File path
      * @param {Map} fileMap - File map
      * @param {string} workingPath - Working directory
-     * @returns {Promise<string>}
+     * @returns {Promise<object>} The fileMap key found and its text.
      */
     static async loadFileFromMap(path, fileMap, workingPath) {
         // Clean path - remove leading slash if present
@@ -506,20 +552,14 @@ export class XacroAdapter {
         // Try each path
         for (const tryPath of possiblePaths) {
             const file = fileMap.get(tryPath);
-            if (file) {
-                const content = await file.text();
-                return content;
-            }
+            if (file) return { key: tryPath, text: await file.text() };
         }
 
         // Try filename only match
         const fileName = cleanPath.split('/').pop();
         for (const [key, file] of fileMap.entries()) {
             const keyFileName = key.split('/').pop();
-            if (keyFileName === fileName) {
-                const content = await file.text();
-                return content;
-            }
+            if (keyFileName === fileName) return { key, text: await file.text() };
         }
 
         console.error('[XacroAdapter] Cannot find included file:', path);

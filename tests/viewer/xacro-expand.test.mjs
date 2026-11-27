@@ -195,6 +195,21 @@ test('operators keep their meaning inside strings and in $(eval)', async () => {
     assert.equal(linkName(await expand('<xacro:arg name="n" default="7"/><link name="l$(eval n // 2)"/>')), 'l3');
 });
 
+test('an expression the preview cannot evaluate points at its file and line, shown as written', async () => {
+    const part = robot(`<xacro:property name="s" value="arm"/>\n<xacro:macro name="m">\n  <link name="\${s.title() if s &lt;= 'b' else s}"/>\n</xacro:macro>`);
+    await assert.rejects(
+        expand('<xacro:include filename="inc/part.xacro"/>\n<xacro:m/>', { extra: { '/pkg/urdf/inc/part.xacro': part } }),
+        error => error.location?.key === '/pkg/urdf/inc/part.xacro' && error.location.line === 4 && error.location.column === 14
+            && error.message.includes("${s.title() if s <= 'b' else s}") && /unsupported Python method \.title\(\)/.test(error.message)
+            && !error.message.includes('__') && /a limit of the preview/.test(error.message)
+    );
+});
+
+test('an unsupported construct fails only where xacro evaluates it, not in a comment', async () => {
+    assert.equal(linkName(await expand('<!-- ${[x for x in l]} --><link name="a"/>')), 'a');
+    await assert.rejects(expand('\n<link name="${[x for x in l]}"/>'), error => error.location?.line === 3 && /comprehension/.test(error.message));
+});
+
 test('a .urdf is expanded as xacro when it declares the xacro namespace, as tutorials and TurtleBot3 write it', async () => {
     const { ModelLoaderFactory } = await import('../../src/loaders/ModelLoaderFactory.js');
     assert.equal(ModelLoaderFactory.detectFileType('sam_bot.urdf', robot('<link name="base"/>')), 'xacro');
