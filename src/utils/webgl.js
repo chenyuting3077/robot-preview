@@ -1,5 +1,6 @@
 // What a view says when WebGL cannot start or its context is lost (#24), shared by both webviews.
-// Usage: renderer = createRenderer(() => new THREE.WebGLRenderer(...)), and show a WebGLUnavailable's message.
+// Usage: renderer = createRenderer(() => new THREE.WebGLRenderer(...)), showing a WebGLUnavailable's message;
+// watchContext(renderer.domElement, { lost: text => show(text), restored: () => redraw() }).
 
 const TEXTS = {
     en: {
@@ -35,4 +36,10 @@ export function createRenderer(create) {
     } catch (error) {
         throw new WebGLUnavailable(error);
     }
+}
+
+// three stops drawing while the context is lost and sets its GPU state up again, before these run, when it is back.
+export function watchContext(canvas, { lost, restored }) {
+    canvas.addEventListener('webglcontextlost', () => lost(webglText('lost')));
+    canvas.addEventListener('webglcontextrestored', restored);
 }

@@ -10,6 +10,7 @@ import { MeasurementController } from './controllers/MeasurementController.js';
 import { MujocoSimulationManager } from './renderer/MujocoSimulationManager.js';
 import { i18n } from './utils/i18n.js';
 import { checkModel, linkGeometrySizes } from './utils/ModelChecks.js';
+import { watchContext } from './utils/webgl.js';
 
 // What a load tells the extension for the Problems panel.
 const isMJCF = model => model?.userData?.type === 'mjcf';
@@ -90,6 +91,13 @@ class App {
 
             const canvas = document.getElementById('canvas');
             this.sceneManager = new SceneManager(canvas);
+            watchContext(canvas, {
+                lost: text => this.showError(text),
+                restored: () => {
+                    this.showError(this.loadReport.loadError ?? '');
+                    this.sceneManager.redraw();
+                }
+            });
             this.sceneManager.viewGizmo = new ViewGizmo(this.sceneManager, canvas.parentElement);
 
             this.poseController = new PoseController(this.sceneManager);

@@ -319,6 +319,7 @@ function activate(context) {
                 readDone: message => (message.render === undefined || String(message.render) === pageRender) && fileOf(message.file)?.reader.done(message.id),
                 stepCache: message => writer.receive(message),
                 screenshot: message => saveScreenshot(document.uri, message.data),
+                rerender: () => render(KEEP_VIEW),
                 pick: message => context.globalState.update(PICK_KEY, message.on !== false),
                 settings: message => context.globalState.update(SETTINGS_KEY, mergeSettings(context.globalState.get(SETTINGS_KEY), message, document.uri.fsPath)),
                 helpers: message => context.globalState.update(HELPERS_KEY, { ...context.globalState.get(HELPERS_KEY), ...validHelpers(message.helpers) }),
