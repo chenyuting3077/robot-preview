@@ -13,6 +13,42 @@
     "files": "the fr3.urdf.xacro dependencies (xacro --deps), package.xml, LICENSE (meshes omitted)",
     "golden": "fr3.urdf from xacro 2.1.1 off PyPI (Docker was not running); generate-golden.sh makes it with ROS Jazzy's xacro"
   },
+  "turtlebot3_description": {
+    "repository": "https://github.com/ROBOTIS-GIT/turtlebot3",
+    "branch": "jazzy",
+    "version": "2.3.7",
+    "revision": "0c0be84e3f5c3194fb2adea8426a58a96060eab5",
+    "files": "urdf/turtlebot3_burger.urdf (xacro in a .urdf), package.xml, LICENSE (meshes omitted)",
+    "golden": "turtlebot3_burger.urdf from xacro 2.1.1 off PyPI (Docker was not running); generate-golden.sh makes it with ROS Jazzy's xacro"
+  },
+  "kortex_description": {
+    "repository": "https://github.com/Kinovarobotics/ros2_kortex",
+    "branch": "main",
+    "version": "0.2.5",
+    "revision": "b2aa46b29ae8fadd5b293c57e3500925c61eb8e8",
+    "files": "the files xacro reads for robots/gen3.xacro dof:=7 (xacro --deps and the load_yaml files), package.xml, LICENSE (meshes omitted)",
+    "golden": "gen3.urdf from xacro 2.1.1 off PyPI with dof:=7 (Docker was not running); generate-golden.sh makes it with ROS Jazzy's xacro"
+  },
+  "xarm_description": {
+    "repository": "https://github.com/xArm-Developer/xarm_ros2",
+    "branch": "humble",
+    "revision": "ac736c92b02de7ca7e0be6f737d77d46707464d8",
+    "files": "the files xacro reads for urdf/xarm_device.urdf.xacro, package.xml, LICENSE (meshes omitted)",
+    "golden": "xarm_device.urdf from xacro 2.1.1 off PyPI (Docker was not running); generate-golden.sh makes it with ROS Jazzy's xacro"
+  },
+  "pmb2_description": {
+    "repository": "https://github.com/pal-robotics/pmb2_robot",
+    "tag": "5.12.3",
+    "revision": "e6584136f15356b8f4944c25d70fb8689e3355af",
+    "files": "the files xacro reads for robots/pmb2.urdf.xacro, package.xml, LICENSE (meshes omitted)",
+    "golden": "pmb2.urdf from xacro 2.1.1 off PyPI (Docker was not running); generate-golden.sh makes it with ROS Jazzy's xacro"
+  },
+  "pal_urdf_utils": {
+    "repository": "https://github.com/pal-robotics/pal_urdf_utils",
+    "tag": "2.11.5",
+    "revision": "f5871001173e140b48d7a41debf04cc76babf1d2",
+    "files": "the files pmb2.urdf.xacro includes, package.xml, LICENSE"
+  },
   "expressions": {
     "repository": "written for this repository, one Xacro expression form per <check>",
     "files": "*.urdf.xacro",
