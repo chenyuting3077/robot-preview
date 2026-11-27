@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Xacro evaluates the Python that vendor descriptions use: `**`, `//`, `%` (also as string formatting), `not in`, `>=`, `<=`, chained comparisons, `int`, `float`, `round`, `len`, `min`, `max`, `sum`, `sorted`, `range`, `math.*`, `xacro.arg()` and `dict(k=v)`. xArm, Kinova Gen3, PMB2, TIAGo and TurtleBot3 now open, and 55 robots from 17 ROS 2 description packages match ROS xacro.
+- The robots of franka_description (FR3 and the 7 others) open: Python string methods, YAML `d.key`, slices and negative indices are evaluated as ROS 2 xacro does.
+- A `.urdf` that declares the xacro namespace, as Nav2's sam_bot and TurtleBot3 do, is expanded as Xacro, and Set Xacro Arguments and Export URDF are offered for it.
+- An expression the preview cannot evaluate is reported in Problems at its own line, as written, and says it is a limit of the preview rather than of the file.
+- A robot from a large description package opens faster and with less memory: only the meshes the model uses are read (FR3 2.1–2.9 s → 1.2–1.5 s, 1.7 GB → 0.8 GB).
 - Without WebGL (the snap build of VS Code, GPU acceleration turned off, remote desktop) the view says so and what to try, instead of staying blank; a lost GPU context says so too, and the view draws again when it comes back.
 
 ## 0.7.2
