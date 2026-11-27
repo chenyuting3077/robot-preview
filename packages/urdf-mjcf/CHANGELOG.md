@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `robotPreviewUrdf.background` setting: `theme` (as before), or a fixed color such as `#ffffff` for figures, also used in screenshots. Changing it updates open previews.
+
 ## 0.8.0
 
 - Xacro evaluates the Python that vendor descriptions use: `**`, `//`, `%` (also as string formatting), `not in`, `>=`, `<=`, chained comparisons, `int`, `float`, `round`, `len`, `min`, `max`, `sum`, `sorted`, `range`, `math.*`, `xacro.arg()` and `dict(k=v)`. xArm, Kinova Gen3, PMB2, TIAGo and TurtleBot3 now open, and 55 robots from 17 ROS 2 description packages match ROS xacro.

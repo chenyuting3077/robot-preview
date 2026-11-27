@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Settings for the defaults a view opens with: `robotPreviewUsd.background` (`theme`, or a fixed color such as `#ffffff` for figures, also used in screenshots), `.pointSize` (1 / 2 / 4) and `.upAxis` (`auto` follows the stage). Changing them updates open views, except a control already changed in that view; an up axis chosen for a file still wins.
 - Measure from the toolbar's ruler button: click a point to read its coordinates in the stage's frame, and a second point for the distance between them with its X, Y and Z parts, in the stage's `metersPerUnit`. A click while measuring selects no prim. *Copy* puts the values on the clipboard; Esc or the button again clears them. Gaussian splats are not picked yet.
 
 ## 0.4.4
