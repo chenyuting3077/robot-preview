@@ -28,6 +28,7 @@ import { binReader, binLayout } from './kitti.mjs';
 import { createTransport } from './transport.mjs';
 import { recentering } from './recenter.mjs';
 import { legendLabels } from './legend-format.mjs';
+import { createRenderer } from '../../../src/utils/webgl.js';
 
 const STRINGS = {
     en: { detailInView: 'Load detail in view', colorRgb: 'Original color', colorHeight: 'Height', colorIntensity: 'Intensity', pointsShown: '{0} shown of {1}', help: 'Controls', pointSmall: 'Small points', pointMedium: 'Medium points', pointLarge: 'Large points', helpKeyOrbit: 'Left drag', helpOrbit: 'Rotate', helpKeyPan: 'Right / middle drag', helpPan: 'Pan', helpKeyZoom: 'Wheel', helpZoom: 'Zoom toward the cursor', helpKeyPivot: 'Double-click', helpPivot: 'Set the rotation center', helpKeyFly: 'W A S D', helpFly: 'Move', helpKeyTurn: 'Q E', helpTurn: 'Turn', helpKeyFast: 'Shift', helpFast: 'Faster', helpKeyFrame: 'F', helpFrame: 'Frame the model', display: 'Display', stage: 'Stage', primName: 'Name', primType: 'Type', notLoaded: 'Not loaded', missingMaterials: 'Missing materials', notShown: 'Not shown', unit: 'Unit', info: 'Info', solid: 'Solid', wireframe: 'Wireframe', points: 'Points', loading: 'Loading', unsupportedFormat: 'Unsupported file format', file: 'File', format: 'Format', fileSize: 'File size', vertices: 'Vertices', faces: 'Faces', pointCount: 'Points', splats: 'Splats', size: 'Size', mesh: 'Mesh', pointCloud: 'Point cloud', gaussian: 'Gaussian splat', flat: '2DGS (flattened)', failed: 'Cannot open this file', flatUnsupported: '2DGS PLY must be binary little-endian with vertex as the first element', screenshot: 'Save screenshot', upAxis: 'Up axis', pickParts: 'Pick parts in the view', grid: 'Grid', axes: 'Axes', bounds: 'Bounds', layout: 'Layout', notAScan: 'the file is {0} bytes, not a multiple of the {1}-byte {2} point ({3}): it does not look like a {2} scan', occupancyMap: 'Occupancy grid map', greyImage: 'Greyscale image', cells: 'Cells', resolution: 'Resolution', perCell: 'm/cell', origin: 'Origin', mapMode: 'Mode', mapYaml: 'Map YAML', mapImage: 'Map image', noMapYaml: 'Not found, shown at 1 unit per pixel', notMapYaml: 'shown at 1 unit per pixel', mapImageMissing: 'Cannot read the map image', mapTooLarge: 'cells is more than this GPU can show as one texture', addFile: 'Add file…', offset: 'Offset taken out', detailFailed: 'Could not read', colorSolid: 'Solid color', remove: 'Remove from the view', notFound: 'File not found', colorGrey: 'Grey', compare: 'Compare', compareNeedsTwo: 'Add another file to compare with this one.', compareHint: 'Color a file by its distance to a reference.', compareFile: 'File', compareReference: 'Reference', compareRun: 'Color by distance', distanceTo: 'Distance to {0}', tolerance: 'Tolerance', hideWithin: 'Hide within tolerance', withinTolerance: 'Within {0}', distanceStats: 'mean {0} · RMS {1} · p95 {2} · max {3}', measuring: 'Measuring distances {0}%', distanceFailed: 'Could not measure distances', scaleTop: 'Top of the scale (empty: 98th percentile)', panes: 'Split by file', paneChoice: 'Panes that show this file', toggleAll: 'Hide or show all' },
@@ -66,7 +67,16 @@ const files = listed.map((file, index) => {
 const opened = files[0];
 const fileOf = object => (object ? object.userData.file ?? fileOf(object.parent) : null);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// Until the files are up, a throw shows where a file's error would instead of leaving a blank page.
+const failStartup = error => {
+    $('loading-indicator').hidden = true;
+    return showError(error);
+};
+const showStartupError = event => {
+    if (failStartup(event.error) && event.error?.name === 'WebGLUnavailable') event.preventDefault();
+};
+addEventListener('error', showStartupError);
+const renderer = createRenderer(() => new THREE.WebGLRenderer({ antialias: true }));
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.prepend(renderer.domElement);
 // Frames are drawn only while the view may change: input, camera motion and loads, each followed by a short
@@ -626,7 +636,7 @@ async function loadBin(info, file) {
 // The extension re-renders the page after a save, and the new one loads the file, so that is no error.
 function showError(error) {
     if (error?.name === 'FileChanged') return false;
-    $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
+    $('load-error').textContent = error?.name === 'WebGLUnavailable' ? error.message : `${t('failed')}: ${error?.message ?? error}`;
     $('load-error').hidden = false;
     return true;
 }
@@ -1621,4 +1631,4 @@ async function restoreDistances() {
     if (hideWithin) applyTolerance();
 }
 
-main();
+main().catch(failStartup).finally(() => removeEventListener('error', showStartupError));

@@ -173,6 +173,47 @@ const server = http.createServer((req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
+// #24: without WebGL the view says why it is empty instead of staying blank. Its own Chrome, since the flag is per browser.
+{
+    const started = Date.now();
+    const bareProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-nogl-'));
+    const barePort = 9100 + Math.floor(Math.random() * 400);
+    const bare = spawn(chromePath(), ['--headless=new', `--remote-debugging-port=${barePort}`, `--user-data-dir=${bareProfile}`, '--disable-3d-apis', 'about:blank'], { stdio: 'ignore' });
+    let target;
+    for (let i = 0; i < 100 && !target; i++) {
+        try { target = (await (await fetch(`http://127.0.0.1:${barePort}/json`)).json()).find(t => t.type === 'page'); } catch { await sleep(100); }
+    }
+    const socket = new WebSocket(target.webSocketDebuggerUrl);
+    await new Promise(resolve => { socket.onopen = resolve; });
+    let id = 0;
+    const replies = new Map();
+    const thrown = [];
+    socket.onmessage = ({ data }) => {
+        const m = JSON.parse(data);
+        replies.get(m.id)?.(m.result);
+        if (m.method === 'Runtime.exceptionThrown') thrown.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+    };
+    const call = (method, params = {}) => new Promise(resolve => { replies.set(++id, resolve); socket.send(JSON.stringify({ id, method, params })); });
+    await call('Runtime.enable');
+    await call('Page.addScriptToEvaluateOnNewDocument', { source: 'window.acquireVsCodeApi = () => ({ getState: () => null, setState() {}, postMessage() {} });' });
+    const cube = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-nogl-files-'));
+    fs.writeFileSync(path.join(cube, 'cube.stl'), 'solid c\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid c\n');
+    pages.set('/page/nogl', await htmlFor(path.join(cube, 'cube.stl')));
+    await call('Page.navigate', { url: `${origin}/page/nogl` });
+    let text = '';
+    for (let i = 0; i < 50 && !/WebGL/.test(text); i++) {
+        await sleep(200);
+        text = (await call('Runtime.evaluate', { expression: "document.getElementById('load-error')?.checkVisibility() && !document.getElementById('loading-indicator').checkVisibility() ? document.getElementById('load-error').textContent : ''", returnByValue: true })).result.value;
+    }
+    const ok = /WebGL/.test(text) && !thrown.length;
+    results.push(ok);
+    console.log(`${ok ? 'PASS' : 'FAIL'} without WebGL the view says so ${Math.round((Date.now() - started) / 100) / 10}s ${JSON.stringify({ text, thrown })}`);
+    bare.kill();
+    await new Promise(resolve => bare.on('exit', resolve));
+    await sleep(500);
+    for (const at of [bareProfile, cube]) try { fs.rmSync(at, { recursive: true, force: true, maxRetries: 5 }); } catch {}
+}
+
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-e2e-'));
 const port = 9500 + Math.floor(Math.random() * 400);
 const chrome = spawn(chromePath(), [
