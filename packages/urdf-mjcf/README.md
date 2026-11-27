@@ -11,7 +11,7 @@ Open a `.urdf`, `.xacro`, MJCF `.xml`, `.sdf` or `.world` file and the preview o
 ## Why this one
 
 - **Meshes just load.** `package://`, `$(find)`, `model://`, absolute and `file://` paths resolve across the ROS packages of your workspace and `/opt/ros`, without a sourced shell.
-- **Real Xacro.** Macros, `load_yaml`, `$(env)` and arguments are expanded in the extension and checked against ROS 2 xacro on `ur_description`; set arguments or export the expanded URDF from the menu.
+- **Real Xacro.** Macros, `load_yaml`, `$(env)`, `$(optenv)`, arguments and Python such as `${r**2}`, `${int(n)}` and `${x not in l}` are expanded in the extension, also in a `.urdf` that contains xacro, and checked against ROS 2 xacro on UR, Franka, Kinova, xArm, PAL and TurtleBot3 descriptions; set arguments or export the expanded URDF from the menu.
 - **Text and 3D stay together.** Click a link to jump to its source, move the cursor to highlight it, and the model updates as you type.
 - **Move it.** Drag a joint in the view or use the Joints panel; MJCF models run in MuJoCo with *Simulate*.
 - **Mistakes show up before RViz.** XML errors, missing meshes, broken kinematic trees, missing limits and inertia, impossible inertia and mm/m scale mistakes land in the Problems panel, with quick fixes.

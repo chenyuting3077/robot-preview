@@ -13,13 +13,19 @@ docker run --rm -v "$PWD:/fx" ros:jazzy bash -c '
   set -e
   apt-get update -qq && apt-get install -y -qq ros-jazzy-xacro > /dev/null
   mkdir -p /ws/share/ament_index/resource_index/packages
-  for pkg in ur_description franka_description; do
+  for pkg in ur_description franka_description turtlebot3_description kortex_description xarm_description pmb2_description pal_urdf_utils; do
     touch /ws/share/ament_index/resource_index/packages/$pkg
     ln -s /fx/$pkg /ws/share/$pkg
   done
   source /opt/ros/jazzy/setup.bash
-  AMENT_PREFIX_PATH=/ws:$AMENT_PREFIX_PATH xacro /fx/ur_description/urdf/ur.urdf.xacro ur_type:=ur5e name:=ur5e > /fx/ur5e.urdf
-  AMENT_PREFIX_PATH=/ws:$AMENT_PREFIX_PATH xacro /fx/franka_description/robots/fr3/fr3.urdf.xacro > /fx/fr3.urdf
-  cd /fx && for f in expressions/*.urdf.xacro; do xacro "$f" > "${f%.xacro}"; done
+  export AMENT_PREFIX_PATH=/ws:$AMENT_PREFIX_PATH
+  cd /fx
+  xacro ur_description/urdf/ur.urdf.xacro ur_type:=ur5e name:=ur5e > ur5e.urdf
+  xacro franka_description/robots/fr3/fr3.urdf.xacro > fr3.urdf
+  xacro turtlebot3_description/urdf/turtlebot3_burger.urdf > turtlebot3_burger.urdf
+  xacro kortex_description/robots/gen3.xacro dof:=7 > gen3.urdf
+  xacro xarm_description/urdf/xarm_device.urdf.xacro > xarm_device.urdf
+  xacro pmb2_description/robots/pmb2.urdf.xacro > pmb2.urdf
+  for f in expressions/*.urdf.xacro; do xacro "$f" > "${f%.xacro}"; done
 '
-echo "wrote $(pwd)/ur5e.urdf, fr3.urdf and expressions/*.urdf"
+echo "wrote the golden URDFs in $(pwd) and $(pwd)/expressions"
