@@ -399,10 +399,10 @@ export class XacroAdapter {
         parser.localProperties = true;
         const workingPath = directoryOf(fileName);
         parser.workingPath = workingPath;
-        // The webview has no process.env; the extension sends the variables
-        // the model files reference.
         // argumentDefaults comes from patches/xacro-parser@0.3.11.patch.
         const allArguments = () => ({ ...parser.argumentDefaults, ...parser.arguments });
+        // The webview has no process.env; the extension sends the variables
+        // the model files reference.
         parser.rospackCommands = (stem, ...args) => {
             if (stem === 'find') return `/${args[0]}`;
             if (stem === 'env') {
