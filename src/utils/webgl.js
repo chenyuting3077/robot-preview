@@ -17,7 +17,7 @@ const TEXTS = {
     }
 };
 
-export function webglText(key) {
+function webglText(key) {
     const lang = document.documentElement.lang.toLowerCase();
     return TEXTS[/^zh-(tw|hk|mo|hant)/.test(lang) ? 'zh-TW' : lang.startsWith('zh') ? 'zh-CN' : 'en'][key];
 }

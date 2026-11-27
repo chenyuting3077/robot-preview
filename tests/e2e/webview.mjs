@@ -900,6 +900,9 @@ try {
         const message = () => ev(`const box = document.getElementById('load-error'); return box?.checkVisibility() ? box.textContent : ''`);
         await ev(`window.__lose = window.app.sceneManager.renderer.getContext().getExtension('WEBGL_lose_context'); window.__lose.loseContext()`);
         await sleep(500);
+        // A load while the context is lost, as after a save, must not clear the message.
+        await ev(`window.postMessage({ type: 'load', files: [{ path: '/b/b.urdf', data: new TextEncoder().encode(${JSON.stringify(box)}) }], primary: '/b/b.urdf' }, '*')`);
+        await sleep(1500);
         const lost = await message();
         await ev(`window.__lose.restoreContext()`);
         await sleep(1000);

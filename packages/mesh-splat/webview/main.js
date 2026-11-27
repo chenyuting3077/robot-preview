@@ -76,12 +76,13 @@ document.querySelectorAll('[data-title]').forEach(element => { element.title = e
 const renderer = createRenderer(() => new THREE.WebGLRenderer({ antialias: true }));
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.prepend(renderer.domElement);
-// Spark's GPU state does not survive a restore (13% of a splat view's pixels came back wrong), so that view is rendered again.
+// Spark's GPU state does not survive a restore, so a view with splats is rendered again (#24).
 let shownBeforeLoss = null;
+let lostText = '';
 watchContext(renderer.domElement, {
     lost: text => {
         shownBeforeLoss ??= [$('load-error').textContent, $('load-error').hidden];
-        $('load-error').textContent = text;
+        $('load-error').textContent = lostText = text;
         $('load-error').hidden = false;
     },
     restored: () => {
@@ -90,7 +91,8 @@ watchContext(renderer.domElement, {
             vscodeApi.postMessage({ type: 'rerender' });
             return;
         }
-        [$('load-error').textContent, $('load-error').hidden] = shownBeforeLoss;
+        // A file that failed while the context was lost keeps its error.
+        if ($('load-error').textContent === lostText) [$('load-error').textContent, $('load-error').hidden] = shownBeforeLoss;
         shownBeforeLoss = null;
         wake();
     }
@@ -652,7 +654,7 @@ async function loadBin(info, file) {
 // The extension re-renders the page after a save, and the new one loads the file, so that is no error.
 function showError(error) {
     if (error?.name === 'FileChanged') return false;
-    $('load-error').textContent = error?.name === 'WebGLUnavailable' ? error.message : `${t('failed')}: ${error?.message ?? error}`;
+    $('load-error').textContent = `${t('failed')}: ${error?.message ?? error}`;
     $('load-error').hidden = false;
     return true;
 }

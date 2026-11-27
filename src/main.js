@@ -84,6 +84,7 @@ class App {
         this.pendingIsUpdate = null;
         this.isUpdate = false;
         this.loading = null;
+        this.contextLost = false;
     }
 
     async init() {
@@ -93,8 +94,12 @@ class App {
             const canvas = document.getElementById('canvas');
             this.sceneManager = new SceneManager(canvas);
             watchContext(canvas, {
-                lost: text => this.showError(text),
+                lost: text => {
+                    this.contextLost = true;
+                    this.showError(text);
+                },
                 restored: () => {
+                    this.contextLost = false;
                     this.showError(this.loadReport.loadError ?? '');
                     this.sceneManager.redraw();
                 }
@@ -178,9 +183,11 @@ class App {
 
             this.animate();
         } catch (error) {
-            console.error('Initialization error:', error);
             this.showError(error.message || String(error));
-            if (error.name !== 'WebGLUnavailable') vscode.postMessage({ type: 'error', message: error.stack || String(error) });
+            if (error.name !== 'WebGLUnavailable') {
+                console.error('Initialization error:', error);
+                vscode.postMessage({ type: 'error', message: error.stack || String(error) });
+            }
         }
         startupDone();
     }
@@ -310,7 +317,7 @@ class App {
             // where a partial report would make the mesh-size checks blink.
             const onParsed = previousModel ? undefined : model => this.reportParsed(model, syntax);
             await this.fileHandler.loadPrimary(primary, { xacroArgs: this.xacroArgs, env: this.env, onParsed });
-            if (!this.loadReport.loadError) this.showError('');
+            if (!this.loadReport.loadError && !this.contextLost) this.showError('');
             if (pose && this.currentModel !== previousModel) this.poseController.applyPose(pose, { source: 'user' });
             if (this.lastHighlight) this.highlightByPattern(this.lastHighlight.kind, this.lastHighlight.pattern);
 
