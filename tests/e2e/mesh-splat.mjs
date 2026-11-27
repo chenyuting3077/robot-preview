@@ -142,6 +142,7 @@ function fixtures(dir) {
         'scene.usda': `#usda 1.0\n(\n    upAxis = "Z"\n    defaultPrim = "World"\n)\ndef Xform "World"\n{\n    def Mesh "Tri"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh "Hidden"\n    {\n        token visibility = "invisible"\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(50, 0, 0), (51, 0, 0), (50, 1, 0)]\n    }\n    def ParticleField3DGaussianSplat "Gaussians"\n    {\n        point3f[] positions = [(0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)]\n        quatf[] orientations = [(1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0)]\n        float3[] scales = [(0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1)]\n        float[] opacities = [0.9, 0.9, 0.9, 0.9]\n        int radiance:sphericalHarmonicsDegree = 0\n        float3[] radiance:sphericalHarmonicsCoefficients = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)]\n    }\n}\n`,
         'scan.bin': lidarScan(3000),
         'utm.las': lasDisc(3000),
+        'utm-disc.laz': fs.readFileSync(new URL('../fixtures/las/utm-disc.laz', import.meta.url)),
         'scan.pcd.bin': lidarScan(2000, true),
         'short.bin': lidarScan(100).subarray(0, 1599),
         'map.yaml': '# e2e map\nimage: map.pgm\nresolution: 0.1\norigin: [1.0, 2.0, 1.5707963]  # yaw 90 degrees\nnegate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n',
@@ -766,7 +767,12 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                     && las.active === 'rgb' && las.fields.split(',').includes('field:classification');
                 camera += ` las ${JSON.stringify(las)}`;
             }
-            if (/^(rgb\.xyz|utm\.las)$/.test(name)) {
+            if (name === 'utm-disc.laz') {
+                const active = await evaluate(`document.querySelector('[data-color].active')?.dataset.color`);
+                state.scanOk = ['點數\t2,000', '格式\tLAZ 1.2', '點格式\t3'].every(row => state.info.includes(row)) && active === 'rgb';
+                camera += ` laz ${active}`;
+            }
+            if (/^(rgb\.xyz|utm\.las|utm-disc\.laz)$/.test(name)) {
                 const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 400, height: 400, scale: 0.25 } })).data;
                 state.redOk = await evaluate(`(async () => {
                     const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });

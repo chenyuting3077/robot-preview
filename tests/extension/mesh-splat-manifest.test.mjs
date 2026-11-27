@@ -43,15 +43,14 @@ test('a .bin, .asc or .xyz editor has a title button and an Explorer entry that 
     }
 });
 
-test('a .pgm and a .las open in the viewer by default', () => {
-    assert.ok(patterns('default').includes('*.pgm'));
-    assert.ok(patterns('default').includes('*.las'));
+test('a .pgm, a .las and a .laz open in the viewer by default', () => {
+    for (const pattern of ['*.pgm', '*.las', '*.laz']) assert.ok(patterns('default').includes(pattern), pattern);
 });
 
 test('Add to Point Cloud View shows on files the view takes, not on folders, YAML or STEP', () => {
     const item = menus['explorer/context'].find(({ command }) => command === 'robotPreviewMeshSplat.addToView');
     assert.ok(item && /!explorerResourceIsFolder/.test(item.when), item?.when);
     const shownFor = ext => new RegExp(item.when.match(/resourceExtname =~ \/(.*)\/i/)[1], 'i').test(ext);
-    for (const ext of ['.pcd', '.PLY', '.bin', '.splat', '.pgm', '.stl', '.las']) assert.ok(shownFor(ext), ext);
+    for (const ext of ['.pcd', '.PLY', '.bin', '.splat', '.pgm', '.stl', '.las', '.LAZ']) assert.ok(shownFor(ext), ext);
     for (const ext of ['.yaml', '.step', '.igs', '.txt', '.pcdx']) assert.ok(!shownFor(ext), ext);
 });

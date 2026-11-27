@@ -26,7 +26,7 @@ import { bindPopover, bindUpMenu, closePopover } from '../../../src/ui/popover.j
 import '../../../src/ui/toolbar.css';
 import { pcdReader, dropNaNPoints } from './pcd.mjs';
 import { binReader, binLayout } from './kitti.mjs';
-import { lasReader } from './las.mjs';
+import { lasReader, lazReader } from './las.mjs';
 import { createTransport } from './transport.mjs';
 import { recentering } from './recenter.mjs';
 import { legendLabels } from './legend-format.mjs';
@@ -637,12 +637,17 @@ async function loadPcd(info, file) {
     return streamedCloud(points, info, pcdReader, file);
 }
 
+// Each LAZ read gets its own laz-perf instance, whose memory goes when it does.
+let lazDecoder = null;
+const lazModule = () => (lazDecoder ??= import('./laz-decoder.mjs').then(module => module.lazDecoder()));
 async function loadLas(info, file) {
-    const reader = lasReader(POINT_LIMIT);
+    const compressed = file.ext === 'laz';
+    const readerOf = compressed ? async (limit, region) => lazReader(file.size, await lazModule(), limit, region) : lasReader;
+    const reader = await readerOf(POINT_LIMIT);
     for await (const chunk of file.transport.fileChunks()) reader.push(chunk);
-    const points = reader.finish();
-    Object.assign(info, { format: `LAS ${points.las.version}`, pointFormat: String(points.las.format), crs: points.las.crs });
-    return streamedCloud(points, info, lasReader, file);
+    const points = await reader.finish();
+    Object.assign(info, { format: `${compressed ? 'LAZ' : 'LAS'} ${points.las.version}`, pointFormat: String(points.las.format), crs: points.las.crs });
+    return streamedCloud(points, info, readerOf, file);
 }
 
 async function loadBin(info, file) {
@@ -713,7 +718,7 @@ async function loadDetail(base, total, file, view, readerOf) {
     let seen = 0;
     for (let i = 0; i < sample.length; i += 3) if (inside(sample[i], sample[i + 1], sample[i + 2])) seen++;
     // The detail is stored less the sample's offset, since it is drawn as the sample's child.
-    const reader = readerOf(POINT_LIMIT, { inside, expected: 1.25 * total * seen / (sample.length / 3) + 1000, offset: base.userData.offset ?? [0, 0, 0] });
+    const reader = await readerOf(POINT_LIMIT, { inside, expected: 1.25 * total * seen / (sample.length / 3) + 1000, offset: base.userData.offset ?? [0, 0, 0] });
     for await (const chunk of file.transport.fileChunks()) reader.push(chunk);
     const points = await reader.finish();
     const old = base.userData.detailCloud;
@@ -913,6 +918,7 @@ const LOADERS = {
     pcd: loadPcd,
     bin: loadBin,
     las: loadLas,
+    laz: loadLas,
     xyz: loadTextPoints,
     pts: loadTextPoints,
     asc: loadTextPoints,

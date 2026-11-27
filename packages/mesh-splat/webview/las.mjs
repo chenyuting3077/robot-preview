@@ -7,21 +7,30 @@ const FORMATS = [[20, -1, -1], [28, 20, -1], [26, -1, 20], [34, 20, 28], [57, 20
     .map(([size, gps, rgb], format) => ({ size, gps, rgb, wide: format >= 6 }));
 const FIELDS = ['intensity', 'classification', 'return_number', 'gps_time', 'point_source_id'];
 
-// The coordinate system's name from the WKT VLR, else the GeoTIFF citation and EPSG code; null without either.
-function crsName(bytes, from, to, count) {
+const textOf = (bytes, at, length) => new TextDecoder('latin1').decode(bytes.subarray(at, at + length)).replace(/\0[\s\S]*$/, '');
+
+// The VLRs between the header and the points, as { at, length } of their data by `user/id`.
+function vlrsOf(bytes, from, to, count) {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const text = (at, length) => new TextDecoder('latin1').decode(bytes.subarray(at, at + length)).replace(/\0[\s\S]*$/, '');
     const records = {};
     for (let at = from, i = 0; i < count && at + 54 <= to; i++) {
         const length = view.getUint16(at + 20, true);
-        if (text(at + 2, 16) === 'LASF_Projection') records[view.getUint16(at + 18, true)] = { at: at + 54, length: Math.min(length, to - at - 54) };
+        records[`${textOf(bytes, at + 2, 16)}/${view.getUint16(at + 18, true)}`] = { at: at + 54, length: Math.min(length, to - at - 54) };
         at += 54 + length;
     }
-    const wkt = records[2112] && /^\s*[A-Z_]+\[\s*"([^"]+)"/.exec(text(records[2112].at, records[2112].length))?.[1];
-    if (wkt) return wkt;
-    const keys = records[34735];
+    return records;
+}
+
+// The coordinate system's name from the WKT VLR, else the GeoTIFF citation and EPSG code; null without either.
+function crsName(bytes, records) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const text = (at, length) => textOf(bytes, at, length);
+    const wkt = records['LASF_Projection/2112'];
+    const name = wkt && /^\s*[A-Z_]+\[\s*"([^"]+)"/.exec(text(wkt.at, wkt.length))?.[1];
+    if (name) return name;
+    const keys = records['LASF_Projection/34735'];
     if (!keys || keys.length < 8) return null;
-    const ascii = records[34737];
+    const ascii = records['LASF_Projection/34737'];
     let code = 0, citation = '';
     // GeoKeys 3072 / 2048: projected / geographic EPSG code (32767 is user-defined); 3073 / 1026: citations.
     for (let k = 1; k <= view.getUint16(keys.at + 6, true) && 8 * k + 8 <= keys.length; k++) {
@@ -34,7 +43,8 @@ function crsName(bytes, from, to, count) {
 }
 
 // The public header and the coordinate system its VLRs name, from the bytes up to the point data.
-export function lasHeader(bytes) {
+function lasHeader(bytes) {
+    headerNeeds(bytes);
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const major = bytes[24], minor = bytes[25], headerSize = view.getUint16(94, true), pointOffset = view.getUint32(96, true);
     const formatByte = bytes[104], format = formatByte & 0x3f, recordLength = view.getUint16(105, true);
@@ -43,6 +53,8 @@ export function lasHeader(bytes) {
     if (recordLength < FORMATS[format].size) throw new Error(`the LAS point records are ${recordLength} bytes, shorter than point format ${format}'s ${FORMATS[format].size}`);
     const f64 = at => view.getFloat64(at, true);
     const wide = minor >= 4 && headerSize >= 375 ? view.getUint32(247, true) + view.getUint32(251, true) * 2 ** 32 : 0;
+    const records = vlrsOf(bytes, headerSize, pointOffset, view.getUint32(100, true));
+    const laszip = records['laszip encoded/22204'];
     return {
         version: `${major}.${minor}`, format, recordLength, pointOffset,
         // Bit 7 marks LAZ; bit 6 was used by early LAZ writers.
@@ -52,7 +64,9 @@ export function lasHeader(bytes) {
         offset: [f64(155), f64(163), f64(171)],
         min: [f64(187), f64(203), f64(219)],
         max: [f64(179), f64(195), f64(211)],
-        crs: crsName(bytes, headerSize, pointOffset, view.getUint32(100, true))
+        crs: crsName(bytes, records),
+        // 0 none, 1 pointwise, 2 pointwise chunked, 3 layered chunked (LAS 1.4 formats 6-10).
+        compressor: laszip?.length >= 2 ? view.getUint16(laszip.at, true) : null
     };
 }
 
@@ -188,6 +202,63 @@ export function lasReader(limit = Infinity, { inside, expected, offset: given, d
                 offset: center && (center[0] || center[1]) ? center : null,
                 las: { version, format, crs }
             };
+        }
+    };
+}
+
+const WAVEFORM = [4, 5, 9, 10];
+const COMPRESSORS = ['none', 'pointwise', 'pointwise chunked', 'layered chunked'];
+const BATCH = 65536;
+
+// A LAZ file of `size` bytes, held whole in a fresh laz-perf instance from `createModule` (chunked LAZ keeps its chunk table at the end); its points go through lasReader.
+export async function lazReader(size, createModule, limit, region = {}) {
+    const module = await createModule();
+    const file = module._malloc(size);
+    if (!file) throw new Error(`the LAZ file (${size} bytes) does not fit in the LAZ decoder's memory`);
+    let at = 0;
+    return {
+        push(chunk) {
+            if (at + chunk.length > size) throw Object.assign(new Error('the file changed while it was read'), { name: 'FileChanged' });
+            module.HEAPU8.set(chunk, file + at);
+            at += chunk.length;
+            return true;
+        },
+        async finish() {
+            const bytes = () => module.HEAPU8.subarray(file, file + at);
+            const las = lasReader(limit, { ...region, decompressed: true });
+            const header = at >= 227 && lasHeader(bytes());
+            if (!header?.compressed) {
+                las.push(bytes());
+                return las.finish();
+            }
+            if (WAVEFORM.includes(header.format)) throw new Error(`LAZ point format ${header.format} carries waveforms, which the LAZ decoder cannot read`);
+            las.push(bytes().slice(0, header.pointOffset));
+            const zip = new module.LASZip();
+            const stride = header.recordLength;
+            const batch = module._malloc(BATCH * stride);
+            let row = 0, opened = false;
+            try {
+                zip.open(file, at);
+                opened = true;
+                if (zip.getPointLength() !== stride) throw new Error(`its records are ${zip.getPointLength()} bytes, the header says ${stride}`);
+                const count = Math.min(header.count, zip.getCount());
+                while (row < count) {
+                    const n = Math.min(BATCH, count - row);
+                    for (let i = 0; i < n; i++, row++) zip.getPoint(batch + i * stride);
+                    las.push(module.HEAPU8.subarray(batch, batch + n * stride));
+                    // Decoding runs on the page's thread, so the spinner turns only between batches.
+                    await new Promise(resolve => setTimeout(resolve));
+                }
+            } catch (error) {
+                // laz-perf is built without exception catching, so its own message is lost.
+                if (!opened) throw new Error(`the LAZ decoder cannot open this file: it is cut short, or its compressor (${COMPRESSORS[header.compressor] ?? 'none named'}) is not one laz-perf reads`);
+                throw new Error(`the LAZ data is corrupt after ${row} of its ${header.count.toLocaleString('en-US')} points: ${error?.message ?? error}`);
+            } finally {
+                zip.delete();
+                module._free(batch);
+                module._free(file);
+            }
+            return las.finish();
         }
     };
 }
