@@ -1,3 +1,4 @@
+import { startupDone } from './utils/startup-errors.js';
 import * as THREE from 'three';
 import * as d3 from './d3-lite.js';
 import { SceneManager } from './renderer/SceneManager.js';
@@ -181,6 +182,7 @@ class App {
             this.showError(error.message || String(error));
             if (error.name !== 'WebGLUnavailable') vscode.postMessage({ type: 'error', message: error.stack || String(error) });
         }
+        startupDone();
     }
 
     showInfo() {

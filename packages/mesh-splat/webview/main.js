@@ -1,3 +1,4 @@
+import { startupDone } from '../../../src/utils/startup-errors.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -72,15 +73,6 @@ document.querySelectorAll('[data-t]').forEach(element => {
     (element.querySelector('span') ?? element).textContent = t(element.dataset.t);
 });
 document.querySelectorAll('[data-title]').forEach(element => { element.title = element.ariaLabel = t(element.dataset.title); });
-// Until the files are up, a throw shows where a file's error would instead of leaving a blank page.
-const failStartup = error => {
-    $('loading-indicator').hidden = true;
-    return showError(error);
-};
-const showStartupError = event => {
-    if (failStartup(event.error) && event.error?.name === 'WebGLUnavailable') event.preventDefault();
-};
-addEventListener('error', showStartupError);
 const renderer = createRenderer(() => new THREE.WebGLRenderer({ antialias: true }));
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.prepend(renderer.domElement);
@@ -1651,4 +1643,7 @@ async function restoreDistances() {
     if (hideWithin) applyTolerance();
 }
 
-main().catch(failStartup).finally(() => removeEventListener('error', showStartupError));
+main().catch(error => {
+    $('loading-indicator').hidden = true;
+    showError(error);
+}).finally(startupDone);
