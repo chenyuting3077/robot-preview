@@ -430,7 +430,7 @@ document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && selected && !isTyping(event)) selectPrim(null);
 });
 
-// Measure (#29): a click picks a point as a double-click picks the pivot, a third click starts over. Splats are left out.
+// Measure (#29): a click picks a point as a double-click picks the pivot, a third click starts over. Splats are left out (#52).
 let measureMode = false;
 let measured = [];
 let measureMarks = null;

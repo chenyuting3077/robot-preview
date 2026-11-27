@@ -1595,6 +1595,23 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const twoOk = JSON.stringify(acrossFirst) === JSON.stringify(acrossExpected.slice(0, 1)) && JSON.stringify(across) === JSON.stringify(acrossExpected);
     results.push(twoOk);
     console.log(`${twoOk ? 'PASS' : 'FAIL'} measure origin.xyz + dot.gltf ${Math.round((Date.now() - twoAt) / 100) / 10}s dots ${JSON.stringify(two)} first ${JSON.stringify(acrossFirst)} ${JSON.stringify(across)}`);
+
+    // Splats are not measured (#52); the double-click after it shows a splat lay under the click.
+    const splatAt = Date.now();
+    await show('gauss2d.ply', await htmlFor(path.join(dir, 'gauss2d.ply')));
+    const [width, height] = await evaluate('[innerWidth, innerHeight]');
+    const onSplat = [Math.round(width * 0.42), Math.round(height * 0.58)];
+    await toggle();
+    await click(onSplat);
+    const splatRows = await readout();
+    await toggle();
+    const beforePivot = await bare(pageShot);
+    await evaluate(`document.querySelector('canvas').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX: ${onSplat[0]}, clientY: ${onSplat[1]} }))`);
+    await sleep(600);
+    const pivoted = await shotDiff(beforePivot, await bare(pageShot));
+    const splatOk = JSON.stringify(splatRows) === '[]' && pivoted > 0.01;
+    results.push(splatOk);
+    console.log(`${splatOk ? 'PASS' : 'FAIL'} measure gauss2d.ply picks no splat ${Math.round((Date.now() - splatAt) / 100) / 10}s rows ${JSON.stringify(splatRows)} pivot moved ${(pivoted * 100).toFixed(1)}%`);
     fs.rmSync(measureDir, { recursive: true, force: true });
 }
 

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Measure from the toolbar's ruler button: click a point to read its coordinates in the file's own frame (a UTM cloud's offset added back, the view's up axis undone), and a second point for the distance between them with its X, Y and Z parts, drawn in the view. *Copy* puts the values on the clipboard; Esc or the button again clears them. Points of several files read in each file's own frame.
+- Measure from the toolbar's ruler button: click a point to read its coordinates in the file's own frame (a UTM cloud's offset added back, the view's up axis undone), and a second point for the distance between them with its X, Y and Z parts, drawn in the view. *Copy* puts the values on the clipboard; Esc or the button again clears them. Points of several files read in each file's own frame. Gaussian splats are not picked yet.
 
 ## 0.8.0
 

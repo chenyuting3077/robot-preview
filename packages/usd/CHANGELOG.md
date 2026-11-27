@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Measure from the toolbar's ruler button: click a point to read its coordinates in the stage's frame, and a second point for the distance between them with its X, Y and Z parts, in the stage's `metersPerUnit`. A click while measuring selects no prim. *Copy* puts the values on the clipboard; Esc or the button again clears them.
+- Measure from the toolbar's ruler button: click a point to read its coordinates in the stage's frame, and a second point for the distance between them with its X, Y and Z parts, in the stage's `metersPerUnit`. A click while measuring selects no prim. *Copy* puts the values on the clipboard; Esc or the button again clears them. Gaussian splats are not picked yet.
 
 ## 0.4.4
 

@@ -78,6 +78,7 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 - Coordinates are each point's own file's: the view's up and a file's turn into the opened file's frame are undone, and a far cloud's offset is already in where the cloud is placed. Deltas are in the first point's file's frame. A new up axis clears the measurement, whose marks would stay where the points were.
 - Lengths carry a USD stage's `metersPerUnit` (`m`, `cm`, `mm`, else `× n m`); other formats hold no unit and show none. Three decimals in a view 1 unit or more across (a millimetre in metres), one more for each tenth smaller, up to 7.
 - The marks are placed at the first point with the second relative to it: float32 vertices at UTM coordinates would be 0.25 m off.
+- Gaussian splats are not picked: Spark 2.4's raycast passes over every splat, 46–63 ms a click for 1M splats and 135–141 ms for 3M (medians of 30 clicks, two runs each, VS Code 1.147, Apple M2, synthetic 53 / 160 MB PLY discs), past the 100 ms a click can take unnoticed (#52). The double-click pivot pays it today.
 
 ## USD
 
