@@ -20,7 +20,8 @@ export class ModelLoaderFactory {
 
         switch (ext) {
             case 'urdf':
-                return 'urdf';
+                // Tutorials (Nav2's sam_bot) and TurtleBot3 put xacro in .urdf files.
+                return /\bxmlns:xacro\s*=/.test(content ?? '') ? 'xacro' : 'urdf';
             case 'xacro':
                 return 'xacro';
             case 'sdf':
