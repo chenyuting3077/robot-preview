@@ -240,6 +240,33 @@ test('a .urdf containing xacro gets its includes, environment and xacro argument
     }
 });
 
+test('the xacro menus list the open .urdf files that declare the xacro namespace', async () => {
+    const workspace = await copyFixture();
+    const xacroUrdf = path.join(workspace, 'src/robot_a/urdf/tutorial.urdf');
+    const plainUrdf = path.join(workspace, 'src/robot_a/urdf/plain.urdf');
+    fs.writeFileSync(xacroUrdf, '<robot name="tutorial" xmlns:xacro="http://ros.org/wiki/xacro"><link name="base"/></robot>');
+    fs.writeFileSync(plainUrdf, '<robot name="plain"><link name="base"/></robot>');
+    const env = loadExtension({ workspace });
+    const listed = () => env.state.executed?.filter(([command, key]) => command === 'setContext' && key === 'robotPreviewUrdf.xacroUrdfs').at(-1)?.[2];
+    const doc = env.open(xacroUrdf);
+    env.open(plainUrdf);
+    env.activate();
+    assert.deepEqual(listed(), [xacroUrdf]);
+
+    doc.edit('<robot name="tutorial"><link name="base"/></robot>');
+    env.fire('change', { document: doc, contentChanges: [{}] });
+    assert.deepEqual(listed(), []);
+
+    doc.edit('<robot name="tutorial" xmlns:xacro="http://ros.org/wiki/xacro"/>');
+    env.fire('change', { document: doc, contentChanges: [{}] });
+    env.fire('close', doc);
+    assert.deepEqual(listed(), []);
+
+    const manifest = JSON.parse(fs.readFileSync(new URL('../../packages/urdf-mjcf/package.json', import.meta.url), 'utf8'));
+    const menus = Object.values(manifest.contributes.menus).flat().filter(item => /setXacroArgs|exportUrdf/.test(item.command));
+    for (const item of menus) assert.match(item.when, /resourcePath in robotPreviewUrdf\.xacroUrdfs/, item.command);
+});
+
 test('the floating panels open where the last previews left them, each panel from the page that moved it', async () => {
     const env = await start();
     // A second window: another extension host on the same global state.
