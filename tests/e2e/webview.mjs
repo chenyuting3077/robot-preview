@@ -904,6 +904,16 @@ try {
         const shown = await bare.waitFor(`document.getElementById('load-error')?.checkVisibility() && /WebGL/.test(document.getElementById('load-error').textContent)`, 10000);
         const text = await bare.ev(`return document.getElementById('load-error')?.textContent`);
         check('without WebGL the view says so, with no uncaught error', shown && bare.exceptions.length === 0, JSON.stringify({ text, exceptions: bare.exceptions }));
+        // A triple click selects the message, so it can be copied into a bug report.
+        const at = await bare.ev(`const r = document.getElementById('load-error').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 12 }`);
+        for (const type of ['mousePressed', 'mouseReleased']) await bare.send('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 3 });
+        const selected = await bare.ev(`return getSelection().toString()`);
+        check('the WebGL message can be selected and copied', /WebGL/.test(selected), JSON.stringify(selected.slice(0, 40)));
+        // Any throw before the view is up shows too: here the very first line of the page's script.
+        await bare.send('Page.addScriptToEvaluateOnNewDocument', { source: "Object.defineProperty(window, 'acquireVsCodeApi', { get: () => () => { throw new Error('startup boom'); }, set() {} });" });
+        await bare.send('Page.reload');
+        const broke = await bare.waitFor(`document.getElementById('load-error')?.checkVisibility() && /startup boom/.test(document.getElementById('load-error').textContent)`, 10000);
+        check('a throw while the page starts shows in the view', broke);
     } finally {
         await bare.close();
         bareServer.close();

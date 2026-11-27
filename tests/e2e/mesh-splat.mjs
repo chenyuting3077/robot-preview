@@ -206,9 +206,25 @@ const origin = `http://127.0.0.1:${server.address().port}`;
         text = (await call('Runtime.evaluate', { expression: "document.getElementById('load-error')?.checkVisibility() && !document.getElementById('loading-indicator').checkVisibility() ? document.getElementById('load-error').textContent : ''", returnByValue: true })).result.value;
     }
     const unlabelled = (await call('Runtime.evaluate', { expression: "[...document.querySelectorAll('[data-t]')].filter(e => !(e.querySelector('span') ?? e).textContent.trim()).length", returnByValue: true })).result.value;
-    const ok = /WebGL/.test(text) && !thrown.length && unlabelled === 0;
+    const evaluateBare = async expression => (await call('Runtime.evaluate', { expression, returnByValue: true })).result.value;
+    // A triple click selects the message, so it can be copied into a bug report.
+    const at = await evaluateBare("(() => { const r = document.getElementById('load-error').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 12 }; })()");
+    for (const type of ['mousePressed', 'mouseReleased']) await call('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 3 });
+    const selected = await evaluateBare('getSelection().toString()');
+    const ok = /WebGL/.test(text) && !thrown.length && unlabelled === 0 && /WebGL/.test(selected);
     results.push(ok);
-    console.log(`${ok ? 'PASS' : 'FAIL'} without WebGL the view says so ${Math.round((Date.now() - started) / 100) / 10}s ${JSON.stringify({ text, thrown, unlabelled })}`);
+    console.log(`${ok ? 'PASS' : 'FAIL'} without WebGL the view says so ${Math.round((Date.now() - started) / 100) / 10}s ${JSON.stringify({ text, thrown, unlabelled, selected: selected.slice(0, 40) })}`);
+    // Any throw before the view is up shows too: here the file list the page parses first.
+    pages.set('/page/broken', pages.get('/page/nogl').replace(/data-files="[^"]*"/, 'data-files="{"'));
+    await call('Page.navigate', { url: `${origin}/page/broken` });
+    let broken = null;
+    for (let i = 0; i < 50 && !broken?.error; i++) {
+        await sleep(200);
+        broken = await evaluateBare("({ error: document.getElementById('load-error')?.checkVisibility() ? document.getElementById('load-error').textContent : '', loading: document.getElementById('loading-indicator')?.checkVisibility() })");
+    }
+    const brokenOk = /JSON/.test(broken?.error) && !broken.loading;
+    results.push(brokenOk);
+    console.log(`${brokenOk ? 'PASS' : 'FAIL'} a throw while the page starts shows in the view ${JSON.stringify(broken)}`);
     bare.kill();
     await new Promise(resolve => bare.on('exit', resolve));
     await sleep(500);
