@@ -12,6 +12,6 @@
   <check name="logic" value="True False True False True False False True True True"/>
   <check name="strings" value="arm_link arm_joint armarm a m"/>
   <check name="tuples" value="arm_7 0.25 7% True True"/>
-  <check name="lists" value="4 [2, 3] [0, 1, 2]"/>
+  <check name="lists" value="4 [2, 3] [0, 1, 2] 8 3 True"/>
   <check name="conditional" value="big 0.5"/>
 </robot>

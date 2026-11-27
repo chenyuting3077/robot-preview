@@ -13,6 +13,6 @@
   <check name="logic" value="${n > 3 and w &lt; 1} ${not flag} ${n == 7 or False} ${n != 7} ${1 &lt;= n &lt;= 10} ${0 &lt;= n &lt;= 5} ${0 &lt; n != 7} ${name == 'arm'} ${'r' in name} ${3 in items}"/>
   <check name="strings" value="${name + '_link'} ${'%s_joint' % name} ${name * 2} ${name[0]} ${name[-1]}"/>
   <check name="tuples" value="${'%s_%d' % (name, n)} ${'%.2f' % w} ${'%d%%' % n} ${name in ('arm', 'leg')} ${n not in (1, 2)}"/>
-  <check name="lists" value="${items[0] + items[-1]} ${items[1:]} ${list(python.range(3))}"/>
+  <check name="lists" value="${items[0] + items[-1]} ${items[1:]} ${list(python.range(3))} ${[name, n][1] + 1} ${len([name, n] + [n])} ${n in [w, n]}"/>
   <check name="conditional" value="${'big' if n > 5 else 'small'} ${w * (2 if flag else 1)}"/>
 </robot>

@@ -119,7 +119,7 @@ function rewriteExpression(text) {
             // A tuple, as in '%s_%s' % (a, b), is read as a list; a call's parentheses stay.
             const call = /[)\]]\s*$/.test(out) || !['', 'in', 'and', 'or', 'not', 'if', 'else'].includes(/(\w*)\s*$/.exec(out)[1]);
             const tuple = !call && topLevelKeyword(inner, ',') !== -1;
-            out += tuple ? `[${inner}]` : `(${inner})`;
+            out += tuple ? `[ ${inner} ]` : `(${inner})`;
             i = end + 1;
         } else if (text.startsWith('**', i)) {
             // expr-eval's ^ binds like Python's ** (-2**2 is -4); spaced, since xacro-parser's tokenizer does not split on ^.
@@ -183,6 +183,11 @@ function rewriteExpression(text) {
             }
             out += value;
             i = j;
+        } else if (text[i] === '[' && !/[)\]]\s*$/.test(out)) {
+            // A list literal, spaced: xacro-parser's tokenizer does not split on brackets, so [name would not be looked up.
+            const end = closingBracket(text, i);
+            out += ` [ ${rewriteExpression(text.slice(i + 1, end))} ] `;
+            i = end + 1;
         } else {
             out += text[i++];
         }
@@ -277,16 +282,20 @@ class PyList extends Array {
 }
 
 const toPyList = value => (Array.isArray(value) && !(value instanceof PyList) ? PyList.from(value, toPyList) : value);
-const pyStr = value => (typeof value === 'boolean' ? (value ? 'True' : 'False') : value == null ? 'None' : String(value));
+function pyStr(value) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) throw new Error('unsupported Python str() of a dict');
+    return typeof value === 'boolean' ? (value ? 'True' : 'False') : value == null ? 'None' : String(value);
+}
 const pyRepr = value => (typeof value === 'string' ? `'${value}'` : pyStr(value));
 const pyTruthy = value => (value && typeof value === 'object' ? Object.keys(value).length > 0 : Boolean(value));
 const iterable = args => (args.length === 1 && Array.isArray(args[0]) ? args[0] : args);
 
 function pyInt(value, base) {
+    // parseInt reads '12abc' as 12 where Python raises.
+    if (base !== undefined) throw new Error('unsupported Python int() with a base');
     if (typeof value !== 'string') return Math.trunc(Number(value));
-    const number = base ? parseInt(value, base) : Number(value.trim());
-    if (value.trim() === '' || !Number.isInteger(number)) throw new Error(`invalid literal for int(): '${value}'`);
-    return number;
+    if (!/^\s*[-+]?\d+(_\d+)*\s*$/.test(value)) throw new Error(`invalid literal for int(): '${value}'`);
+    return Number(value.replace(/_/g, ''));
 }
 
 function pyFloat(value) {
@@ -318,6 +327,7 @@ function pyFormat(format, args) {
         if (kind === '%') return '%';
         const value = values.shift();
         if (kind === 's') return pyStr(value);
+        if (typeof value === 'boolean' || value === '' || isNaN(value)) throw new Error(`unsupported Python %${kind} of ${typeof value}`);
         if (kind === 'f') return Number(value).toFixed(precision === undefined ? 6 : Number(precision));
         return String(Math.trunc(Number(value)));
     });
@@ -330,11 +340,17 @@ const PY_FUNCTIONS = {
     str: pyStr,
     bool: pyTruthy,
     round: pyRound,
-    min: (...args) => Math.min(...iterable(args)),
-    max: (...args) => Math.max(...iterable(args)),
-    len: value => (typeof value === 'string' || Array.isArray(value) ? value.length : Object.keys(value).length),
+    min: (...args) => iterable(args).reduce((a, b) => (b < a ? b : a)),
+    max: (...args) => iterable(args).reduce((a, b) => (b > a ? b : a)),
+    len: value => {
+        if (typeof value !== 'string' && (value === null || typeof value !== 'object')) throw new Error(`len() of a number: ${value}`);
+        return typeof value === 'string' || Array.isArray(value) ? value.length : Object.keys(value).length;
+    },
     abs: Math.abs,
-    sum: (values, start = 0) => values.reduce((total, value) => total + value, start),
+    sum: (values, start = 0) => values.reduce((total, value) => {
+        if (typeof value !== 'number') throw new Error('unsupported Python sum() of non-numbers');
+        return total + value;
+    }, start),
     sorted: values => PyList.from(values).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
     list: value => PyList.from(value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : value),
     range: pyRange,
