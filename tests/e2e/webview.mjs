@@ -30,7 +30,7 @@ async function captureMessages() {
     const onDemand = {};
     await readOnDemand(env, env.lastOf('load'), onDemand);
     const matrix = await capturePathMatrix(onDemand);
-    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')), matrix: encode(matrix), ur: encode(urFixture()), onDemand };
+    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')), matrix: encode(matrix), ur: encode(urFixture()), xacro: encode(xacroFixture()), onDemand };
 }
 
 const encode = message => ({ ...message, files: message.files.map(file => (file.data ? { path: file.path, data: Buffer.from(file.data).toString('base64') } : file)) });
@@ -54,6 +54,17 @@ function urFixture() {
         .filter(rel => fs.statSync(path.join(dir, rel)).isFile())
         .map(rel => ({ path: `/ur_description/${rel.split(path.sep).join('/')}`, data: fs.readFileSync(path.join(dir, rel)) }));
     return { type: 'load', files, primary: '/ur_description/urdf/ur.urdf.xacro', xacroArgs: { ur_type: 'ur5e' } };
+}
+
+// Chrome's DOMParser, not linkedom, reads the rewritten Python (#27).
+function xacroFixture() {
+    const files = ['turtlebot3_description', 'pmb2_description', 'pal_urdf_utils', 'kortex_description', 'xarm_description', 'expressions'].flatMap(name => {
+        const dir = fileURLToPath(new URL(`../fixtures/xacro/${name}/`, import.meta.url));
+        return fs.readdirSync(dir, { recursive: true })
+            .filter(rel => fs.statSync(path.join(dir, rel)).isFile())
+            .map(rel => ({ path: `/${name}/${rel.split(path.sep).join('/')}`, data: fs.readFileSync(path.join(dir, rel)) }));
+    });
+    return { type: 'load', files, primary: '/turtlebot3_description/urdf/turtlebot3_burger.urdf' };
 }
 
 async function capturePathMatrix(onDemand) {
@@ -639,6 +650,27 @@ try {
     await ev(`window.__out.length = 0; await window.__send('ur', m => { const f = m.files.find(f => f.path.endsWith('ur5e/joint_limits.yaml')); f.data = btoa('joint_limits:\\n  a: [1, 2\\n'); })`);
     const yamlDiagnostics = await finalDiagnostics(15000);
     check('a yaml syntax error points at the yaml file', yamlDiagnostics?.loadErrorLocation?.key === '/ur_description/config/ur5e/joint_limits.yaml' && yamlDiagnostics.loadErrorLocation.line >= 1, JSON.stringify(yamlDiagnostics?.loadErrorLocation));
+
+    await ev(`await window.__send('xacro')`);
+    check('a .urdf containing xacro is expanded', await waitFor(`window.app.currentModel?.links?.has('base_footprint') && window.app.currentModel.links.has('caster_back_link')`, 15000));
+    await ev(`await window.__send('xacro', m => { m.primary = '/pmb2_description/robots/pmb2.urdf.xacro'; })`);
+    check('PMB2 with not in loads', await waitFor(`window.app.currentModel?.links?.has('base_footprint') && window.app.currentModel.joints.size > 5`, 15000));
+    await ev(`await window.__send('xacro', m => { m.primary = '/xarm_description/urdf/xarm_device.urdf.xacro'; })`);
+    check('xArm with len() and >= loads', await waitFor(`window.app.currentModel?.links?.has('link_eef')`, 15000));
+    await ev(`await window.__send('xacro', m => { m.primary = '/kortex_description/robots/gen3.xacro'; m.xacroArgs = { dof: '7' }; })`);
+    check('Kinova Gen3 with dict() defaults loads', await waitFor(`window.app.currentModel?.links?.has('end_effector_link')`, 15000));
+    for (const [name, expected] of [['vendor', ['True False', 'True 1300', 'b2 3', 'True', '0.5']], ['python', ['True False True False True False False True True True', 'arm_link arm_joint armarm a m', 'arm_7 0.25 7% True True', '4 [2, 3] [0, 1, 2]']]]) {
+        await ev(`window.app.currentModel = null; await window.__send('xacro', m => { m.primary = '/expressions/${name}.urdf.xacro'; })`);
+        await waitFor(`window.app.currentModel?.links?.has('checks')`, 15000);
+        const values = await ev(`return Array.from(window.app.currentModel.expandedUrdf.matchAll(/<check name="\\w+" value="([^"]*)"/g), m => m[1])`);
+        check(`expressions/${name} evaluates as xacro in Chrome`, expected.every(value => values?.includes(value)), JSON.stringify(values));
+    }
+    await ev(`window.__out.length = 0`);
+    await finalDiagnostics(15000);
+    await ev(`window.__out.length = 0; await window.__send('xacro', m => { const f = m.files.find(f => f.path === m.primary); f.data = btoa(atob(f.data).replace('<link name="\${namespace}base_footprint"/>', '<link name="\${[x for x in [1]] if 1 &lt;= 2 else 0}"/>')); })`);
+    const xacroDiagnostics = await finalDiagnostics(15000);
+    check('an unsupported expression points at its line, as written', xacroDiagnostics?.loadErrorLocation?.key === '/turtlebot3_description/urdf/turtlebot3_burger.urdf' && xacroDiagnostics.loadErrorLocation.line === 49
+        && xacroDiagnostics.loadError.includes('${[x for x in [1]] if 1 <= 2 else 0}') && /comprehension/.test(xacroDiagnostics.loadError), JSON.stringify(xacroDiagnostics));
 
     await ev(`document.body.classList.add('vscode-light')`);
     check('theme follows VS Code', await waitFor(`document.documentElement.getAttribute('data-theme') === 'light'`, 3000));

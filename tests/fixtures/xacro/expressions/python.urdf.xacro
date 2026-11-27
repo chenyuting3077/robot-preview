@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <!-- Python operators, builtins and math that description packages use -->
 <robot name="python" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <link name="checks"/>
   <xacro:property name="n" value="7"/>
   <xacro:property name="w" value="0.25"/>
   <xacro:property name="name" value="arm"/>

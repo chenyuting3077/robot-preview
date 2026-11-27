@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <!-- Python from vendor description packages, one construct per check -->
 <robot name="vendor" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <link name="checks"/>
   <xacro:property name="laser_model" value="sick-571"/>
   <xacro:property name="robot_sn" value="XF1300ABCDEFGHIJ"/>
   <xacro:property name="robot_sn_len" value="${len(robot_sn)}"/>

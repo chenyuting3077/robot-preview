@@ -5,6 +5,7 @@
 <!-- =================================================================================== -->
 <!-- Python operators, builtins and math that description packages use -->
 <robot name="python">
+  <link name="checks"/>
   <check name="arithmetic" value="3 -4 1 2 3.5 1.0"/>
   <check name="builtins" value="0.25 3 7 3 3 6"/>
   <check name="math" value="3.141592653589793 4.0 1.4142135623730951 1.0 3.141592653589793 1.5707963267948966 0.7853981633974483 2.0 2 1 0.7853981633974483 180.0 1.0 5.0"/>
