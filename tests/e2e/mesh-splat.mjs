@@ -205,9 +205,10 @@ const origin = `http://127.0.0.1:${server.address().port}`;
         await sleep(200);
         text = (await call('Runtime.evaluate', { expression: "document.getElementById('load-error')?.checkVisibility() && !document.getElementById('loading-indicator').checkVisibility() ? document.getElementById('load-error').textContent : ''", returnByValue: true })).result.value;
     }
-    const ok = /WebGL/.test(text) && !thrown.length;
+    const unlabelled = (await call('Runtime.evaluate', { expression: "[...document.querySelectorAll('[data-t]')].filter(e => !(e.querySelector('span') ?? e).textContent.trim()).length", returnByValue: true })).result.value;
+    const ok = /WebGL/.test(text) && !thrown.length && unlabelled === 0;
     results.push(ok);
-    console.log(`${ok ? 'PASS' : 'FAIL'} without WebGL the view says so ${Math.round((Date.now() - started) / 100) / 10}s ${JSON.stringify({ text, thrown })}`);
+    console.log(`${ok ? 'PASS' : 'FAIL'} without WebGL the view says so ${Math.round((Date.now() - started) / 100) / 10}s ${JSON.stringify({ text, thrown, unlabelled })}`);
     bare.kill();
     await new Promise(resolve => bare.on('exit', resolve));
     await sleep(500);
