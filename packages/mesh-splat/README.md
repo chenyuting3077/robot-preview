@@ -14,7 +14,7 @@ Click the file. Text formats that people also edit (`.obj` `.gltf` `.dae` `.wrl`
 - **Fast STEP**: a 39 MB assembly opens in about 3 s and a 161 MB one in about 16 s; unchanged files reopen from cache in about 1 s.
 - **3DGS and 2DGS**: 2D Gaussian splatting PLY renders as flat discs, and 881k splats show in about 2 s at 60 fps.
 - **Large meshes**: a 181 MB, 4.5M-face binary PLY opens in about 2 s.
-- **Robotics data as it is**: ROS occupancy maps at their origin and resolution, KITTI / nuScenes scans, clouds at UTM coordinates without jitter.
+- **Robotics data as it is**: ROS occupancy maps at their origin and resolution, KITTI / nuScenes scans, LAS tiles and clouds at UTM coordinates without jitter.
 
 Times are measured in VS Code 1.144; see the [design notes](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md).
 
@@ -26,14 +26,14 @@ Times are measured in VS Code 1.144; see the [design notes](https://github.com/c
 
 - Meshes: `.stl` `.ply` `.off` `.glb` (including Draco and meshopt compression) `.3mf` `.3ds`, and text formats `.obj` (+ `.mtl`) `.gltf` `.dae` `.wrl` from the editor title's *Open 3D Preview* button (*Reopen Editor With… → Configure default editor* makes the view their default)
 - CAD: `.stp` `.step` with part and face colors, `.igs` `.iges`
-- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.pts`, and `.xyz` `.asc` and KITTI / nuScenes LiDAR `.bin` from the editor title's *Open as Point Cloud* button
+- Point clouds: `.ply` `.pcd` (binary, ASCII, `binary_compressed`) `.las` (LAS 1.2–1.4, point formats 0–10) `.pts`, and `.xyz` `.asc` and KITTI / nuScenes LiDAR `.bin` from the editor title's *Open as Point Cloud* button
 - Gaussian splats: 3DGS / 2DGS `.ply`, `.splat` `.ksplat` `.spz` `.sog`
 - [ROS occupancy grid maps](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#occupancy-grid-maps): `.pgm`, and `.yaml` `.yml` through *Reopen Editor With…*
 
 ## Viewing
 
 - Solid, wireframe and point display, point size, up-axis selection, and vertex / face / splat counts.
-- Color point clouds by their original color, height, intensity or any other PLY property (confidence, curvature, ...), with a legend.
+- Color point clouds by their original color, height, intensity, LAS classification, return number, GPS time and point source ID, or any other PLY property (confidence, curvature, ...), with a legend.
 - Grid, axes and bounding box from the Display menu, kept as last left for point clouds, maps and other models.
 - [Several files in one view](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#several-files-in-one-view), such as a scan over its map; drag files onto the *Point Cloud View* list in the Explorer to add them.
 - [Compare files](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#comparing-files) from the toolbar's *Compare* menu: color a cloud or mesh by its distance to another (C2C / C2M) with a tolerance and statistics, or show files in up to 9 panes with one camera.

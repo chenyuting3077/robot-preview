@@ -39,6 +39,13 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 - Time with recentering, 10M UTM points: binary PLY 153–166 ms against 126–130 ms without (medians of 7, three orders), ASCII PLY 3.47–3.60 s against 3.30–3.48 s, xyz 2.75–2.79 s against 2.80–2.91 s (3 runs each; Node 22, Apple M2).
 - The colour legend gives both ends the decimals their difference needs, up to what float32 holds at their size. Extreme ranges may still round or show equal ends: a range only one or two float32 steps wide, a flat range of 10 million or more (digits past the 7th rounded), and values around 1e20, whose labels no longer fit side by side.
 
+## LAS / LAZ
+
+- LAS has its own streaming reader with PCD's contract (pieces from the extension, even 10M sample, *Load detail in view*) and no dependency. Records are read at the header's record length from its point data offset, so VLRs, extra bytes and the wave packets of formats 4, 5, 9 and 10 are skipped.
+- X and Y 10 km or more out lose the middle of the header's bounds, rounded to the scale, in float64 before float32; Z keeps its value. The header gives the bounds before any point, so the median of the first points (other clouds) is not needed; a header with zero or crossed bounds takes the first point instead. A 1 km UTM tile at mm scale (200k random points): 0.015 mm worst error against 125 mm straight to float32, where 1000 neighbouring mm steps collapse to 5 values (Node 22). Nearer axes keep their coordinates as other clouds do, so a local scan shows no offset in Info.
+- GPS time is shown relative to the file's earliest time (absolute GPS seconds, about 1e9, lose whole seconds in float32). The earliest time and whether RGB holds 8-bit values in its 16-bit channels (every channel ≤ 255) are taken over every record, not the first piece: piece sizes differ between VS Code and fetch, and a detail read must scale as its sample did. Fields with one value in the whole file are left out of the menu.
+- The coordinate system shown is the WKT VLR's name, else the GeoTIFF citation and EPSG code; a 1.4 file's EVLRs, after the points, are not read. Classification uses turbo like other fields, not ASPRS class colors.
+
 ## Several files in one view
 
 - Each file is a Stage row that shows, hides, colors (one solid color per file among the modes) or removes it.
