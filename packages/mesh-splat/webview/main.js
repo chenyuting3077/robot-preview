@@ -67,6 +67,11 @@ const files = listed.map((file, index) => {
 const opened = files[0];
 const fileOf = object => (object ? object.userData.file ?? fileOf(object.parent) : null);
 
+// Before the renderer, so a view without WebGL keeps a labelled toolbar.
+document.querySelectorAll('[data-t]').forEach(element => {
+    (element.querySelector('span') ?? element).textContent = t(element.dataset.t);
+});
+document.querySelectorAll('[data-title]').forEach(element => { element.title = element.ariaLabel = t(element.dataset.title); });
 // Until the files are up, a throw shows where a file's error would instead of leaving a blank page.
 const failStartup = error => {
     $('loading-indicator').hidden = true;
@@ -1526,10 +1531,6 @@ async function loadFile(file) {
 }
 
 async function main() {
-    document.querySelectorAll('[data-t]').forEach(element => {
-        (element.querySelector('span') ?? element).textContent = t(element.dataset.t);
-    });
-    document.querySelectorAll('[data-title]').forEach(element => { element.title = element.ariaLabel = t(element.dataset.title); });
     setupAdding();
     // Each file loads on its own: one that fails shows its error on its row and the others stay.
     await Promise.all(files.map(loadFile));
