@@ -74,7 +74,7 @@ test('point size and colouring carry to every file, the up axis only to the file
     for (const file of [first, second]) fs.writeFileSync(file, 'ply\n');
     const settingsOf = html => JSON.parse(html.match(/data-settings="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
     const { env, panel } = await openMeshSplat(root, first);
-    assert.deepEqual(settingsOf(panel.webview.html), {});
+    assert.deepEqual(settingsOf(panel.webview.html), { background: 'theme' });
     await panel.listener({ type: 'settings', pointSize: 4 });
     await panel.listener({ type: 'settings', colorMode: 'height' });
     await panel.listener({ type: 'settings', up: '+Y' });
@@ -84,6 +84,6 @@ test('point size and colouring carry to every file, the up axis only to the file
         await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, next);
         return settingsOf(next.webview.html);
     };
-    assert.deepEqual(await open(second), { pointSize: 4, colorMode: 'height' });
-    assert.deepEqual(await open(first), { pointSize: 4, colorMode: 'height', up: '+Y' });
+    assert.deepEqual(await open(second), { background: 'theme', pointSize: 4, colorMode: 'height' });
+    assert.deepEqual(await open(first), { background: 'theme', pointSize: 4, colorMode: 'height', up: '+Y' });
 });

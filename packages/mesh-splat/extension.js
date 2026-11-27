@@ -56,6 +56,20 @@ function mergeSettings(saved = {}, message, file) {
     }
     return next;
 }
+// Only values the view's controls offer; a point size left unset keeps the size last chosen in any view.
+function configured(section, saved, file) {
+    const config = vscode.workspace.getConfiguration(section);
+    const background = config.get('background');
+    const pointSize = config.get('pointSize');
+    const upAxis = config.get('upAxis');
+    const inspected = config.inspect('pointSize');
+    const set = [inspected?.globalValue, inspected?.workspaceValue, inspected?.workspaceFolderValue].some(value => value !== undefined);
+    return {
+        background: /^#[0-9a-f]{6}$/i.test(background) ? background : 'theme',
+        pointSize: set && [1, 2, 4].includes(pointSize) ? pointSize : undefined,
+        up: saved.upByFile?.[file] ?? (UP_AXES.includes(upAxis) ? upAxis : undefined)
+    };
+}
 // retainContextWhenHidden keeps a hidden tab's page, so switching back is instant, but a GB point cloud then holds
 // its memory (+1.2–1.5 GB for the 1.2 GB Livox map) until the tab closes. A view whose files add up to RELEASE_BYTES
 // drops its page once hidden for RELEASE_AFTER_MS and loads again, the camera kept, when shown: reopening costs
@@ -106,7 +120,7 @@ async function renderHtml(template, webview, distUri, files, cache, turn, keep, 
         cached: cache ? await vscode.workspace.fs.stat(cache.uri).then(() => webview.asWebviewUri(cache.uri), () => '') : '',
         helpers: JSON.stringify(helpers),
         pick: String(pick),
-        settings: JSON.stringify({ pointSize: settings.pointSize, colorMode: settings.colorMode, up: settings.upByFile?.[files[0].uri.fsPath] })
+        settings: JSON.stringify(settings)
     };
     return template
         .replace(/<html lang="[^"]*">/, `<html lang="${vscode.env.language}">`)
@@ -139,6 +153,8 @@ function activate(context) {
     }
     const build = `${manifest.version}-${tessellators.digest('hex').slice(0, 8)}`;
     const { customEditors } = manifest.contributes;
+    // robotPreviewMeshSplat or robotPreviewUsd, as the view types.
+    const section = customEditors[0].viewType.split('.')[0];
     // Files can be added from the types this extension opens, less STEP and IGES, which start +Y and keep
     // their own cache path; a STEP or IGES view takes no added files for the same reason.
     const extensions = [...new Set(customEditors.flatMap(editor => editor.selector)
@@ -189,6 +205,13 @@ function activate(context) {
             let shownBytes = 0;
             let loadedRender = null;
             let releaseTimer = null;
+            // A point size or up axis chosen in this view stays over the settings on its next page (a file added).
+            const chosen = {};
+            const settings = () => {
+                const saved = context.globalState.get(SETTINGS_KEY) ?? {};
+                const own = configured(section, saved, document.uri.fsPath);
+                return { background: own.background, pointSize: chosen.pointSize ?? own.pointSize ?? saved.pointSize, colorMode: saved.colorMode, up: chosen.up ?? own.up };
+            };
             const render = async (keep = KEEP_NOTHING) => {
                 const turn = ++renders;
                 const seen = deletes;
@@ -204,7 +227,7 @@ function activate(context) {
                 }
                 const cache = stepCache(cacheDir, document.uri, stats[0], build);
                 const html = await renderHtml(template, panel.webview, distUri, files.map((file, i) => ({ ...file, stat: stats[i], takesFiles })), cache, turn, keeps,
-                    context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true, context.globalState.get(SETTINGS_KEY) ?? {});
+                    context.globalState.get(HELPERS_KEY) ?? {}, context.globalState.get(PICK_KEY) ?? true, settings());
                 if (deletes !== seen && !(await exists(document.uri))) {
                     if (turn === renders) openedGone = true;
                     return;
@@ -321,7 +344,11 @@ function activate(context) {
                 screenshot: message => saveScreenshot(document.uri, message.data),
                 rerender: () => render(KEEP_VIEW),
                 pick: message => context.globalState.update(PICK_KEY, message.on !== false),
-                settings: message => context.globalState.update(SETTINGS_KEY, mergeSettings(context.globalState.get(SETTINGS_KEY), message, document.uri.fsPath)),
+                settings: message => {
+                    if ([1, 2, 4].includes(message.pointSize)) chosen.pointSize = message.pointSize;
+                    if (UP_AXES.includes(message.up)) chosen.up = message.up;
+                    return context.globalState.update(SETTINGS_KEY, mergeSettings(context.globalState.get(SETTINGS_KEY), message, document.uri.fsPath));
+                },
                 helpers: message => context.globalState.update(HELPERS_KEY, { ...context.globalState.get(HELPERS_KEY), ...validHelpers(message.helpers) }),
                 addFiles: async () => takesFiles && addUris(await vscode.window.showOpenDialog({
                     canSelectMany: true,

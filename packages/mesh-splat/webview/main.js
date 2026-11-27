@@ -216,11 +216,17 @@ function distanceRows(file) {
     ];
 }
 
+// A color from the background setting, kept through theme changes; null follows the theme.
+let fixedBackground = null;
 function syncTheme() {
     const theme = /\bvscode-(high-contrast-)?light\b/.test(document.body.className) ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);
-    scene.background = new THREE.Color(theme === 'light' ? 0xffffff : 0x505050);
+    scene.background = new THREE.Color(fixedBackground ?? (theme === 'light' ? 0xffffff : 0x505050));
     wake();
+}
+function setBackground(value) {
+    fixedBackground = /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+    syncTheme();
 }
 syncTheme();
 new MutationObserver(syncTheme).observe(document.body, { attributes: true, attributeFilter: ['class'] });
@@ -1024,7 +1030,7 @@ let isMap = false;
 // Point clouds, maps and other models each open with the helpers last left on for their kind, or these the first time.
 const DEFAULT_HELPERS = { cloud: ['grid', 'axes'], map: ['axes'], model: ['grid'] };
 const helperKind = () => (isMap ? 'map' : isCloud ? 'cloud' : 'model');
-// Point size and Original / Height colouring as last left anywhere, and this file's up axis as last chosen for it.
+// Background, point size and up axis as the extension resolves them; Original / Height colouring as last left anywhere.
 const savedSettings = (() => {
     try {
         return JSON.parse(page.settings || '{}');
@@ -1033,6 +1039,7 @@ const savedSettings = (() => {
     }
 })();
 const saveSettings = settings => vscodeApi?.postMessage({ type: 'settings', ...settings });
+setBackground(savedSettings.background);
 const savedHelpers = (() => {
     try {
         return JSON.parse(page.helpers || '{}');

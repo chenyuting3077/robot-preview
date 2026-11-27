@@ -131,6 +131,47 @@
         "priority": "option"
       }
     ],
+    "configuration": {
+      "title": "Robot Preview: Point Cloud & Splat Viewer",
+      "properties": {
+        "robotPreviewMeshSplat.background": {
+          "type": "string",
+          "default": "theme",
+          "pattern": "^(theme|#[0-9a-fA-F]{6})$",
+          "patternErrorMessage": "Use theme or a color as #rrggbb, such as #ffffff.",
+          "markdownDescription": "Background of the view and its screenshots: `theme` follows the color theme (grey when dark, white when light), or a color as `#rrggbb`, such as `#ffffff` for figures."
+        },
+        "robotPreviewMeshSplat.pointSize": {
+          "type": "integer",
+          "enum": [
+            1,
+            2,
+            4
+          ],
+          "enumDescriptions": [
+            "Small points",
+            "Medium points",
+            "Large points"
+          ],
+          "default": 2,
+          "markdownDescription": "Point size a view opens with, as the Small / Medium / Large buttons. When not set, a view opens with the size last chosen in any view."
+        },
+        "robotPreviewMeshSplat.upAxis": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "+Z",
+            "-Z",
+            "+Y",
+            "-Y",
+            "+X",
+            "-X"
+          ],
+          "default": "auto",
+          "markdownDescription": "Up axis a file opens with. `auto` follows the format (+Y for glTF, STEP, IGES and VRML, +Z for the rest). An up axis chosen in the view for a file is kept for that file and wins over this setting."
+        }
+      }
+    },
     "commands": [
       {
         "command": "robotPreviewMeshSplat.openAsPoints",

@@ -1443,6 +1443,41 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(emptyDir, { recursive: true, force: true });
 }
 
+// #25: a background color set in the settings fills the view and its screenshot, and a theme change leaves it.
+{
+    const bgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-background-'));
+    const cube = path.join(bgDir, 'cube.stl');
+    fs.copyFileSync(path.join(dir, 'cube.stl'), cube);
+    const env = loadExtension({ workspace: bgDir, extension, globalStorage });
+    const values = { 'robotPreviewMeshSplat.background': '#204080' };
+    env.vscode.workspace.getConfiguration = section => ({ get: key => values[`${section}.${key}`], inspect: () => ({}) });
+    env.activate();
+    const panel = activePanel = fakePanel();
+    await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(cube) }, panel);
+    pages.set('/page/background', panel.webview.html.replaceAll('vscode-webview:', "'self'"));
+    await evaluate('sessionStorage.clear()');
+    await send('Page.navigate', { url: `${origin}/page/background` });
+    for (let i = 0; i < 150 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+    // The grid could reach a corner; the cube is framed in the middle.
+    await evaluate(`document.querySelector('[data-helper="grid"].active')?.click()`);
+    const corner = png => evaluate(`(async () => {
+        const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
+        const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+        return [...g.getImageData(c.width - 4, c.height - 4, 1, 1).data.slice(0, 3)];
+    })()`);
+    const viewCorner = async () => { await sleep(600); return corner((await send('Page.captureScreenshot', { format: 'png' })).data); };
+    const dark = await viewCorner();
+    await evaluate("document.body.classList.add('vscode-light')");
+    const light = await viewCorner();
+    const saved = await corner(await evaluate("(() => { window.__posted = null; document.getElementById('screenshot-btn').click(); return window.__posted?.data ?? ''; })()"));
+    await evaluate("document.body.classList.remove('vscode-light')");
+    const near = rgb => rgb.every((v, i) => Math.abs(v - [0x20, 0x40, 0x80][i]) <= 3);
+    const ok = near(dark) && near(light) && near(saved);
+    results.push(ok);
+    console.log(`${ok ? 'PASS' : 'FAIL'} background #204080 from the settings: view ${dark}, light theme ${light}, screenshot ${saved}`);
+    fs.rmSync(bgDir, { recursive: true, force: true });
+}
+
 chrome.kill();
 await new Promise(resolve => chrome.on('exit', resolve));
 server.close();
