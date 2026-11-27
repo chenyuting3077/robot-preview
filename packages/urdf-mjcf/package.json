@@ -122,8 +122,8 @@
           "type": "string",
           "default": "theme",
           "pattern": "^(theme|#[0-9a-fA-F]{6})$",
-          "patternErrorMessage": "Use theme or a color such as #ffffff.",
-          "markdownDescription": "Background of the 3D view and its screenshots: `theme` follows the VS Code theme, or a color such as `#ffffff`."
+          "patternErrorMessage": "Use theme or a color as #rrggbb, such as #ffffff.",
+          "markdownDescription": "Background of the view and its screenshots: `theme` follows the color theme (grey when dark, white when light), or a color as `#rrggbb`, such as `#ffffff` for figures."
         },
         "robotPreviewUrdf.packages": {
           "type": "object",
