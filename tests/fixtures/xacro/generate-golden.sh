@@ -5,6 +5,10 @@ cd "$(dirname "$0")"
 if ! docker info > /dev/null 2>&1; then
   ROS_OUT=ur5e.urdf node ../../../scripts/xacro-vs-ros.mjs ur_description urdf/ur.urdf.xacro ur_type:=ur5e name:=ur5e || true
   ROS_OUT=fr3.urdf node ../../../scripts/xacro-vs-ros.mjs franka_description robots/fr3/fr3.urdf.xacro || true
+  ROS_OUT=turtlebot3_burger.urdf node ../../../scripts/xacro-vs-ros.mjs turtlebot3_description urdf/turtlebot3_burger.urdf || true
+  ROS_OUT=gen3.urdf node ../../../scripts/xacro-vs-ros.mjs kortex_description robots/gen3.xacro dof:=7 || true
+  ROS_OUT=xarm_device.urdf node ../../../scripts/xacro-vs-ros.mjs xarm_description urdf/xarm_device.urdf.xacro || true
+  ROS_OUT=pmb2.urdf node ../../../scripts/xacro-vs-ros.mjs pmb2_description robots/pmb2.urdf.xacro || true
   for f in expressions/*.urdf.xacro; do ROS_OUT="${f%.xacro}" node ../../../scripts/xacro-vs-ros.mjs expressions "${f#expressions/}" || true; done
   exit
 fi
