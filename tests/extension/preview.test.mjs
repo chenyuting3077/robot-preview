@@ -42,7 +42,20 @@ test('opens beside the editor and sends every referenced package', async () => {
     assert.equal(load.sourcePath, primary);
     assert.match(panel.webview.html, /Content-Security-Policy/);
     assert.match(panel.webview.html, /<html lang="zh-tw">/);
-    assert.ok(load.files.every(file => file.data instanceof Uint8Array && file.data.constructor === Uint8Array));
+    const sent = Object.fromEntries(load.files.map(file => [file.path, file]));
+    for (const mesh of ['/robot_b/meshes/arm.stl', '/robot_b/meshes/tip.gltf']) assert.ok(!sent[mesh].data && sent[mesh].version, mesh);
+    for (const eager of ['/robot_a/urdf/robot_a.urdf.xacro', '/robot_b/meshes/tip.bin']) assert.ok(sent[eager].data, eager);
+    assert.ok(load.files.filter(file => file.data).every(file => file.data.constructor === Uint8Array));
+});
+
+test('a mesh is sent when the webview reads it, and a path outside the listing is refused', async () => {
+    const { panel, workspace, lastOf } = await start();
+    panel.receive({ type: 'readFile', id: 7, path: '/robot_b/meshes/arm.stl' });
+    const data = await waitFor(() => lastOf('fileData')?.id === 7 && lastOf('fileData'));
+    assert.deepEqual(Buffer.from(data.data), fs.readFileSync(path.join(workspace, 'src/robot_b/meshes/arm.stl')));
+    panel.receive({ type: 'readFile', id: 8, path: '/etc/passwd' });
+    const refused = await waitFor(() => lastOf('fileData')?.id === 8 && lastOf('fileData'));
+    assert.ok(!refused.data && /not found/.test(refused.error));
 });
 
 test('a model in a hidden folder is sent with its meshes', async () => {

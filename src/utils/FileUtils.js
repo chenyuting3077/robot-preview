@@ -1,10 +1,3 @@
-/**
- * File operation utility functions
- */
-
-/**
- * Read file content as text
- */
 export function readFileContent(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -14,11 +7,35 @@ export function readFileContent(file) {
     });
 }
 
+// A file whose bytes the extension sends when first read.
+export class RemoteFile {
+    constructor(path, request) {
+        this.name = path.split('/').pop();
+        this.path = path;
+        this.request = request;
+    }
+
+    file() {
+        // A failed read is not kept, so the next load asks again.
+        return (this.loaded ??= this.request(this.path).then(data => new File([data], this.name), error => {
+            this.loaded = null;
+            throw error;
+        }));
+    }
+
+    async arrayBuffer() {
+        return (await this.file()).arrayBuffer();
+    }
+
+    async text() {
+        return (await this.file()).text();
+    }
+}
+
+export const materialize = file => (file instanceof RemoteFile ? file.file() : file);
+
 export const directoryOf = fileName => (fileName.includes('/') ? fileName.slice(0, fileName.lastIndexOf('/') + 1) : '');
 
-/**
- * Normalize path
- */
 export function normalizePath(path) {
     if (!path) return '';
     return path.replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+/g, '/');
@@ -281,6 +298,7 @@ export function fileUrlModifier(fileMap, baseDir) {
             }
         }
         const file = resolveFileFromMap(path, fileMap, { baseDir });
-        return file ? URL.createObjectURL(file) : url;
+        // A RemoteFile has no bytes yet, and a URL modifier cannot wait for them.
+        return file instanceof Blob ? URL.createObjectURL(file) : url;
     };
 }

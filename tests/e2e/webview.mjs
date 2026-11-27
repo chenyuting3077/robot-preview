@@ -27,8 +27,23 @@ async function captureMessages() {
     doc.edit(doc.getText().replace('<box size="0.2 0.2 0.05"/>', '<box size="0.2 0.2 0.05"/>\n      </geometry>\n    </visual>\n    <visual>\n      <origin xyz="0 0 0.4"/>\n      <geometry>\n        <sphere radius="0.05"/>'));
     env.fire('change', { document: doc, contentChanges: [{}] });
     while (!env.lastOf('update')) await sleep(20);
-    const encode = message => ({ ...message, files: message.files.map(file => ({ path: file.path, data: Buffer.from(file.data).toString('base64') })) });
-    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')), matrix: encode(await capturePathMatrix()), ur: encode(urFixture()) };
+    const onDemand = {};
+    await readOnDemand(env, env.lastOf('load'), onDemand);
+    const matrix = await capturePathMatrix(onDemand);
+    return { load: encode(env.lastOf('load')), update: encode(env.lastOf('update')), matrix: encode(matrix), ur: encode(urFixture()), onDemand };
+}
+
+const encode = message => ({ ...message, files: message.files.map(file => (file.data ? { path: file.path, data: Buffer.from(file.data).toString('base64') } : file)) });
+
+// The meshes the extension sends only on request, read through it now so the page can be answered offline.
+async function readOnDemand(env, message, into) {
+    for (const file of message.files.filter(file => !file.data)) {
+        const id = Object.keys(into).length + 1000;
+        env.state.panels[0].receive({ type: 'readFile', id, path: file.path });
+        let reply;
+        while (!(reply = env.state.posted.find(m => m.type === 'fileData' && m.id === id))) await sleep(20);
+        into[file.path] = Buffer.from(reply.data).toString('base64');
+    }
 }
 
 // ur_description has no meshes in the fixture; the check is that load_yaml and
@@ -41,7 +56,7 @@ function urFixture() {
     return { type: 'load', files, primary: '/ur_description/urdf/ur.urdf.xacro', xacroArgs: { ur_type: 'ur5e' } };
 }
 
-async function capturePathMatrix() {
+async function capturePathMatrix(onDemand) {
     const matrix = createPathMatrix();
     Object.assign(process.env, matrix.env);
     const env = loadExtension({ workspace: matrix.ws, config: matrix.config });
@@ -50,6 +65,7 @@ async function capturePathMatrix() {
     while (!env.state.panels[0]?.webview.html) await sleep(20);
     env.state.panels[0].receive({ type: 'ready' });
     while (!env.lastOf('load')) await sleep(20);
+    await readOnDemand(env, env.lastOf('load'), onDemand);
     return { ...env.lastOf('load'), expectedMissing: matrix.expectedMissing };
 }
 
@@ -68,12 +84,18 @@ function serve(messages) {
 window.__out = [];
 window.__csp = [];
 document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));
-window.acquireVsCodeApi = () => ({ postMessage: m => window.__out.push(m), setState: s => { window.__state = s; } });
+window.acquireVsCodeApi = () => ({ postMessage: m => {
+  window.__out.push(m);
+  if (m.type === 'readFile') (async () => {
+    const data = (window.__messages ||= await (await fetch('/messages.json')).json()).onDemand[m.path];
+    window.postMessage(data ? { type: 'fileData', id: m.id, data: Uint8Array.from(atob(data), c => c.charCodeAt(0)) } : { type: 'fileData', id: m.id, error: 'File not found: ' + m.path }, '*');
+  })();
+}, setState: s => { window.__state = s; } });
 window.__send = async (name, patch) => {
   const messages = window.__messages ||= await (await fetch('/messages.json')).json();
   const message = structuredClone(messages[name]);
   if (patch) patch(message);
-  message.files = message.files.map(f => ({ path: f.path, data: typeof f.data === 'string' ? Uint8Array.from(atob(f.data), c => c.charCodeAt(0)) : f.data }));
+  message.files = message.files.map(f => (f.data == null ? f : { path: f.path, data: typeof f.data === 'string' ? Uint8Array.from(atob(f.data), c => c.charCodeAt(0)) : f.data }));
   window.postMessage(message, '*');
 };`;
     const server = http.createServer((req, res) => {
@@ -622,7 +644,7 @@ try {
     check('theme follows VS Code', await waitFor(`document.documentElement.getAttribute('data-theme') === 'light'`, 3000));
     await ev(`document.body.classList.remove('vscode-light')`);
 
-    await ev(`await window.__send('load', m => { m.files = m.files.filter(f => f.path.endsWith('arm.stl')).map(f => ({ ...f, path: '/mesh/arm.stl' })); m.primary = '/mesh/arm.stl'; })`);
+    await ev(`await window.__send('load', m => { m.files = m.files.filter(f => f.path.endsWith('arm.stl')).map(f => ({ path: '/mesh/arm.stl', data: window.__messages.onDemand[f.path] })); m.primary = '/mesh/arm.stl'; })`);
     check('mesh preview', await waitFor(`window.app.currentModel?.isMesh === true`, 10000));
     check('mesh preview follows the up menu', await ev(`return window.app.currentModel.threeObject.parent === window.app.sceneManager.world && document.getElementById('up-select').value === '+Z'`));
 

@@ -67,3 +67,21 @@ test('meshes without normals get them, existing normals are kept', async () => {
     assert.deepEqual([...bare.attributes.normal.array.slice(0, 3)], [0, 0, 1]);
     assert.deepEqual([...lit.attributes.normal.array.slice(0, 3)], [0, 0, -1]);
 });
+
+test('a mesh sent without data is requested once, when first read, and kept while its version holds', async () => {
+    const handler = new FileHandler();
+    const requested = [];
+    handler.requestFile = async path => { requested.push(path); return new TextEncoder().encode(`solid ${path}`); };
+    handler.setFiles([{ path: '/m/used.stl', version: 'disk:1' }, { path: '/m/unused.stl', version: 'disk:1' }], [], true);
+    const used = handler.fileMap.get('/m/used.stl');
+    assert.equal(used.name, 'used.stl');
+    assert.equal(await used.text(), 'solid /m/used.stl');
+    assert.equal(new TextDecoder().decode(await used.arrayBuffer()), 'solid /m/used.stl');
+    assert.deepEqual(requested, ['/m/used.stl']);
+    handler.setFiles([{ path: '/m/used.stl', version: 'disk:1' }, { path: '/m/unused.stl', version: 'disk:1' }], [], true);
+    assert.equal(handler.fileMap.get('/m/used.stl'), used, 'same version keeps the object, so the mesh cache holds');
+    handler.setFiles([{ path: '/m/used.stl', version: 'disk:2' }]);
+    assert.notEqual(handler.fileMap.get('/m/used.stl'), used);
+    await handler.fileMap.get('/m/used.stl').text();
+    assert.deepEqual(requested, ['/m/used.stl', '/m/used.stl']);
+});

@@ -7,7 +7,7 @@ import { URDFAdapter } from '../adapters/URDFAdapter.js';
 import { MJCFAdapter } from '../adapters/MJCFAdapter.js';
 import { XacroAdapter } from '../adapters/XacroAdapter.js';
 import { SDFAdapter } from '../adapters/SDFAdapter.js';
-import { resolveFileFromMap, resolveMeshFile, fileUrlModifier, directoryOf } from '../utils/FileUtils.js';
+import { resolveFileFromMap, resolveMeshFile, fileUrlModifier, directoryOf, materialize } from '../utils/FileUtils.js';
 import { trackMeshLoads, cachedMeshParse, ensureMeshNormals } from '../utils/MeshLoader.js';
 import { parseCollada } from '../utils/colladaFast.js';
 
@@ -478,6 +478,7 @@ export class ModelLoaderFactory {
     }
 
     static async parseMeshFileAsync(file, ext, manager) {
+        file = await materialize(file);
         const blobUrl = URL.createObjectURL(file);
 
         try {

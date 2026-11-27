@@ -3,7 +3,7 @@
  * Unified management of STL, OBJ, DAE, GLTF and other format loading
  */
 import * as THREE from 'three';
-import { normalizePath, resolveFileFromMap } from './FileUtils.js';
+import { normalizePath, resolveFileFromMap, materialize } from './FileUtils.js';
 import { parseCollada } from './colladaFast.js';
 
 // Cache loaders for performance
@@ -75,6 +75,7 @@ export async function loadMeshFile(meshPath, fileMap) {
 }
 
 async function parseMeshFile(file, fileExt, meshPath, fileMap) {
+    file = await materialize(file);
     const url = URL.createObjectURL(file);
 
     try {
@@ -317,7 +318,7 @@ export function textureManager(fileMap) {
     const urls = new Map();
     manager.setURLModifier(url => {
         const file = /\.(png|jpe?g|gif|bmp|tga|tiff?|webp|mtl|bin)$/i.test(url) && resolveFileFromMap(url, fileMap);
-        if (!file) return url;
+        if (!(file instanceof Blob)) return url;
         if (!urls.has(file)) urls.set(file, URL.createObjectURL(file));
         return urls.get(file);
     });

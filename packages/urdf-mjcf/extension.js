@@ -5,8 +5,9 @@ const os = require('os');
 const fs = require('fs/promises');
 const schema = require('./urdf-schema');
 
+const MESH_EXTENSIONS = 'stl|dae|obj|gltf|glb|msh';
 // .gazebo and .trans are xacro fragments fusion2urdf writes and includes.
-const ASSET_RE = /\.(urdf|xacro|xml|sdf|world|gazebo|trans|stl|dae|obj|mtl|gltf|glb|bin|png|jpe?g|bmp|tga|tiff?|webp|msh|ya?ml)$|(^|[\\/])model\.config$/i;
+const ASSET_RE = new RegExp(`\\.(urdf|xacro|xml|sdf|world|gazebo|trans|${MESH_EXTENSIONS}|mtl|bin|png|jpe?g|bmp|tga|tiff?|webp|ya?ml)$|(^|[\\\\/])model\\.config$`, 'i');
 // Files a mesh names internally, where the URDF cannot see them.
 const SIDECAR_REFS = {
     obj: /^\s*mtllib\s+(.+?)\s*$/gm,
@@ -14,6 +15,8 @@ const SIDECAR_REFS = {
     dae: /<init_from>\s*([^<]+?)\s*<\/init_from>/g
 };
 const MODEL_RE = /\.(urdf|xacro|xml|sdf|world|gazebo|trans)$/i;
+// Sent only when the webview reads one: a package carries the meshes of all its models (docs/vscode-extension.md).
+const ON_DEMAND_RE = new RegExp(`\\.(${MESH_EXTENSIONS})$`, 'i');
 const REF_RE = /(package|model):\/\/([^/\s"'<>]+)|\$\(find\s+([^)\s]+)\)/g;
 const ENV_REF_RE = /\$\((?:env|optenv)\s+(\w+)/g;
 const FILE_REF_RE = /\b(?:filename|file)\s*=\s*["']([^"']+)["']|<uri>\s*([^<\s]+)\s*<\/uri>/g;
@@ -1291,6 +1294,12 @@ class Preview {
             await this.onDiagnostics(msg);
         } else if (msg?.type === 'screenshot') {
             await this.saveScreenshot(msg);
+        } else if (msg?.type === 'readFile') {
+            const entry = this.listing?.entries.get(msg.path);
+            const reply = entry
+                ? await readData(entry.fsPath, liveEditing()).then(data => ({ data }), error => ({ error: error.message }))
+                : { error: `File not found: ${msg.path}` };
+            this.panel?.webview.postMessage({ type: 'fileData', id: msg.id, ...reply });
         } else if (msg?.type === 'urdf') {
             if (this.pendingExport?.requestId === msg.requestId) this.pendingExport.resolve(msg.text);
         } else if (msg?.type === 'error') {
@@ -1317,7 +1326,9 @@ class Preview {
             const removed = full ? [] : Array.from(this.sent.keys()).filter(key => !listing.entries.has(key));
             if (!full && changed.length === 0 && removed.length === 0) return;
 
-            const files = await Promise.all(changed.map(async ([key, entry]) => ({ path: key, data: await readData(entry.fsPath, live) })));
+            const files = await Promise.all(changed.map(async ([key, entry]) => (ON_DEMAND_RE.test(key) && key !== listing.primary
+                ? { path: key, version: entry.version }
+                : { path: key, data: await readData(entry.fsPath, live) })));
             this.sent = new Map(Array.from(listing.entries, ([key, entry]) => [key, entry.version]));
             if (full) this.syntaxDiagnostics.clear();
             for (const fsPath of this.syntaxDiagnostics.keys()) {

@@ -1,6 +1,6 @@
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
 import * as THREE from 'three';
-import { readFileContent } from '../utils/FileUtils.js';
+import { readFileContent, RemoteFile } from '../utils/FileUtils.js';
 import { loadMeshFile, clearMeshCache } from '../utils/MeshLoader.js';
 
 const MESH_RE = /\.(stl|dae|obj)$/i;
@@ -61,6 +61,8 @@ export class FileHandler {
         this.currentModelFile = null;
         this.onModelLoaded = null;
         this.onLoadError = null;
+        // (path) => Promise<Uint8Array>, for entries the extension sends without data.
+        this.requestFile = null;
     }
 
     static MESH_TIMEOUT_MS = 15000;
@@ -74,14 +76,14 @@ export class FileHandler {
         if (reset) this.fileMap.clear();
         removed.forEach(path => this.fileMap.delete(path));
         let resourceChanged = false;
-        entries.forEach(({ path, data }) => {
-            const hash = contentHash(data);
+        entries.forEach(({ path, data, version }) => {
+            const hash = data ? contentHash(data) : `version:${version}`;
             const old = previous.get(path);
             if (old && this.hashOf.get(old) === hash) {
                 this.fileMap.set(path, old);
                 return;
             }
-            const file = new File([data], path.split('/').pop());
+            const file = data ? new File([data], path.split('/').pop()) : new RemoteFile(path, this.requestFile);
             this.hashOf.set(file, hash);
             this.fileMap.set(path, file);
             resourceChanged ||= RESOURCE_RE.test(path);

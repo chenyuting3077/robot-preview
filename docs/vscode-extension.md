@@ -4,7 +4,8 @@ Pitfalls of building and publishing it: issues #1 and #5.
 
 ## Files sent to the viewer
 
-- The webview cannot read the disk, so the extension sends the nearest `package.xml` package (or the workspace folder) plus every package a `package://` / `$(find)` names, recursively.
+- The webview cannot read the disk, so the extension lists the nearest `package.xml` package (or the workspace folder) plus every package a `package://` / `$(find)` names, recursively, and sends their files.
+- Meshes (STL, DAE, OBJ, glTF, GLB, MSH) cross only when the webview reads one, since a package often carries every model of a product line: realsense2_description is 96 MB for the D435's 16 MB, franka_description 198 MB for the FR3's 27 MB. D435 1.46–1.78 s, +1.06–1.20 GB before against 1.16–1.44 s, +0.57–0.67 GB after; FR3 2.07–2.93 s, +1.70–1.75 GB against 1.15–1.49 s, +0.72–0.85 GB (VS Code 1.147, Apple Silicon, all processes, 3 runs each, interleaved; an empty URDF takes 0.87 s, +0.55 GB). Textures and the rest are still sent up front: three asks for a texture synchronously.
 - The `robotPreviewUrdf.packages` setting is searched before everything else: it is the only fix for a package without `package.xml` or shadowed by another checkout. `/opt/ros` is searched too, so packages resolve in a VS Code started outside a sourced shell.
 - `robotPreviewUrdf.packageSearchPaths` walks folders as colcon does, so the packages found match what a build there would find; it ranks after the workspace so an overlay checkout still wins. It walks every folder below, which a `share` of an environment full of non-ROS files makes slow: a conda `share` with 1408 folders took 478 ms cold and 160 ms warm (once per session, then cached).
 - A reference outside every package sends only that file and the textures it names; sending its directory would upload all of `~/Downloads` for one STL.

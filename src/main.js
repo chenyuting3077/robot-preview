@@ -308,7 +308,19 @@ class App {
     }
 
     setupMessages() {
+        const reads = new Map();
+        let lastRead = 0;
+        this.fileHandler.requestFile = path => new Promise((resolve, reject) => {
+            reads.set(++lastRead, { resolve, reject });
+            vscode.postMessage({ type: 'readFile', id: lastRead, path });
+        });
         const handlers = {
+            fileData: async ({ id, data, error }) => {
+                const read = reads.get(id);
+                reads.delete(id);
+                if (error) read?.reject(new Error(error));
+                else read?.resolve(data);
+            },
             load: async (message) => {
                 vscode.setState({ sourcePath: message.sourcePath });
                 this.xacroArgs = message.xacroArgs || {};
