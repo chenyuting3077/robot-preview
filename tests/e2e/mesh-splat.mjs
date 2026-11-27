@@ -1302,6 +1302,44 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     fs.rmSync(remoteDir, { recursive: true, force: true });
 }
 
+// #24: a lost context says so in the view, and a restored one draws the same picture again, splats too.
+{
+    const lostDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-lost-'));
+    fs.copyFileSync(path.join(dir, 'cube.stl'), path.join(lostDir, 'cube.stl'));
+    fs.writeFileSync(path.join(lostDir, 'gauss.ply'), splatPly(['scale_0', 'scale_1', 'scale_2']));
+    for (const name of ['cube.stl', 'gauss.ply']) {
+        const started = Date.now();
+        await evaluate('sessionStorage.clear()');
+        pages.set(`/page/lost-${name}`, await htmlFor(path.join(lostDir, name)));
+        await send('Page.navigate', { url: `${origin}/page/lost-${name}` });
+        for (let i = 0; i < 75 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(200);
+        await sleep(2000);
+        const before = await pageShot();
+        const message = () => evaluate("document.getElementById('load-error').checkVisibility() ? document.getElementById('load-error').textContent : ''");
+        await evaluate("window.__lose = document.querySelector('canvas').getContext('webgl2').getExtension('WEBGL_lose_context'); window.__lose.loseContext()");
+        await sleep(500);
+        const lost = await message();
+        await evaluate('window.__posted = null; window.__lose.restoreContext()');
+        await sleep(2000);
+        // A splat view asks for a new page, which the extension renders with the view it saved.
+        const rerender = await evaluate('window.__posted?.type');
+        if (rerender === 'rerender') {
+            await panels.get(name).listener({ type: 'rerender' });
+            pages.set(`/page/lost-${name}`, panels.get(name).webview.html.replaceAll('vscode-webview:', "'self'"));
+            await send('Page.navigate', { url: `${origin}/page/lost-${name}` });
+            for (let i = 0; i < 75 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(200);
+            await sleep(2000);
+        }
+        const after = await pageShot();
+        const changed = await shotDiff(before, after);
+        const restored = await message();
+        const ok = /GPU/.test(lost) && !restored && changed < 0.01 && (rerender === 'rerender') === (name === 'gauss.ply');
+        results.push(ok);
+        console.log(`${ok ? 'PASS' : 'FAIL'} ${name} context lost and restored ${Math.round((Date.now() - started) / 100) / 10}s ${JSON.stringify({ lost, restored, changed, rerender })}`);
+    }
+    fs.rmSync(lostDir, { recursive: true, force: true });
+}
+
 // A file with no points opens empty, and a view whose every file fails still lists them, the added one removable.
 {
     const started = Date.now();

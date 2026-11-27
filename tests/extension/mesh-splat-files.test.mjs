@@ -72,6 +72,16 @@ test('removeFile drops an added file, and the opened file cannot be removed', as
     assert.deepEqual(names(panel), ['map.pcd', 'b.ply']);
 });
 
+test('rerender, sent after a lost GPU context comes back, renders the page again with its files and view', async () => {
+    const { panel, url } = await open({ 'map.pcd': 'map', 'scene.ply': 'splat' });
+    await panel.listener({ type: 'addPaths', uris: [url('scene.ply')] });
+    const before = panel.webview.html;
+    await panel.listener({ type: 'rerender' });
+    assert.notEqual(panel.webview.html, before);
+    assert.deepEqual(names(panel), ['map.pcd', 'scene.ply']);
+    assert.match(panel.webview.html, /data-keep="1"/);
+});
+
 test('a change to an added file re-renders with every file still listed', async () => {
     const { env, panel, at, url } = await open({ 'map.pcd': 'map', 'scan.pcd': 'scan' });
     await panel.listener({ type: 'addPaths', uris: [url('scan.pcd')] });

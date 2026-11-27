@@ -890,6 +890,25 @@ try {
     const reset = await ev(`const sim = window.app.mujocoSimulationManager; return { root: sim.mujocoRoot.visible, model: window.app.currentModel.threeObject.visible, time: sim.isOldAPI ? sim.data.time : sim.simulation.time }`);
     check('Reset while paused shows the model again and rewinds the physics', !reset.root && reset.model && reset.time === 0, JSON.stringify(reset));
 
+    // #24: a lost context says so in the view, and a restored one draws the same picture again.
+    {
+        await ev(`window.postMessage({ type: 'load', files: [{ path: '/b/b.urdf', data: new TextEncoder().encode(${JSON.stringify(box)}) }], primary: '/b/b.urdf' }, '*')`);
+        await waitFor(`window.app.currentModel?.links?.has('base') && !window.app.mujocoSimulationManager.isSimulationRunning()`, 10000);
+        const pixels = `const sm = window.app.sceneManager, gl = sm.renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, buf = new Uint8Array(w * h * 4);
+            sm.render(); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf); return Array.from(buf.filter((v, i) => i % 64 === 0));`;
+        const before = await ev(pixels);
+        const message = () => ev(`const box = document.getElementById('load-error'); return box?.checkVisibility() ? box.textContent : ''`);
+        await ev(`window.__lose = window.app.sceneManager.renderer.getContext().getExtension('WEBGL_lose_context'); window.__lose.loseContext()`);
+        await sleep(500);
+        const lost = await message();
+        await ev(`window.__lose.restoreContext()`);
+        await sleep(1000);
+        const after = await ev(pixels);
+        const restored = await message();
+        const changed = before.filter((v, i) => Math.abs(v - after[i]) > 8).length / before.length;
+        check('a lost context says so, and a restored one draws the model again', /GPU/.test(lost) && !restored && changed < 0.01, JSON.stringify({ lost, restored, changed }));
+    }
+
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));
 

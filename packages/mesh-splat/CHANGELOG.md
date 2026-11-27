@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Without WebGL (the snap build of VS Code, GPU acceleration turned off, remote desktop) the view says so and what to try, instead of staying blank; a lost GPU context says so too, and the view draws again when it comes back.
+
 ## 0.7.3
 
 - The ground grid no longer shows through a Gaussian splat standing on it.
