@@ -748,6 +748,33 @@ try {
         return { name: message.name, width: image.width, height: image.height, cssWidth: Math.round(css.width), cssHeight: Math.round(css.height), drawn: drawn / (pixels.length / 4) };`);
     check('screenshot is twice the view size, not blank, named after <robot name>', shot.name === 'b' && shot.width === shot.cssWidth * 2 && shot.height === shot.cssHeight * 2 && shot.drawn > 0.01, JSON.stringify(shot));
 
+    // The top-left pixel of the view, an empty corner above the framed box.
+    const corner = async () => ev(`const sm = window.app.sceneManager, r = sm.renderer, gl = r.getContext(), px = new Uint8Array(4);
+        r.render(sm.scene, sm.camera); gl.readPixels(0, gl.drawingBufferHeight - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); return Array.from(px.slice(0, 3)).join()`);
+    const cornerBecomes = async (expected, ms = 5000) => {
+        const start = Date.now();
+        let last;
+        while ((last = await corner()) !== expected && Date.now() - start < ms) await sleep(100);
+        return last;
+    };
+    await ev(`window.postMessage({ type: 'load', files: [{ path: '/b/b.urdf', data: new TextEncoder().encode(${JSON.stringify(box)}) }], primary: '/b/b.urdf', background: '#204060' }, '*')`);
+    const fixed = await cornerBecomes('32,64,96');
+    await ev(`document.body.classList.add('vscode-light')`);
+    await waitFor(`document.documentElement.getAttribute('data-theme') === 'light'`, 3000);
+    const fixedLight = await corner();
+    check('a background color from the load is drawn and kept through a theme change', fixed === '32,64,96' && fixedLight === '32,64,96', JSON.stringify({ fixed, fixedLight }));
+    await ev(`window.__out.length = 0; document.getElementById('screenshot-btn').click()`);
+    await waitFor(`window.__out.some(m => m.type === 'screenshot')`, 5000);
+    const shotCorner = await ev(`const image = new Image(); image.src = 'data:image/png;base64,' + window.__out.find(m => m.type === 'screenshot').data; await image.decode();
+        const context = Object.assign(document.createElement('canvas'), { width: image.width, height: image.height }).getContext('2d'); context.drawImage(image, 0, 0);
+        return Array.from(context.getImageData(0, 0, 1, 1).data.slice(0, 3)).join()`);
+    check('the screenshot has the background color', shotCorner === '32,64,96', shotCorner);
+    await ev(`window.postMessage({ type: 'background', background: 'theme' }, '*')`);
+    const themeLight = await cornerBecomes('255,255,255');
+    await ev(`document.body.classList.remove('vscode-light')`);
+    const themeDark = await cornerBecomes('80,80,80');
+    check('a background change back to theme follows the theme again', themeLight === '255,255,255' && themeDark === '80,80,80', JSON.stringify({ themeLight, themeDark }));
+
     const flawed = '<robot name="f"><link name="base"/><link name="arm"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link><joint name="j" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 0 1"/></joint></robot>';
     await ev(`window.__out.length = 0; window.postMessage({ type: 'load', files: [{ path: '/f/f.urdf', data: new TextEncoder().encode(${JSON.stringify(flawed)}) }], primary: '/f/f.urdf' }, '*')`);
     const checks = (await finalDiagnostics()).checks.map(c => c.rule + ':' + c.name).sort();

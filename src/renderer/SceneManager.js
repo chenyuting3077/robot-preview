@@ -884,9 +884,17 @@ export class SceneManager {
         });
     }
 
+    // `value` is the robotPreviewUrdf.background setting: 'theme' or '#rrggbb'.
+    setBackground(value) {
+        this.fixedBackground = /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+        this.updateBackgroundColor();
+    }
+
     updateBackgroundColor() {
         const theme = document.documentElement.getAttribute('data-theme') || 'dark';
-        if (theme === 'light') {
+        if (this.fixedBackground) {
+            this.scene.background = new THREE.Color(this.fixedBackground);
+        } else if (theme === 'light') {
             // Light theme: pure white background
             this.scene.background = new THREE.Color(0xffffff);
         } else {

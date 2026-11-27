@@ -349,3 +349,32 @@ test('mesh files open in their own preview', async () => {
     assert.equal(load.primary, '/mesh/arm.stl');
     assert.equal(second.primary, '/mesh/arm.stl');
 });
+
+const changeBackground = (env, value) => {
+    env.state.config.background = value;
+    env.fire('config', { affectsConfiguration: name => name === 'robotPreviewUrdf.background' });
+};
+
+test('the background setting goes out with the load and again when it changes', async () => {
+    assert.equal((await start()).load.background, 'theme');
+    assert.equal((await start({ background: 'white' })).load.background, 'theme');
+    const env = await start({ background: '#ffffff' });
+    assert.equal(env.load.background, '#ffffff');
+    changeBackground(env, '#102030');
+    assert.deepEqual(env.lastOf('background'), { type: 'background', background: '#102030' });
+});
+
+test('a mesh preview opens with the background setting and follows its changes until closed', async () => {
+    const env = loadExtension({ workspace: await copyFixture(), config: { background: '#ffffff' } });
+    env.activate();
+    const stl = path.join(env.vscode.workspace.getWorkspaceFolder().uri.fsPath, 'src/robot_b/meshes/arm.stl');
+    const panel = env.vscode.window.createWebviewPanel();
+    await env.state.customEditors['robotPreviewUrdf.mesh'].resolveCustomEditor({ uri: { fsPath: stl } }, panel);
+    panel.receive({ type: 'ready' });
+    assert.equal((await waitFor(() => env.lastOf('load'))).background, '#ffffff');
+    changeBackground(env, 'theme');
+    assert.deepEqual(env.lastOf('background'), { type: 'background', background: 'theme' });
+    panel.dispose();
+    changeBackground(env, '#000000');
+    assert.equal(env.allOf('background').length, 1);
+});

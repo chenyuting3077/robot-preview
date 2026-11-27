@@ -118,6 +118,13 @@
           ],
           "description": "When the preview picks up edits made in VS Code. Changes made outside VS Code always update immediately."
         },
+        "robotPreviewUrdf.background": {
+          "type": "string",
+          "default": "theme",
+          "pattern": "^(theme|#[0-9a-fA-F]{6})$",
+          "patternErrorMessage": "Use theme or a color such as #ffffff.",
+          "markdownDescription": "Background of the 3D view and its screenshots: `theme` follows the VS Code theme, or a color such as `#ffffff`."
+        },
         "robotPreviewUrdf.packages": {
           "type": "object",
           "additionalProperties": {

@@ -343,6 +343,7 @@ class App {
                 vscode.setState({ sourcePath: message.sourcePath });
                 this.xacroArgs = message.xacroArgs || {};
                 this.env = message.env || {};
+                this.sceneManager.setBackground(message.background);
                 if (this.lastSettings === null) this.applyPanelSettings(message.settings || {}, message.panels);
                 await this.loadFiles(message, true);
                 if (this.lastSettings === null) this.applySettings(message.settings || {});
@@ -352,6 +353,7 @@ class App {
                 return this.loadFiles(message, false);
             },
             captureScreenshot: async () => this.captureScreenshot(),
+            background: async ({ background }) => this.sceneManager.setBackground(background),
             exportUrdf: async ({ requestId }) => {
                 vscode.postMessage({ type: 'urdf', requestId, text: this.loadReport.loadError ? null : this.currentModel?.expandedUrdf ?? null });
             },

@@ -249,6 +249,13 @@ const openDocument = fsPath => vscode.workspace.textDocuments.find(doc => doc.ur
 
 const liveEditing = () => vscode.workspace.getConfiguration('robotPreviewUrdf').get('updateOn') === 'type';
 
+// settings.json accepts any string; the Settings editor only enforces the pattern.
+const backgroundSetting = () => {
+    const value = vscode.workspace.getConfiguration('robotPreviewUrdf').get('background');
+    return /^#[0-9a-f]{6}$/i.test(value) ? value : 'theme';
+};
+const backgroundMessage = () => ({ type: 'background', background: backgroundSetting() });
+
 async function versionOf(fsPath, live = true) {
     const doc = live && openDocument(fsPath);
     if (doc) return `doc:${doc.version}`;
@@ -1335,7 +1342,7 @@ class Preview {
                 if (!listing.paths.has(fsPath)) this.syntaxDiagnostics.delete(fsPath);
             }
             this.panel.webview.postMessage(full
-                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), panels: Object.fromEntries(this.context.globalState.keys().filter(key => key.startsWith('panel:')).map(key => [key.slice(6), this.context.globalState.get(key)])), xacroArgs: this.xacroArgsFor(primary.fsPath), env: listing.env }
+                ? { type: 'load', files, primary: listing.primary, sourcePath: primary.fsPath, settings: this.context.globalState.get('settings'), panels: Object.fromEntries(this.context.globalState.keys().filter(key => key.startsWith('panel:')).map(key => [key.slice(6), this.context.globalState.get(key)])), xacroArgs: this.xacroArgsFor(primary.fsPath), env: listing.env, background: backgroundSetting() }
                 : { type: 'update', files, removed, primary: listing.primary, env: listing.env });
             const editor = vscode.window.activeTextEditor;
             if (full && editor) this.onSelectionChanged({ textEditor: editor, selections: editor.selections });
@@ -1499,7 +1506,7 @@ class MeshEditorProvider {
                 path: `/mesh/${entry}`,
                 data: new Uint8Array(await fs.readFile(path.join(dir, entry)))
             })));
-            panel.webview.postMessage({ type: loaded ? 'update' : 'load', files, removed: [], primary: `/mesh/${name}` });
+            panel.webview.postMessage({ type: loaded ? 'update' : 'load', files, removed: [], primary: `/mesh/${name}`, background: backgroundSetting() });
             loaded = true;
         };
         const send = () => {
@@ -1514,9 +1521,13 @@ class MeshEditorProvider {
             if (msg?.type === 'ready') send();
             if (msg?.type === 'error') vscode.window.showErrorMessage(`Robot Preview: ${msg.message}`);
         });
+        const configuration = vscode.workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration('robotPreviewUrdf.background')) panel.webview.postMessage(backgroundMessage());
+        });
         panel.onDidDispose(() => {
             watcher.dispose();
             subscription.dispose();
+            configuration.dispose();
         });
 
         const html = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.joinPath(distUri, 'index.html')));
@@ -1598,6 +1609,7 @@ exports.activate = context => {
             if (packages) resetIndex();
             if (event.affectsConfiguration('robotPreviewUrdf.updateOn') || packages) preview.scheduleUpdate();
             if (event.affectsConfiguration('robotPreviewUrdf.checks.disabled')) vscode.workspace.textDocuments.forEach(doc => structure.check(doc));
+            if (event.affectsConfiguration('robotPreviewUrdf.background')) preview.panel?.webview.postMessage(backgroundMessage());
         }),
         vscode.window.onDidChangeTextEditorSelection(event => preview.onSelectionChanged(event))
     );

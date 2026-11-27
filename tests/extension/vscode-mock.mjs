@@ -92,7 +92,7 @@ export function loadExtension({ workspace, config = {}, extension: extensionFile
     const listeners = {};
     const on = name => callback => {
         (listeners[name] ||= []).push(callback);
-        return { dispose() {} };
+        return { dispose() { listeners[name] = listeners[name].filter(each => each !== callback); } };
     };
     const fire = (name, event) => (listeners[name] || []).forEach(callback => callback(event));
 
