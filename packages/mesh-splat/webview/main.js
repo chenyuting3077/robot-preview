@@ -1040,6 +1040,20 @@ const savedSettings = (() => {
 })();
 const saveSettings = settings => vscodeApi?.postMessage({ type: 'settings', ...settings });
 setBackground(savedSettings.background);
+// A settings change: each control takes its new default unless changed in this view; before the view is up, it opens with it.
+const changedHere = { pointSize: false, up: false };
+// The view's own up axis, for `auto`; null until the view is up.
+let ownUp = null;
+window.addEventListener('message', ({ data }) => {
+    if (data?.type !== 'defaults') return;
+    setBackground(data.background);
+    if (!ownUp) return Object.assign(savedSettings, { pointSize: data.pointSize ?? savedSettings.pointSize, up: data.up });
+    if (!changedHere.pointSize && [1, 2, 4].includes(data.pointSize)) setPointSize(data.pointSize);
+    const up = UP[data.up] ? data.up : ownUp;
+    if (changedHere.up || up === $('up-select').value) return;
+    $('up-select').value = up;
+    $('up-select').dispatchEvent(new CustomEvent('change', { detail: 'settings' }));
+});
 const savedHelpers = (() => {
     try {
         return JSON.parse(page.helpers || '{}');
@@ -1297,6 +1311,7 @@ function setupUi(hasMesh, hasPoints, up) {
     document.querySelectorAll('[data-mode]').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
     document.querySelectorAll('[data-size]').forEach(button => button.addEventListener('click', () => {
         setPointSize(Number(button.dataset.size));
+        changedHere.pointSize = true;
         saveSettings({ pointSize: pointSize });
     }));
     for (const [button, panel] of [[$('display-menu-btn'), $('display-menu')], [$('up-menu-btn'), $('up-menu')], [$('compare-btn'), $('compare-menu')], [$('info-btn'), $('info-panel')], [$('help-btn'), $('help-panel')]]) bindPopover(button, panel);
@@ -1307,9 +1322,13 @@ function setupUi(hasMesh, hasPoints, up) {
     $('screenshot-btn').addEventListener('click', captureScreenshot);
     $('up-select').value = up;
     bindUpMenu();
-    $('up-select').addEventListener('change', () => {
+    $('up-select').addEventListener('change', event => {
         setUp($('up-select').value);
-        saveSettings({ up: $('up-select').value });
+        // An up axis from the settings is not one chosen for this file.
+        if (event.detail !== 'settings') {
+            changedHere.up = true;
+            saveSettings({ up: $('up-select').value });
+        }
         cloudColors.refresh();
     });
     $('detail-btn').hidden = !sampled.length;
@@ -1633,6 +1652,7 @@ async function setupView(shown) {
         else setHelper(helper, true);
     }
     if ([1, 2, 4].includes(savedSettings.pointSize)) setPointSize(savedSettings.pointSize);
+    ownUp = frameUp;
     if (kept?.mode && counted.some(info => info.faces > 0)) setMode(kept.mode);
     // Solid is offered only while the view holds several files: kept for one, it could not be turned off.
     // A file without a kept mode (the one just added, or every file on a fresh page) takes the colouring last left;

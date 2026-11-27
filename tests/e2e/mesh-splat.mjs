@@ -1452,7 +1452,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const values = { 'robotPreviewMeshSplat.background': '#204080' };
     env.vscode.workspace.getConfiguration = section => ({ get: key => values[`${section}.${key}`], inspect: () => ({}) });
     env.activate();
-    const panel = activePanel = fakePanel();
+    const panel = activePanel = fakePanel(message => message.type === 'defaults' && evaluate(`window.postMessage(${JSON.stringify(message)}, '*')`));
     await env.state.customEditors['robotPreviewMeshSplat.viewer'].resolveCustomEditor({ uri: env.vscode.Uri.file(cube) }, panel);
     pages.set('/page/background', panel.webview.html.replaceAll('vscode-webview:', "'self'"));
     await evaluate('sessionStorage.clear()');
@@ -1471,10 +1471,20 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const light = await viewCorner();
     const saved = await corner(await evaluate("(() => { window.__posted = null; document.getElementById('screenshot-btn').click(); return window.__posted?.data ?? ''; })()"));
     await evaluate("document.body.classList.remove('vscode-light')");
-    const near = rgb => rgb.every((v, i) => Math.abs(v - [0x20, 0x40, 0x80][i]) <= 3);
-    const ok = near(dark) && near(light) && near(saved);
+    const near = (rgb, hex) => rgb.every((v, i) => Math.abs(v - [hex >> 16, (hex >> 8) & 255, hex & 255][i]) <= 3);
+    const ok = near(dark, 0x204080) && near(light, 0x204080) && near(saved, 0x204080);
     results.push(ok);
     console.log(`${ok ? 'PASS' : 'FAIL'} background #204080 from the settings: view ${dark}, light theme ${light}, screenshot ${saved}`);
+    // Changed settings reach the open view; the point size chosen in it stays, and an up axis from the settings is not saved as chosen.
+    await evaluate(`document.querySelector('[data-size="1"]').click()`);
+    Object.assign(values, { 'robotPreviewMeshSplat.background': '#802040', 'robotPreviewMeshSplat.pointSize': 4, 'robotPreviewMeshSplat.upAxis': '-Y' });
+    env.fire('config', { affectsConfiguration: name => name === 'robotPreviewMeshSplat' });
+    const changed = await viewCorner();
+    const controls = await evaluate("({ up: document.getElementById('up-select').value, label: document.getElementById('up-label').textContent, size: document.querySelector('[data-size].active')?.dataset.size })");
+    const upSaved = env.state.globalState.get('viewSettings')?.upByFile?.[cube];
+    const changeOk = near(changed, 0x802040) && controls.up === '-Y' && controls.label === '-Y' && controls.size === '1' && !upSaved;
+    results.push(changeOk);
+    console.log(`${changeOk ? 'PASS' : 'FAIL'} settings changed to #802040, size 4, up -Y with size 1 chosen: view ${changed}, ${JSON.stringify(controls)}, up saved ${upSaved}`);
     fs.rmSync(bgDir, { recursive: true, force: true });
 }
 

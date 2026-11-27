@@ -25,10 +25,18 @@ async function open(name, values = {}, { root, viewType = 'robotPreviewMeshSplat
     });
     if (!env.activated) env.activate();
     env.activated = true;
-    const panel = fakePanel();
+    const posted = [];
+    const panel = fakePanel(message => posted.push(message));
     await env.state.customEditors[viewType].resolveCustomEditor({ uri: env.vscode.Uri.file(file) }, panel);
-    return { env, panel, file, dir };
+    return { env, panel, file, dir, posted };
 }
+// Changes the settings as VS Code does: the values first, then the event naming the section that changed.
+function change(env, values, section = 'robotPreviewMeshSplat') {
+    env.values = values;
+    env.fire('config', { affectsConfiguration: name => name === section || name.startsWith(`${section}.`) });
+}
+// The defaults posted to a view, as the page receives them (no undefined fields).
+const defaultsOf = posted => posted.filter(message => message.type === 'defaults').map(message => JSON.parse(JSON.stringify(message)));
 
 test('Mesh & Splat and USD each contribute background, point size and up axis, offering only what the view can show', () => {
     const sizes = [...webview.matchAll(/<button[^>]*data-size="(\d+)"/g)].map(match => Number(match[1]));
@@ -96,4 +104,38 @@ test('a point size chosen in a view stays through a file added to it, over the s
     await panel.listener({ type: 'addPaths', uris: [pathToFileURL(path.join(dir, 'b.ply')).href] });
     assert.match(panel.webview.html, /b\.ply/);
     assert.equal(settingsOf(panel.webview.html).pointSize, 1);
+});
+
+test('a settings change posts the new defaults to every open view', async () => {
+    const { env, posted } = await open('a.ply');
+    const other = await open('b.ply', {}, { env });
+    change(env, { 'robotPreviewMeshSplat.background': '#ffffff', 'robotPreviewMeshSplat.pointSize': 4, 'robotPreviewMeshSplat.upAxis': '+Y' });
+    for (const list of [posted, other.posted]) assert.deepEqual(defaultsOf(list), [{ type: 'defaults', background: '#ffffff', pointSize: 4, up: '+Y' }]);
+    change(env, {});
+    assert.deepEqual(defaultsOf(posted).at(-1), { type: 'defaults', background: 'theme' }, 'back to the theme and the file\'s own up axis');
+});
+
+test('a change to another extension\'s settings, or after the view closed, posts nothing', async () => {
+    const { env, posted, panel } = await open('a.ply');
+    change(env, { 'robotPreviewUsd.background': '#ffffff' }, 'robotPreviewUsd');
+    assert.deepEqual(defaultsOf(posted), []);
+    panel.dispose();
+    change(env, { 'robotPreviewMeshSplat.background': '#ffffff' });
+    assert.deepEqual(defaultsOf(posted), []);
+});
+
+test('a point size and up axis chosen in a view stay over a settings change', async () => {
+    const { env, panel, posted } = await open('a.ply');
+    await panel.listener({ type: 'settings', pointSize: 1 });
+    await panel.listener({ type: 'settings', up: '-X' });
+    change(env, { 'robotPreviewMeshSplat.pointSize': 4, 'robotPreviewMeshSplat.upAxis': '+Y' });
+    assert.deepEqual(defaultsOf(posted), [{ type: 'defaults', background: 'theme', pointSize: 1, up: '-X' }]);
+});
+
+test('a size chosen in another view is not posted: only a size set in the settings is', async () => {
+    const { env, posted } = await open('a.ply');
+    const other = await open('b.ply', {}, { env });
+    await other.panel.listener({ type: 'settings', pointSize: 4 });
+    change(env, { 'robotPreviewMeshSplat.background': '#000000' });
+    assert.deepEqual(defaultsOf(posted), [{ type: 'defaults', background: '#000000' }]);
 });

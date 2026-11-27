@@ -207,10 +207,14 @@ function activate(context) {
             let releaseTimer = null;
             // A point size or up axis chosen in this view stays over the settings on its next page (a file added).
             const chosen = {};
+            const defaults = (saved = context.globalState.get(SETTINGS_KEY) ?? {}) => {
+                const own = configured(section, saved, document.uri.fsPath);
+                return { background: own.background, pointSize: chosen.pointSize ?? own.pointSize, up: chosen.up ?? own.up };
+            };
             const settings = () => {
                 const saved = context.globalState.get(SETTINGS_KEY) ?? {};
-                const own = configured(section, saved, document.uri.fsPath);
-                return { background: own.background, pointSize: chosen.pointSize ?? own.pointSize ?? saved.pointSize, colorMode: saved.colorMode, up: chosen.up ?? own.up };
+                const own = defaults(saved);
+                return { ...own, pointSize: own.pointSize ?? saved.pointSize, colorMode: saved.colorMode };
             };
             const render = async (keep = KEEP_NOTHING) => {
                 const turn = ++renders;
@@ -397,6 +401,8 @@ function activate(context) {
                 panel,
                 takesFiles,
                 addUris,
+                // A size last chosen in another view is not sent: this view keeps its own.
+                settingsChanged: () => post({ type: 'defaults', ...defaults() }),
                 files: () => files.map((file, i) => ({ id: file.id, uri: file.uri, opened: !i, missing: Boolean(file.shownMissing) })),
                 remove: async ids => {
                     if (openedGone) return refuse(() => view.remove(ids));
@@ -432,6 +438,9 @@ function activate(context) {
             await render();
         }
     };
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration(section)) for (const view of views) view.settingsChanged();
+    }));
     const options = { webviewOptions: { retainContextWhenHidden: true }, supportsMultipleEditorsPerDocument: true };
     context.subscriptions.push(...customEditors.map(({ viewType }) => vscode.window.registerCustomEditorProvider(viewType, provider, options)));
     // Formats that are not opened by default open from a title button instead: .bin is too common a binary
