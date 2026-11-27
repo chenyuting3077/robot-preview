@@ -70,7 +70,7 @@
         },
         {
           "command": "robotPreviewUrdf.setXacroArgs",
-          "when": "resourceExtname =~ /^\\.xacro$/i"
+          "when": "resourcePath in robotPreviewUrdf.xacroUrdfs || resourceExtname =~ /^\\.xacro$/i"
         }
       ],
       "commandPalette": [
@@ -80,11 +80,11 @@
         },
         {
           "command": "robotPreviewUrdf.setXacroArgs",
-          "when": "resourceExtname =~ /^\\.xacro$/i"
+          "when": "resourcePath in robotPreviewUrdf.xacroUrdfs || resourceExtname =~ /^\\.xacro$/i"
         },
         {
           "command": "robotPreviewUrdf.exportUrdf",
-          "when": "resourceExtname =~ /^\\.xacro$/i"
+          "when": "resourcePath in robotPreviewUrdf.xacroUrdfs || resourceExtname =~ /^\\.xacro$/i"
         }
       ]
     },

@@ -1579,9 +1579,16 @@ exports.activate = context => {
         vscode.workspace.onDidChangeTextDocument(event => {
             structure.schedule(event.document);
             preview.onDocumentChanged(event);
+            trackXacroUrdf(event.document);
         }),
-        vscode.workspace.onDidOpenTextDocument(doc => structure.check(doc)),
-        vscode.workspace.onDidCloseTextDocument(doc => structure.forget(doc)),
+        vscode.workspace.onDidOpenTextDocument(doc => {
+            structure.check(doc);
+            trackXacroUrdf(doc);
+        }),
+        vscode.workspace.onDidCloseTextDocument(doc => {
+            structure.forget(doc);
+            trackXacroUrdf(doc, true);
+        }),
         vscode.workspace.onDidSaveTextDocument(doc => {
             navigator.invalidate();
             preview.onDocumentSaved(doc);
@@ -1594,6 +1601,20 @@ exports.activate = context => {
         }),
         vscode.window.onDidChangeTextEditorSelection(event => preview.onSelectionChanged(event))
     );
-    vscode.workspace.textDocuments.forEach(doc => structure.check(doc));
+    vscode.workspace.textDocuments.forEach(doc => {
+        structure.check(doc);
+        trackXacroUrdf(doc);
+    });
     preview.onActiveEditorChanged(vscode.window.activeTextEditor);
 };
+
+// Menu `when` clauses cannot read a file, so the xacro commands match the open .urdf files that declare the namespace.
+const xacroUrdfs = new Set();
+function trackXacroUrdf(doc, closed = false) {
+    if (!/\.urdf$/i.test(doc.fileName)) return;
+    const declares = !closed && /\bxmlns:xacro\s*=/.test(doc.getText());
+    if (declares === xacroUrdfs.has(doc.uri.fsPath)) return;
+    if (declares) xacroUrdfs.add(doc.uri.fsPath);
+    else xacroUrdfs.delete(doc.uri.fsPath);
+    vscode.commands.executeCommand('setContext', 'robotPreviewUrdf.xacroUrdfs', [...xacroUrdfs]);
+}
