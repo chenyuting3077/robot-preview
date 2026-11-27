@@ -30,18 +30,17 @@ function cacheWriter(dir, keys, post) {
     let queue = Promise.resolve();
     // An abandoned write takes its .part along, or it would count against the cache until the trim.
     const drop = () => {
-        if (incoming) {
-            const { handle, part } = incoming;
-            writing.delete(part);
-            handle.close().catch(() => {}).then(() => fs.promises.rm(part, { force: true }));
-        }
+        if (!incoming) return Promise.resolve();
+        const { handle, part } = incoming;
         incoming = null;
+        writing.delete(part);
+        return handle.close().catch(() => {}).then(() => fs.promises.rm(part, { force: true })).catch(() => {});
     };
     const receive = async message => {
         const chunk = message.chunk instanceof ArrayBuffer ? new Uint8Array(message.chunk) : message.chunk;
         if (!dir || !keys.has(message.key) || !(chunk instanceof Uint8Array) || !(Number.isInteger(message.size) && message.size > 0)) throw new Error('bad cache piece');
         if (message.at === 0) {
-            drop();
+            await drop();
             await fs.promises.mkdir(dir, { recursive: true });
             const target = path.join(dir, message.key);
             const part = `${target}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.part`;
