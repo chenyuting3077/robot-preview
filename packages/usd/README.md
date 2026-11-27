@@ -18,7 +18,7 @@ Click a `.usd`, `.usdc` or `.usdz` file. `.usda` stays in the text editor; open 
 
 ![The Franka Panda from Isaac Sim with the Stage panel](images/readme/franka.png)
 
-Also: solid, wireframe and point display, up-axis selection, vertex / face / splat counts and PNG screenshots. Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls. Design notes and what is not supported are in the [docs](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#usd).
+Also: solid, wireframe and point display, up-axis selection, vertex / face / splat counts, PNG screenshots, and point coordinates and distances in the stage's units from the toolbar's ruler. Orbit with the mouse, double-click to set the pivot, `F` to frame, `W` `A` `S` `D` to fly and `Q` `E` to turn; `?` lists the controls. Design notes and what is not supported are in the [docs](https://github.com/chenyuting3077/robot-preview/blob/HEAD/docs/mesh-splat.md#usd).
 
 Part of the Robot Preview series with [Robot Preview: URDF, Xacro & MJCF](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-urdf-mjcf) ([Open VSX](https://open-vsx.org/extension/chenyuting3077/robot-preview-urdf-mjcf)) and [Robot Preview: Point Cloud & Splat Viewer](https://marketplace.visualstudio.com/items?itemName=chenyuting3077.robot-preview-mesh-splat) ([Open VSX](https://open-vsx.org/extension/chenyuting3077/robot-preview-mesh-splat)).
 

@@ -72,6 +72,13 @@ Load times and memory are measured in VS Code 1.144 with `tests/e2e/vscode.mjs` 
 - Panes draw one canvas once per pane with a scissor, each pane showing its files: a canvas per pane would upload every geometry again. A file in several panes is drawn once for each, so a large map under four scans costs four draws of the map a frame. Zoom toward the cursor is off while there are panes (OrbitControls measures the pointer against the whole canvas) and zooms toward the center instead; picking maps the pointer into its pane.
 - `F` fits the bounding sphere in the narrower of the two fields of view, so a pane taller than wide takes the model in; fitting the sphere (radius / sin) rather than radius / tan puts a single view about 10% farther back than before.
 
+## Measuring
+
+- The ruler button picks with the raycast the double-click pivot uses, its point threshold 1% of the camera's distance to its target, and nothing raycasts while dragging. On a cloud the point taken is the stored one the ray passes within the threshold, nearest the camera, not where the ray passes it; on a mesh, the point on the face. The second click of a double-click only sets the pivot.
+- Coordinates are each point's own file's: the view's up and a file's turn into the opened file's frame are undone, and a far cloud's offset is already in where the cloud is placed. Deltas are in the first point's file's frame. A new up axis clears the measurement, whose marks would stay where the points were.
+- Lengths carry a USD stage's `metersPerUnit` (`m`, `cm`, `mm`, else `× n m`); other formats hold no unit and show none. Three decimals in a view 1 unit or more across (a millimetre in metres), one more for each tenth smaller, up to 7.
+- The marks are placed at the first point with the second relative to it: float32 vertices at UTM coordinates would be 0.25 m off.
+
 ## USD
 
 - three 0.187's `USDLoader` reads USDA / USDC / USDZ. `@needle-tools/usd` is non-commercial; TinyUSDZ 0.9.1 failed all five test files.

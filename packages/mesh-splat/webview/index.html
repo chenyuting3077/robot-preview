@@ -110,6 +110,13 @@ canvas { display: block; }
 /* Pane buttons take room from the color menu, so the column widens while there are panes. */
 #stage-panel.split { width: 400px; }
 #stage-panel.files.split .stage-head, #stage-panel.files.split .prim-row { grid-template-columns: minmax(0, 1fr) 164px 24px 24px; }
+#measure-readout { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); max-width: calc(100vw - 40px); padding: 8px 12px; border-radius: 12px; font-size: 11px; z-index: 100; }
+#measure-table td { padding: 1px 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#measure-table td:first-child, #measure-table td:nth-child(3) { padding-right: 10px; color: var(--text-tertiary); }
+#measure-table td:nth-child(3) { padding: 0 0 0 10px; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+#measure-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text-tertiary); }
+#measure-table:not(:empty) + #measure-foot { margin-top: 6px; }
+#measure-foot .control-button { margin-left: auto; padding: 3px 8px; font-size: 11px; }
 #load-error { position: fixed; left: 16px; bottom: 16px; max-width: calc(100% - 32px); padding: 8px 12px; border-radius: 8px; background: rgba(200, 40, 40, 0.9); color: #fff; font: 12px/1.4 monospace; white-space: pre-wrap; z-index: 10000; }
 </style>
 </head>
@@ -180,6 +187,9 @@ canvas { display: block; }
     <button class="tool-button" id="pick-btn" data-title="pickParts"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4l7 17 2.5-7.5L21 11z"/></svg></button>
   </div>
   <div class="control-bar-section">
+    <button class="tool-button" id="measure-btn" data-title="measure" aria-pressed="false"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17L17 3l4 4L7 21z"/><path d="M7.5 12.5l2 2M10.5 9.5l2 2M13.5 6.5l2 2"/></svg></button>
+  </div>
+  <div class="control-bar-section">
     <button class="tool-button" id="screenshot-btn" hidden><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
   </div>
   <div class="control-bar-section">
@@ -203,6 +213,7 @@ canvas { display: block; }
 <div id="color-legend" class="glass" hidden><div id="legend-name"></div><div id="legend-bar"></div><div class="legend-ticks"><span id="legend-low"></span><span id="legend-high"></span><input id="legend-top" class="legend-input" type="number" min="0" step="any" hidden></div>
   <div id="legend-distance" hidden><label><span data-t="tolerance"></span><input id="tolerance-input" class="legend-input" type="number" min="0" step="any"></label><button class="control-button" id="hide-within-btn" data-t="hideWithin" aria-pressed="false"></button></div>
 </div>
+<div id="measure-readout" class="glass" hidden><table id="measure-table"></table><div id="measure-foot"><span id="measure-hint"></span><button class="control-button" id="measure-copy" data-t="copy" hidden></button></div></div>
 <div id="loading-indicator" data-t="loading"></div>
 <div id="load-error" hidden></div>
 <script type="module" src="./main.js"></script>

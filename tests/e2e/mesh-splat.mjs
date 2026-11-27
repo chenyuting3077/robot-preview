@@ -667,7 +667,15 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 const hiddenBox = await shotChange(hiddenSelected, await viewShot());
                 await evaluate(`${triRow}.querySelector('.prim-eye').click()`);
                 await sleep(300);
-                const toggleOk = hiddenBox < 0.001 && offClears && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri' && staysClosed && reopened.name === 'Tri' && reopened.shown;
+                // Measuring, a click on Tri reads its point in the stage's Z-up frame and selects nothing.
+                await evaluate(`document.getElementById('measure-btn').click()`);
+                await click(...onTri);
+                const measured = await evaluate(`[...document.querySelectorAll('#measure-table tr')].map(row => row.cells[1]?.textContent).join()`);
+                const measureSelects = await selectedName();
+                await evaluate(`document.getElementById('measure-btn').click()`);
+                const measureOk = /^0\.\d{3}, 0\.\d{3}, 0\.000$/.test(measured) && measureSelects === '';
+                camera += ` measure "${measured}" selected "${measureSelects}"`;
+                const toggleOk = measureOk && hiddenBox < 0.001 && offClears && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri' && staysClosed && reopened.name === 'Tri' && reopened.shown;
                 const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '' && toggleOk;
                 camera += ` pick row "${byRow}" box ${(boxed * 100).toFixed(2)}% esc ${cleared} click ${byClick} empty ${emptyClears} hover "${hoverName}" off "${hoverOff}" toggle ${toggleOk} closed-pick ${staysClosed} reopened ${JSON.stringify(reopened)} hidden-box ${(hiddenBox * 100).toFixed(2)}%`;
                 // Hiding a prim leaves the grid, axes and F framing as they were; only a file's eye refits them.
@@ -1486,6 +1494,108 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     results.push(changeOk);
     console.log(`${changeOk ? 'PASS' : 'FAIL'} settings changed to #802040, size 4, up -Y with size 1 chosen: view ${changed}, ${JSON.stringify(controls)}, up saved ${upSaved}`);
     fs.rmSync(bgDir, { recursive: true, force: true });
+}
+
+// Measure (#29): UTM points read in the file's coordinates; a glTF point added to a +Z cloud reads in its own +Y-up frame.
+{
+    const started = Date.now();
+    const measureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-measure-'));
+    const at = name => path.join(measureDir, name);
+    fs.writeFileSync(at('pair.xyz'), '500000 4000000 500 255 0 0\n500003 4000004 500 0 0 255\n');
+    fs.writeFileSync(at('origin.xyz'), '0 0 0 255 0 0\n');
+    const dot = Buffer.from(new Float32Array([1, 2, 3, 0, 0, 1]).buffer);
+    fs.writeFileSync(at('dot.gltf'), JSON.stringify({
+        asset: { version: '2.0' }, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+        meshes: [{ primitives: [{ attributes: { POSITION: 0, COLOR_0: 1 }, mode: 0 }] }],
+        accessors: [{ bufferView: 0, componentType: 5126, count: 1, type: 'VEC3', min: [1, 2, 3], max: [1, 2, 3] }, { bufferView: 1, componentType: 5126, count: 1, type: 'VEC3' }],
+        bufferViews: [{ buffer: 0, byteLength: 12 }, { buffer: 0, byteOffset: 12, byteLength: 12 }],
+        buffers: [{ byteLength: 24, uri: `data:application/octet-stream;base64,${dot.toString('base64')}` }]
+    }));
+    const show = async (key, html) => {
+        pages.set(`/page/${key}`, html.replaceAll('vscode-webview:', "'self'"));
+        await evaluate('sessionStorage.clear()');
+        await send('Page.navigate', { url: `${origin}/page/${key}` });
+        for (let i = 0; i < 150 && await evaluate("!document.getElementById('loading-indicator') || !document.getElementById('loading-indicator').hidden"); i++) await sleep(100);
+        // Earlier views leave Height as the colouring the extension keeps; the axes' red and blue would read as points.
+        await evaluate(`document.querySelector('[data-color="rgb"]').click(); document.querySelector('[data-size="4"]').click(); document.querySelectorAll('[data-helper].active').forEach(b => b.click()); document.querySelectorAll('#stage-bar, #stage-panel').forEach(e => { e.style.visibility = 'hidden'; })`);
+        await sleep(600);
+    };
+    const bare = async run => {
+        await evaluate("document.querySelectorAll('#top-control-bar, #measure-readout').forEach(e => { e.style.visibility = 'hidden'; }); window.dispatchEvent(new Event('input'))");
+        await sleep(300);
+        try {
+            return await run();
+        } finally {
+            await evaluate("document.querySelectorAll('#top-control-bar, #measure-readout').forEach(e => { e.style.visibility = ''; })");
+        }
+    };
+    // The red and the blue point's centers in CSS pixels.
+    const dots = () => bare(async () => {
+        const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 900, height: 600, scale: 1 } })).data;
+        return evaluate(`(async () => {
+            const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
+            const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+            const d = g.getImageData(0, 0, c.width, c.height).data; const red = [0, 0, 0], blue = [0, 0, 0];
+            for (let i = 0; i < d.length; i += 4) {
+                const sum = d[i] > 150 && d[i + 1] < 80 && d[i + 2] < 80 ? red : d[i + 2] > 150 && d[i] < 80 && d[i + 1] < 80 ? blue : null;
+                if (sum) { sum[0]++; sum[1] += (i / 4) % c.width; sum[2] += Math.floor(i / 4 / c.width); }
+            }
+            return { red: [Math.round(red[1] / red[0]), Math.round(red[2] / red[0])], blue: [Math.round(blue[1] / blue[0]), Math.round(blue[2] / blue[0])] };
+        })()`);
+    });
+    const click = async ([x, y]) => {
+        for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+        await sleep(200);
+    };
+    const escape = async () => {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        await sleep(300);
+    };
+    const readout = () => evaluate(`document.getElementById('measure-readout').hidden ? null : [...document.querySelectorAll('#measure-table tr')].map(row => [...row.cells].map(cell => cell.textContent).filter(Boolean).join(' | '))`);
+    const toggle = () => evaluate(`document.getElementById('measure-btn').click(); document.getElementById('measure-btn').getAttribute('aria-pressed')`);
+
+    await show('pair.xyz', await htmlFor(at('pair.xyz')));
+    const pair = await dots();
+    const unmeasured = await bare(pageShot);
+    const on = await toggle();
+    const empty = await readout();
+    await click(pair.red);
+    const first = await readout();
+    await click(pair.blue);
+    const second = await readout();
+    const marked = await shotDiff(unmeasured, await bare(pageShot));
+    await evaluate(`navigator.clipboard.writeText = text => { window.__copied = text; return Promise.resolve(); }; document.getElementById('measure-copy').click()`);
+    const copied = await evaluate('window.__copied');
+    await escape();
+    const escaped = await readout();
+    const unmarked = await shotDiff(unmeasured, await bare(pageShot));
+    const off = await toggle();
+    await click(pair.red);
+    const offClick = await readout();
+    const expected = ['A | 500000.000, 4000000.000, 500.000', 'B | 500003.000, 4000004.000, 500.000', '距離 | 5.000', 'ΔX ΔY ΔZ | 3.000, 4.000, 0.000'];
+    const pairOk = on === 'true' && JSON.stringify(empty) === '[]' && JSON.stringify(first) === JSON.stringify(expected.slice(0, 1)) && JSON.stringify(second) === JSON.stringify(expected)
+        && copied === expected.map(row => row.replaceAll(' | ', '\t')).join('\n') && marked > 0.001 && JSON.stringify(escaped) === '[]' && unmarked < 0.0005 && off === 'false' && offClick === null;
+    results.push(pairOk);
+    console.log(`${pairOk ? 'PASS' : 'FAIL'} measure pair.xyz at UTM ${Math.round((Date.now() - started) / 100) / 10}s dots ${JSON.stringify(pair)} on ${on} empty ${JSON.stringify(empty)} first ${JSON.stringify(first)} second ${JSON.stringify(second)} copied ${JSON.stringify(copied)} marked ${(marked * 100).toFixed(2)}% esc ${JSON.stringify(escaped)} unmarked ${(unmarked * 100).toFixed(2)}% off ${off} off click ${JSON.stringify(offClick)}`);
+
+    const twoAt = Date.now();
+    await htmlFor(at('origin.xyz'));
+    const panel = panels.get('origin.xyz');
+    await panel.listener({ type: 'addPaths', uris: [pathToFileURL(at('dot.gltf')).href] });
+    await show('origin-dot', panel.webview.html);
+    const two = await dots();
+    await toggle();
+    await click(two.red);
+    const acrossFirst = await readout();
+    await click(two.blue);
+    const across = await readout();
+    await toggle();
+    const acrossExpected = ['A | 0.000, 0.000, 0.000 | origin.xyz', 'B | 1.000, 2.000, 3.000 | dot.gltf', '距離 | 3.742', 'ΔX ΔY ΔZ | 1.000, -3.000, 2.000'];
+    const twoOk = JSON.stringify(acrossFirst) === JSON.stringify(acrossExpected.slice(0, 1)) && JSON.stringify(across) === JSON.stringify(acrossExpected);
+    results.push(twoOk);
+    console.log(`${twoOk ? 'PASS' : 'FAIL'} measure origin.xyz + dot.gltf ${Math.round((Date.now() - twoAt) / 100) / 10}s dots ${JSON.stringify(two)} first ${JSON.stringify(acrossFirst)} ${JSON.stringify(across)}`);
+    fs.rmSync(measureDir, { recursive: true, force: true });
 }
 
 chrome.kill();

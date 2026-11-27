@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Measure from the toolbar's ruler button: click a point to read its coordinates in the file's own frame (a UTM cloud's offset added back, the view's up axis undone), and a second point for the distance between them with its X, Y and Z parts, drawn in the view. *Copy* puts the values on the clipboard; Esc or the button again clears them. Points of several files read in each file's own frame.
+
 ## 0.8.0
 
 - Without WebGL (the snap build of VS Code, GPU acceleration turned off, remote desktop) the view says so and what to try, instead of staying blank; a lost GPU context says so too, and the view draws again when it comes back.
