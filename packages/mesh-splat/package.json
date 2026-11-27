@@ -1,7 +1,7 @@
 {
   "name": "robot-preview-mesh-splat",
   "displayName": "Robot Preview: Point Cloud & Splat Viewer",
-  "description": "Fast 3D viewer for large point clouds and LiDAR scans (PCD, PLY, KITTI, nuScenes), Gaussian splats (3DGS, 2DGS), ROS maps, STEP / IGES CAD and meshes (STL, OBJ, glTF) inside VS Code",
+  "description": "Fast 3D viewer for large point clouds and LiDAR scans (PCD, PLY, LAS, KITTI, nuScenes), Gaussian splats (3DGS, 2DGS), ROS maps, STEP / IGES CAD and meshes (STL, OBJ, glTF) inside VS Code",
   "version": "0.7.3",
   "publisher": "chenyuting3077",
   "icon": "images/icon.png",
@@ -86,6 +86,9 @@
           },
           {
             "filenamePattern": "*.pcd.bin"
+          },
+          {
+            "filenamePattern": "*.las"
           }
         ],
         "priority": "default"
@@ -190,7 +193,7 @@
         },
         {
           "command": "robotPreviewMeshSplat.addToView",
-          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(stl|ply|obj|off|dae|gltf|glb|3mf|wrl|3ds|pcd|xyz|pts|splat|ksplat|spz|sog|pgm|asc|bin)$/i",
+          "when": "!explorerResourceIsFolder && resourceExtname =~ /^\\.(stl|ply|obj|off|dae|gltf|glb|3mf|wrl|3ds|pcd|xyz|pts|splat|ksplat|spz|sog|pgm|asc|bin|las)$/i",
           "group": "navigation"
         }
       ],
@@ -233,6 +236,7 @@
     "pcd",
     "ply",
     "lidar",
+    "las",
     "kitti",
     "nuscenes",
     "occupancy grid",

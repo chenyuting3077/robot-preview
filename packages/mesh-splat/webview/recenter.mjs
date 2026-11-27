@@ -4,7 +4,7 @@ import { grown, percentile } from './geometry.mjs';
 // has its offset taken out in float64 first. Below 10 km float32 steps are at most 1 mm (2^-10 m from 8192 m), so
 // nearer axes, elevations among them, keep their coordinates. The offset is a whole kilometre, which reads plainly
 // in Info.
-const FAR = 10_000;
+export const FAR = 10_000;
 const STEP = 1000;
 // Points are stored before the whole cloud is seen (PCD streams, and a second float64 copy of a large text cloud
 // doubled its peak memory), so the offset comes from the first DECIDE_ROWS real points, which wait in float64.

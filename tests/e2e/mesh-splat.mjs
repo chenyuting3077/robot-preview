@@ -77,6 +77,34 @@ function lidarScan(count, ring) {
     return body;
 }
 
+// A LAS 1.4, point format 7 disc of red points at UTM coordinates (mm scale), its classes and intensity varying.
+function lasDisc(count) {
+    const head = Buffer.alloc(375), stride = 36, body = Buffer.alloc(count * stride);
+    head.write('LASF');
+    head[24] = 1;
+    head[25] = 4;
+    head.writeUInt16LE(375, 94);
+    head.writeUInt32LE(375, 96);
+    head[104] = 7;
+    head.writeUInt16LE(stride, 105);
+    head.writeUInt32LE(count, 107);
+    [0.001, 0.001, 0.001, 500000, 4000000, 0].forEach((v, i) => head.writeDoubleLE(v, 131 + i * 8));
+    [500101, 500099, 4000201, 4000199, 121, 120].forEach((v, i) => head.writeDoubleLE(v, 179 + i * 8));
+    head.writeUInt32LE(count, 247);
+    for (let i = 0; i < count; i++) {
+        const r = Math.sqrt(i / count), a = i * 2.399, at = i * stride;
+        body.writeInt32LE(Math.round(100000 + 1000 * r * Math.cos(a)), at);
+        body.writeInt32LE(Math.round(200000 + 1000 * r * Math.sin(a)), at + 4);
+        body.writeInt32LE(120000 + (i % 100), at + 8);
+        body.writeUInt16LE(i, at + 12);
+        body[at + 14] = 0x11;
+        body[at + 16] = i % 7;
+        body.writeDoubleLE(1.3e9 + i, at + 22);
+        body.writeUInt16LE(65535, at + 30);
+    }
+    return Buffer.concat([head, body]);
+}
+
 function fixtures(dir) {
     const triangle = Buffer.from(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]).buffer);
     const files = {
@@ -113,6 +141,7 @@ function fixtures(dir) {
         'fields.ply': `ply\nformat ascii 1.0\nelement vertex 2000\nproperty float x\nproperty float y\nproperty float z\nproperty float confidence\nend_header\n${Array.from({ length: 2000 }, (_, i) => { const r = Math.sqrt(i / 2000), t = i * 2.399; return `${r * Math.cos(t)} ${r * Math.sin(t)} 0 ${i / 2000}`; }).join('\n')}\n`,
         'scene.usda': `#usda 1.0\n(\n    upAxis = "Z"\n    defaultPrim = "World"\n)\ndef Xform "World"\n{\n    def Mesh "Tri"\n    {\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]\n    }\n    def Mesh "Hidden"\n    {\n        token visibility = "invisible"\n        int[] faceVertexCounts = [3]\n        int[] faceVertexIndices = [0, 1, 2]\n        point3f[] points = [(50, 0, 0), (51, 0, 0), (50, 1, 0)]\n    }\n    def ParticleField3DGaussianSplat "Gaussians"\n    {\n        point3f[] positions = [(0, 0, 1), (1, 0, 1), (0, 1, 1), (1, 1, 1)]\n        quatf[] orientations = [(1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0), (1, 0, 0, 0)]\n        float3[] scales = [(0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1), (0.1, 0.1, 0.1)]\n        float[] opacities = [0.9, 0.9, 0.9, 0.9]\n        int radiance:sphericalHarmonicsDegree = 0\n        float3[] radiance:sphericalHarmonicsCoefficients = [(1, 0, 0), (1, 0, 0), (1, 0, 0), (1, 0, 0)]\n    }\n}\n`,
         'scan.bin': lidarScan(3000),
+        'utm.las': lasDisc(3000),
         'scan.pcd.bin': lidarScan(2000, true),
         'short.bin': lidarScan(100).subarray(0, 1599),
         'map.yaml': '# e2e map\nimage: map.pgm\nresolution: 0.1\norigin: [1.0, 2.0, 1.5707963]  # yaw 90 degrees\nnegate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n',
@@ -728,7 +757,16 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                     && scan.active === 'field:intensity' && /^強度 0\.0\d+ 0\.9\d+$/.test(scan.legend);
                 camera += ` scan ${JSON.stringify(scan)}`;
             }
-            if (name === 'rgb.xyz') {
+            if (name === 'utm.las') {
+                const las = await evaluate(`(() => ({
+                    active: document.querySelector('[data-color].active')?.dataset.color,
+                    fields: [...document.querySelectorAll('#color-fields [data-color]')].map(b => b.dataset.color).join(',')
+                }))()`);
+                state.scanOk = ['點數\t3,000', '格式\tLAS 1.4', '點格式\t7'].every(row => state.info.includes(row)) && /已扣除的偏移\tX 500,100\s+Y 4,000,200/.test(state.info)
+                    && las.active === 'rgb' && las.fields.split(',').includes('field:classification');
+                camera += ` las ${JSON.stringify(las)}`;
+            }
+            if (/^(rgb\.xyz|utm\.las)$/.test(name)) {
                 const png = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 400, height: 400, scale: 0.25 } })).data;
                 state.redOk = await evaluate(`(async () => {
                     const img = await new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = 'data:image/png;base64,${png}'; });
