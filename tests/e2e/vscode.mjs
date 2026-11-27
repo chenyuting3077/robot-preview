@@ -8,6 +8,20 @@ import os from 'node:os';
 const [udir, file, port = '9339'] = process.argv.slice(2);
 const stage = name => process.stderr.write(`[${new Date().toISOString().slice(11, 19)}] ${name}\n`);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// VS Code's IPC socket lives in the user-data-dir and macOS caps a socket path at 104 bytes, past which it exits at launch (#43).
+const absoluteUdir = udir.startsWith('/') ? udir : `${process.cwd()}/${udir}`;
+if (absoluteUdir.length + '/1.99-main.sock'.length > 103) {
+    console.log(`user-data-dir is ${absoluteUdir.length} characters; with VS Code's socket in it the path must stay within 103 (#43). Use a shorter one, e.g. mktemp -d "\${TMPDIR}rpv.XXXX"`);
+    process.exit(2);
+}
+// The tail of the main process's newest log, which says why a launch failed.
+const launchLog = async () => {
+    const fs = await import('node:fs');
+    const dir = `${udir}/logs`;
+    const newest = fs.existsSync(dir) ? fs.readdirSync(dir).sort().at(-1) : null;
+    const log = newest && `${dir}/${newest}/main.log`;
+    return log && fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').slice(-15).join('\n') : `no main.log under ${dir}`;
+};
 const procs = () => new Map(execSync('ps -eo pid=,rss=,args=').toString().split('\n')
     .filter(l => l.includes(udir) && !l.includes('e2e/vscode.mjs')).map(l => l.trim().split(/\s+/))
     .map(([pid, rss, ...args]) => [+pid, { rss: +rss, type: (args.join(' ').match(/--type=(\S+)/) || [, 'main'])[1] }]));
@@ -29,7 +43,7 @@ stage('launch');
 code(['--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', `--remote-debugging-port=${port}`, '--new-window']);
 const iframes = async () => { try { return (await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) })).json()).filter(t => t.type === 'iframe'); } catch { return null; } };
 // The window's renderer sometimes dies at launch and the debug port then stops answering.
-for (let i = 0; !(await iframes()); i++) { if (i > 100) { console.log('VS Code did not start'); await killAll(); process.exit(2); } await sleep(300); }
+for (let i = 0; !(await iframes()); i++) { if (i > 100) { console.log(`VS Code did not start\n${await launchLog()}`); await killAll(); process.exit(2); } await sleep(300); }
 await sleep(10000); // extensions load and their welcome webviews settle
 stage('window up');
 const before = new Set((await iframes()).map(t => t.id));
@@ -90,7 +104,7 @@ let s;
 // WAIT_S (default 600) bounds the wait for the viewer; OpenCascade on a big assembly needs longer.
 while (Date.now() - start < (+process.env.WAIT_S || 600) * 1000) {
     s = await Promise.race([state(), sleep(5000)]).catch(() => null);
-    if (s?.ready && !s.loading) break;
+    if ((s?.ready && !s.loading) || s?.error) break;
     await sleep(200);
 }
 const shown = (Date.now() - start) / 1000;
@@ -160,4 +174,4 @@ const top = [...growth.values()].sort((a, b) => b.grew - a.grew).slice(0, +(proc
 console.log(JSON.stringify({ file: file.split('/').pop(), shown, fps, detailSeconds, cache, error: s?.error || undefined, info: s?.info, grewMostMB: top,
     totalGrowthMB: Math.round(totalMB()) }));
 await killAll();
-process.exit(0);
+process.exit(s?.error ? 1 : 0);
