@@ -14,6 +14,8 @@ export const webviewFile = urlPath => fileURLToPath(new URL(urlPath, 'file:'));
 
 export function chromePath() {
     if (process.env.CHROME) return process.env.CHROME;
+    const mac = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    if (process.platform === 'darwin' && fs.existsSync(mac)) return mac;
     if (process.platform !== 'win32') return 'google-chrome';
     const installs = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean)
         .map(dir => path.join(dir, 'Google', 'Chrome', 'Application', 'chrome.exe'));

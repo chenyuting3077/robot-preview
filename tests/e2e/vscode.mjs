@@ -1,8 +1,10 @@
-// usage: node tests/e2e/vscode.mjs <user-data-dir> <file> [port]
+// usage: node tests/e2e/vscode.mjs <user-data-dir> <file> [port]; VSCODE_ARGS adds launch flags (e.g. --disable-gpu).
+// A long <user-data-dir> makes VS Code exit at launch (#43).
 // Opens <file> in a real VS Code (own user-data-dir, the installed extensions) after the window is up, and
 // reports when the viewer finished loading, its info table, and how much each process grew over its
 // RSS before the file was opened. A second run with the same user-data-dir hits the STEP cache.
 import { spawn, execSync } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
 
 const [udir, file, port = '9339'] = process.argv.slice(2);
@@ -26,7 +28,9 @@ const procs = () => new Map(execSync('ps -eo pid=,rss=,args=').toString().split(
     .filter(l => l.includes(udir) && !l.includes('e2e/vscode.mjs')).map(l => l.trim().split(/\s+/))
     .map(([pid, rss, ...args]) => [+pid, { rss: +rss, type: (args.join(' ').match(/--type=(\S+)/) || [, 'main'])[1] }]));
 // EXT_DIR (default ~/.vscode/extensions) lets a run use builds other than the installed ones.
-const code = args => spawn('code', ['--user-data-dir', udir, '--extensions-dir', process.env.EXT_DIR || `${os.homedir()}/.vscode/extensions`, ...args], { stdio: 'ignore', detached: true }).unref();
+const MAC_CODE = '/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code';
+const CODE = process.env.CODE || (process.platform === 'darwin' && fs.existsSync(MAC_CODE) ? MAC_CODE : 'code');
+const code = args => spawn(CODE, ['--user-data-dir', udir, '--extensions-dir', process.env.EXT_DIR || `${os.homedir()}/.vscode/extensions`, ...args], { stdio: 'ignore', detached: true }).unref();
 // A new `code` that finds a still-exiting instance of the same user-data-dir hands the file to it and nothing opens.
 const killAll = async () => {
     for (let i = 0; procs().size; i++) {
@@ -40,7 +44,7 @@ const LIMIT_MB = +(process.env.LIMIT_MB || 6000);
 await killAll();
 stage('launch');
 
-code(['--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', `--remote-debugging-port=${port}`, '--new-window']);
+code(['--disable-workspace-trust', '--skip-welcome', '--skip-release-notes', `--remote-debugging-port=${port}`, '--new-window', ...(process.env.VSCODE_ARGS?.split(/\s+/).filter(Boolean) ?? [])]);
 const iframes = async () => { try { return (await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(3000) })).json()).filter(t => t.type === 'iframe'); } catch { return null; } };
 // The window's renderer sometimes dies at launch and the debug port then stops answering.
 for (let i = 0; !(await iframes()); i++) { if (i > 100) { console.log(`VS Code did not start\n${await launchLog()}`); await killAll(); process.exit(2); } await sleep(300); }
