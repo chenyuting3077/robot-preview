@@ -19,10 +19,7 @@ const YAML_UNITS = {
     '!inches': 0.0254
 };
 
-// xacro-parser understands neither Python's `a if c else b` nor a `d['k']`
-// lookup that is not at the end of an expression (and expr-eval's [] turns a
-// string key into index 0), so both are rewritten before parsing. A scanner,
-// not a regex: strings and nested parentheses must survive.
+// Python that xacro-parser cannot evaluate is rewritten into calls it can; a scanner, not a regex, so strings and nesting survive.
 const isQuote = c => c === '"' || c === "'";
 
 function skipString(text, i) {
@@ -52,7 +49,7 @@ function topLevelKeyword(text, word, from = 0) {
             j = skipString(text, j) - 1;
         } else if (text[j] === '(' || text[j] === '[') {
             j = closingBracket(text, j);
-        } else if (text.startsWith(word, j) && !/\w/.test(text[j - 1] ?? '') && !/\w/.test(text[j + word.length] ?? '')) {
+        } else if (text.startsWith(word, j) && (!/\w/.test(word) || (!/\w/.test(text[j - 1] ?? '') && !/\w/.test(text[j + word.length] ?? '')))) {
             return j;
         }
     }
@@ -70,16 +67,41 @@ function rewriteExpression(text) {
             const end = closingBracket(text, i);
             out += `(${rewriteExpression(text.slice(i + 1, end))})`;
             i = end + 1;
+        } else if (text.startsWith('**', i)) {
+            // expr-eval's ^ binds like Python's ** (-2**2 is -4); spaced, since xacro-parser's tokenizer does not split on ^.
+            out += ' ^ ';
+            i += 2;
         } else if (/[A-Za-z_]/.test(text[i]) && !/[\w.]/.test(text[i - 1] ?? '')) {
             const name = /^[A-Za-z_]\w*/.exec(text.slice(i))[0];
-            const keys = [];
+            let value = name;
             let j = i + name.length;
-            while (text[j] === '[') {
-                const end = closingBracket(text, j);
-                keys.push(rewriteExpression(text.slice(j + 1, end)));
-                j = end + 1;
+            for (;;) {
+                // xacro.* and math.* are namespaces, not values.
+                const member = !['xacro', 'math'].includes(name) && /^\.([A-Za-z_]\w*)(\(?)/.exec(text.slice(j));
+                if (text[j] === '[') {
+                    const end = closingBracket(text, j);
+                    const inner = text.slice(j + 1, end);
+                    const colon = topLevelKeyword(inner, ':');
+                    if (colon === -1) value = `__read_property__(${value}, ${rewriteExpression(inner)})`;
+                    else {
+                        const start = rewriteExpression(inner.slice(0, colon).trim()) || '0';
+                        const stop = rewriteExpression(inner.slice(colon + 1).trim());
+                        value = `__slice__(${value}, ${start}${stop ? `, ${stop}` : ''})`;
+                    }
+                    j = end + 1;
+                } else if (member?.[2]) {
+                    const open = j + member[0].length - 1;
+                    const end = closingBracket(text, open);
+                    const args = text.slice(open + 1, end).trim();
+                    value = `__call_method__(${value}, '${member[1]}'${args ? `, ${rewriteExpression(args)}` : ''})`;
+                    j = end + 1;
+                } else if (member) {
+                    // A yaml dictionary's d.key, as ROS xacro's YamlDictWrapper allows.
+                    value = `__read_property__(${value}, '${member[1]}')`;
+                    j += member[0].length;
+                } else break;
             }
-            out += keys.length ? `__read_property__(${name}, ${keys.join(', ')})` : name;
+            out += value;
             i = j;
         } else {
             out += text[i++];
@@ -90,6 +112,26 @@ function rewriteExpression(text) {
     const elseAt = at === -1 ? -1 : topLevelKeyword(out, 'else', at + 2);
     if (elseAt === -1) return out;
     return `(${out.slice(at + 2, elseAt).trim()}) ? (${out.slice(0, at).trim()}) : (${rewriteExpression(out.slice(elseAt + 4)).trim()})`;
+}
+
+// Python's split() without a separator drops empty fields; split(' ') keeps them.
+const STRING_METHODS = {
+    split: (s, sep, ...maxsplit) => {
+        // JS's second argument truncates the result where Python's merges the rest, so it is refused rather than wrong.
+        if (maxsplit.length) throw new Error('unsupported Python split() with maxsplit');
+        return sep == null ? s.split(/\s+/).filter(Boolean) : s.split(sep);
+    },
+    lower: s => s.toLowerCase(),
+    upper: s => s.toUpperCase(),
+    replace: (s, from, to) => s.split(from).join(to),
+    startswith: (s, prefix) => s.startsWith(prefix),
+    endswith: (s, suffix) => s.endsWith(suffix)
+};
+
+function callMethod(value, method, ...args) {
+    const fn = typeof value === 'string' && Object.hasOwn(STRING_METHODS, method) ? STRING_METHODS[method] : null;
+    if (!fn) throw new Error(`unsupported Python method .${method}() on ${typeof value}`);
+    return fn(value, ...args);
 }
 
 function rewritePythonExpressions(text) {
@@ -160,6 +202,11 @@ export class XacroAdapter {
         // xacro-parser rewraps errors as text, so a yaml error's position is
         // kept here and reattached once parse() fails.
         let yamlError = null;
+        parser.expressionParser.functions.__call_method__ = callMethod;
+        parser.expressionParser.functions.__slice__ = (value, start, end) => value.slice(start, end);
+        // Python counts a negative index from the end.
+        parser.expressionParser.functions.__read_property__ = (value, ...keys) => keys.reduce((at, key) =>
+            (typeof key === 'number' && key < 0 && (Array.isArray(at) || typeof at === 'string') ? at[at.length + key] : at[key]), value);
         parser.expressionParser.functions.__load_yaml__ = filename => {
             const target = /^[/\\]/.test(filename) ? filename : `${parser.currentWorkingPath}${filename}`;
             // Exact only: the mesh resolver's case/tail/basename guesses would
@@ -171,7 +218,8 @@ export class XacroAdapter {
                 throw new Error(yamlError.message);
             }
             try {
-                return yaml.load(found.file, { schema, filename });
+                // json: a repeated key keeps the last value, as PyYAML does (franka_description's fp3/inertials.yaml).
+                return yaml.load(found.file, { schema, filename, json: true });
             } catch (error) {
                 yamlError = { message: `YAML error in ${filename}: ${error.reason || error.message}`, location: { key: found.key, line: error.mark?.line ?? 0, column: error.mark?.column ?? 0 } };
                 throw error;
@@ -344,15 +392,16 @@ export class XacroAdapter {
 
         // Match <xacro:arg name="NAME" default="VALUE"/>
         // Also match <arg name="NAME" default="VALUE"/> (without xacro: prefix)
-        const argPattern = /<(?:xacro:)?arg\s+name=["']([^"']+)["'](?:\s+default=["']([^"']*)["'])?/g;
+        // Each value ends at its own quote: default="['a','b']" holds the other kind.
+        const argPattern = /<(?:xacro:)?arg\s+name=(["'])(.*?)\1(?:\s+default=(["'])(.*?)\3)?/g;
 
         let match;
         while ((match = argPattern.exec(xacroContent)) !== null) {
-            const argName = match[1];
+            const argName = match[2];
             // A default with a substitution is left to the parser, which
             // evaluates it; prefilling it here would pass "$(find x)" on verbatim.
-            if (match[2] !== undefined && /\$[({]/.test(match[2])) continue;
-            args[argName] = match[2] ?? 'false'; // 'false' only when no default is given
+            if (match[4] !== undefined && /\$[({]/.test(match[4])) continue;
+            args[argName] = match[4] ?? 'false'; // 'false' only when no default is given
         }
 
         return args;

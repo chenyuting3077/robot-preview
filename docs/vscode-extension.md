@@ -36,7 +36,7 @@ Pitfalls of building and publishing it: issues #1 and #5.
 
 ## Xacro
 
-- xacro-parser 0.3.11 with `patches/xacro-parser@0.3.11.patch`, checked against ROS 2 xacro's output for the UR5e (`tests/fixtures/xacro/`). Upstream breaks `ur_description` on scopes, `^` defaults, dictionaries, quoted whitespace and `True` / `False`.
+- xacro-parser 0.3.11 with `patches/xacro-parser@0.3.11.patch`, checked against ROS 2 xacro's output for the UR5e and the FR3 (`tests/fixtures/xacro/`); every robot of franka_description 2.9.0 (8), realsense2_description's test models (11) and six UR types also matched xacro 2.1.1 element for element (2026-11). Upstream breaks `ur_description` on scopes, `^` defaults, dictionaries, quoted whitespace and `True` / `False`.
 - `load_yaml` files must match the path exactly: the mesh resolver's case and name guesses would load a file ROS would not.
 
 ## DAE geometry in Rust

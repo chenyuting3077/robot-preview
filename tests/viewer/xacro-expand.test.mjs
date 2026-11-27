@@ -131,6 +131,43 @@ test('Python conditionals nest inside parentheses and leave strings alone', asyn
     assert.equal(linkName(await expand(`${props}<link name="\${'k[0]' if double else 'n'}"/>`)), 'k[0]');
 });
 
+test('str methods chain with indexing as in Python', async () => {
+    const props = '<xacro:property name="xyz" value=" 1  2 3"/><xacro:property name="s" value="Arm_Link"/>';
+    assert.equal(linkName(await expand(`${props}<link name="l\${xyz.split()[1]}"/>`)), 'l2');
+    assert.equal(linkName(await expand(`${props}<link name="l\${xyz.split(' ')[2]}"/>`)), 'l');
+    assert.equal(linkName(await expand(`${props}<link name="\${s.lower().replace('_', '-')}"/>`)), 'arm-link');
+    assert.equal(linkName(await expand(`${props}<link name="\${s.split('_')[0].upper() if s.startswith('Arm') else 'no'}"/>`)), 'ARM');
+    await assert.rejects(expand(`${props}<link name="\${s.title()}"/>`), /unsupported Python method \.title\(\)/);
+    await assert.rejects(expand(`${props}<link name="\${s.split('_', 1)[1]}"/>`), /maxsplit/);
+});
+
+test('a yaml dictionary reads by attribute as well as by key', async () => {
+    const extra = { '/pkg/config/i.yaml': 'link0:\n  origin:\n    rpy: 0 0 1\n' };
+    const urdf = await expand(`<xacro:property name="d" value="\${xacro.load_yaml('$(find pkg)/config/i.yaml')}"/><xacro:property name="n" value="link0"/><link name="\${d[n].origin.rpy}"/>`, { extra });
+    assert.equal(linkName(urdf), '0 0 1');
+});
+
+test('a repeated yaml key keeps the last value, as PyYAML does', async () => {
+    const extra = { '/pkg/config/d.yaml': 'a: 1\na: 2\n' };
+    assert.equal(linkName(await expand(`<link name="l\${xacro.load_yaml('$(find pkg)/config/d.yaml')['a']}"/>`, { extra })), 'l2');
+});
+
+test('** binds as in Python', async () => {
+    const props = '<xacro:property name="r" value="3"/>';
+    assert.equal(linkName(await expand(`${props}<link name="l\${-r**2}"/>`)), 'l-9');
+    assert.equal(linkName(await expand(`${props}<link name="l\${2**r**2 / 2**r}"/>`)), 'l64');
+});
+
+test('lists slice and index from the end as in Python', async () => {
+    const props = `<xacro:property name="l" value="\${['a', 'b', 'c']}"/><xacro:property name="s" value="hello"/>`;
+    assert.equal(linkName(await expand(`${props}<link name="\${l[1:][0]}\${l[-1]}\${s[:-1]}\${s[1:3]}"/>`)), 'bchellel');
+});
+
+test('a list default stays whole when the quotes inside differ from the outer ones', async () => {
+    const urdf = await expand(`<xacro:arg name="types" default="['fr3','fer']"/><xacro:property name="l" value="\${$(arg types)}"/><link name="\${l[1]}"/>`);
+    assert.equal(linkName(urdf), 'fer');
+});
+
 test('load_yaml finds only the exact path, as ROS does, never a same-named file elsewhere', async () => {
     await assert.rejects(
         expand(`<xacro:property name="cfg" value="\${xacro.load_yaml('$(find pkg)/config/wrongdir/limits.yaml')}"/><link name="\${cfg['arm']['name']}"/>`, { extra: yamlConfig }),

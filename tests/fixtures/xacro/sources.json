@@ -5,5 +5,12 @@
     "revision": "0eb1a861f7772fceb38510d90fa2f98ec668070c",
     "files": "urdf/, config/ur5e/, package.xml, LICENSE (meshes omitted: the golden test compares expanded text)",
     "golden": "ur5e.urdf from generate-golden.sh with ur_type:=ur5e name:=ur5e"
+  },
+  "franka_description": {
+    "repository": "https://github.com/frankaemika/franka_description",
+    "tag": "2.9.0",
+    "revision": "7aeeddc449edf8d62b594f9e36a81da53e7796f9",
+    "files": "the fr3.urdf.xacro dependencies (xacro --deps), package.xml, LICENSE (meshes omitted)",
+    "golden": "fr3.urdf from xacro 2.1.1 off PyPI (Docker was not running); generate-golden.sh makes it with ROS Jazzy's xacro"
   }
 }
