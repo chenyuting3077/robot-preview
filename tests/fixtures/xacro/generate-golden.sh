@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 if ! docker info > /dev/null 2>&1; then
   ROS_OUT=ur5e.urdf node ../../../scripts/xacro-vs-ros.mjs ur_description urdf/ur.urdf.xacro ur_type:=ur5e name:=ur5e || true
   ROS_OUT=fr3.urdf node ../../../scripts/xacro-vs-ros.mjs franka_description robots/fr3/fr3.urdf.xacro || true
+  for f in expressions/*.urdf.xacro; do ROS_OUT="${f%.xacro}" node ../../../scripts/xacro-vs-ros.mjs expressions "${f#expressions/}" || true; done
   exit
 fi
 # A throwaway ament index, so $(find) resolves to these fixtures, not to an apt package of another version.
@@ -19,5 +20,6 @@ docker run --rm -v "$PWD:/fx" ros:jazzy bash -c '
   source /opt/ros/jazzy/setup.bash
   AMENT_PREFIX_PATH=/ws:$AMENT_PREFIX_PATH xacro /fx/ur_description/urdf/ur.urdf.xacro ur_type:=ur5e name:=ur5e > /fx/ur5e.urdf
   AMENT_PREFIX_PATH=/ws:$AMENT_PREFIX_PATH xacro /fx/franka_description/robots/fr3/fr3.urdf.xacro > /fx/fr3.urdf
+  cd /fx && for f in expressions/*.urdf.xacro; do xacro "$f" > "${f%.xacro}"; done
 '
-echo "wrote $(pwd)/ur5e.urdf and fr3.urdf"
+echo "wrote $(pwd)/ur5e.urdf, fr3.urdf and expressions/*.urdf"

@@ -3,13 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DOMParser } from 'linkedom';
-
-globalThis.DOMParser ??= DOMParser;
-globalThis.XMLSerializer ??= class {
-    serializeToString(node) {
-        return node.toString();
-    }
-};
+import './xml-dom.mjs';
 
 // The model files of a package directory, keyed as the webview keys them (/<name>/<path>).
 export function packageFiles(dir, name) {

@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<!-- Python from vendor description packages, one construct per check -->
+<robot name="vendor" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:property name="laser_model" value="sick-571"/>
+  <xacro:property name="robot_sn" value="XF1300ABCDEFGHIJ"/>
+  <xacro:property name="robot_sn_len" value="${len(robot_sn)}"/>
+  <xacro:property name="column" value="b"/>
+  <xacro:property name="row" value="2"/>
+  <xacro:property name="chr" value="${dict(d98='b', d99='c')}"/>
+  <xacro:property name="mesh" value="package://pkg/meshes/base.stl"/>
+  <xacro:macro name="arm" params="initial_positions:=${dict(joint_1=0.0,joint_2=0.5)}">
+    <check name="kortex_dict_default" value="${initial_positions['joint_2']}"/>
+  </xacro:macro>
+  <!-- pmb2_description -->
+  <check name="pmb2_not_in" value="${laser_model not in ['no-laser', 'sick-551', 'hokuyo']} ${laser_model not in ['sick-571']}"/>
+  <!-- xarm_description -->
+  <check name="xarm_len" value="${robot_sn_len &gt;= 14 and (robot_sn[0] == 'X' or robot_sn[0] == 'L')} ${int(robot_sn[2:6])}"/>
+  <!-- clearpath_platform_description -->
+  <check name="clearpath_ord" value="${chr['d' + str(python.ord(column))] + python.str(row)} ${python.str(python.int(row) + 1)}"/>
+  <!-- robotiq_description -->
+  <check name="robotiq_startswith" value="${mesh.startswith('file:///') or mesh.startswith('package://')}"/>
+  <!-- ur_description, kortex_description -->
+  <xacro:arm/>
+</robot>

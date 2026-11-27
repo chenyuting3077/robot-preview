@@ -1,13 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DOMParser } from 'linkedom';
-
-globalThis.DOMParser ??= DOMParser;
-globalThis.XMLSerializer ??= class {
-    serializeToString(node) {
-        return node.toString();
-    }
-};
+import './xml-dom.mjs';
 
 const { XacroAdapter } = await import('../../src/adapters/XacroAdapter.js');
 
@@ -187,6 +180,19 @@ test('yaml files are not read when nothing calls load_yaml', async () => {
     map.set('/pkg/config/big.yaml', { text: async () => { reads++; return 'a: 1\n'; } });
     await XacroAdapter.expand(robot('<link name="a"/>'), '/pkg/urdf/robot.urdf.xacro', map, {});
     assert.equal(reads, 0);
+});
+
+test('Python that xacro allows but the preview cannot evaluate fails naming the construct', async () => {
+    const props = `<xacro:property name="l" value="\${[1, 2]}"/>`;
+    await assert.rejects(expand(`${props}<link name="\${[x * 2 for x in l]}"/>`), /unsupported Python comprehension/);
+    await assert.rejects(expand(`${props}<link name="\${(lambda x: x)(1)}"/>`), /unsupported Python lambda/);
+    await assert.rejects(expand(`${props}<link name="\${'%x' % 255}"/>`), /unsupported Python format %x/);
+    await assert.rejects(expand(`${props}<link name="\${dict(l)}"/>`), /dict\(\) without keyword arguments/);
+});
+
+test('operators keep their meaning inside strings and in $(eval)', async () => {
+    assert.equal(linkName(await expand(`<link name="\${'a // b &lt;= c not in d'}"/>`)), 'a // b &lt;= c not in d');
+    assert.equal(linkName(await expand('<xacro:arg name="n" default="7"/><link name="l$(eval n // 2)"/>')), 'l3');
 });
 
 test('a missing yaml file is reported plainly, with the path it was looked up under', async () => {

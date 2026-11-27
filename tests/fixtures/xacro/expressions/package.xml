@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>expressions</name>
+  <version>0.0.0</version>
+  <description>One Xacro expression form per check, for the golden test.</description>
+  <maintainer email="noreply@example.com">robot-preview</maintainer>
+  <license>Apache-2.0</license>
+</package>

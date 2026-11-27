@@ -56,6 +56,56 @@ function topLevelKeyword(text, word, from = 0) {
     return -1;
 }
 
+function splitTopLevel(text, separator) {
+    const parts = [];
+    for (let at = topLevelKeyword(text, separator); at !== -1; at = topLevelKeyword(text, separator)) {
+        parts.push(text.slice(0, at));
+        text = text.slice(at + separator.length);
+    }
+    return [...parts, text];
+}
+
+// Operators expr-eval lacks, or xacro-parser's tokenizer splits (>=), become a op S op b around a sentinel S; marks hold their place meanwhile.
+const SPELLED = {
+    '//': { mark: '\u0001', op: '/', sentinel: 'py_floordiv__', apply: (a, b) => Math.floor(a / b) },
+    'not in': { mark: '\u0002', op: 'in', sentinel: 'py_notin__', apply: (a, b, contains) => !contains(a, b) },
+    '>=': { mark: '\u0003', op: '>', sentinel: 'py_ge__', apply: (a, b) => a >= b },
+    '<=': { mark: '\u0004', op: '<', sentinel: 'py_le__', apply: (a, b) => a <= b }
+};
+const COMPARISON = /^(==|!=|<|>|[\u0002-\u0004]|in(?!\w))/;
+
+// a < b <= c is (a < b) and (b <= c) in Python; expr-eval would compare the first result with c.
+function splitComparisonChains(text) {
+    const pieces = [];
+    let segment = { start: 0, ops: [] };
+    const close = end => pieces.push({ ...segment, end });
+    for (let j = 0; j < text.length; j++) {
+        const boundary = /^(?:(?:and|or|not|if|else)(?!\w)|,)/.exec(text.slice(j));
+        const op = !/\w/.test(text[j - 1] ?? '') || !/\w/.test(text[j]) ? COMPARISON.exec(text.slice(j)) : null;
+        if (isQuote(text[j])) {
+            j = skipString(text, j) - 1;
+        } else if (text[j] === '(' || text[j] === '[') {
+            j = closingBracket(text, j);
+        } else if (boundary && !/\w/.test(text[j - 1] ?? '')) {
+            close(j);
+            segment = { start: j + boundary[0].length, ops: [] };
+            j += boundary[0].length - 1;
+        } else if (op) {
+            segment.ops.push({ at: j, length: op[0].length });
+            j += op[0].length - 1;
+        }
+    }
+    close(text.length);
+    let out = text;
+    for (const { start, end, ops } of pieces.reverse()) {
+        if (ops.length < 2) continue;
+        const operands = [start, ...ops.map(op => op.at + op.length)].map((from, k) => text.slice(from, ops[k]?.at ?? end).trim());
+        const chain = ops.map((op, k) => `(${operands[k]} ${text.substr(op.at, op.length)} ${operands[k + 1]})`).join(' and ');
+        out = `${out.slice(0, start)} ${chain} ${out.slice(end)}`;
+    }
+    return out;
+}
+
 function rewriteExpression(text) {
     let out = '';
     for (let i = 0; i < text.length;) {
@@ -65,19 +115,49 @@ function rewriteExpression(text) {
             i = end;
         } else if (text[i] === '(') {
             const end = closingBracket(text, i);
-            out += `(${rewriteExpression(text.slice(i + 1, end))})`;
+            const inner = rewriteExpression(text.slice(i + 1, end));
+            // A tuple, as in '%s_%s' % (a, b), is read as a list; a call's parentheses stay.
+            const call = /[)\]]\s*$/.test(out) || !['', 'in', 'and', 'or', 'not', 'if', 'else'].includes(/(\w*)\s*$/.exec(out)[1]);
+            const tuple = !call && topLevelKeyword(inner, ',') !== -1;
+            out += tuple ? `[${inner}]` : `(${inner})`;
             i = end + 1;
         } else if (text.startsWith('**', i)) {
             // expr-eval's ^ binds like Python's ** (-2**2 is -4); spaced, since xacro-parser's tokenizer does not split on ^.
             out += ' ^ ';
             i += 2;
+        } else if (['//', '>=', '<='].some(op => text.startsWith(op, i))) {
+            out += ` ${SPELLED[text.slice(i, i + 2)].mark} `;
+            i += 2;
         } else if (/[A-Za-z_]/.test(text[i]) && !/[\w.]/.test(text[i - 1] ?? '')) {
-            const name = /^[A-Za-z_]\w*/.exec(text.slice(i))[0];
-            let value = name;
+            let name = /^[A-Za-z_]\w*/.exec(text.slice(i))[0];
             let j = i + name.length;
+            if (name === 'for' || name === 'lambda') throw new Error(`unsupported Python ${name === 'for' ? 'comprehension' : 'lambda'}`);
+            const notIn = name === 'not' && /^\s+in(?!\w)/.exec(text.slice(j));
+            if (notIn) {
+                out += ` ${SPELLED['not in'].mark} `;
+                i = j + notIn[0].length;
+                continue;
+            }
+            // math.*, python.* and xacro.* are namespaces, not values.
+            const namespaced = ['math', 'python', 'xacro'].includes(name) && /^\.([A-Za-z_]\w*)/.exec(text.slice(j));
+            if (namespaced) {
+                name = name === 'xacro' ? `__xacro_${namespaced[1]}__` : namespaced[1];
+                j += namespaced[0].length;
+            }
+            let value = name;
+            if (name === 'dict' && text[j] === '(') {
+                const end = closingBracket(text, j);
+                const pairs = splitTopLevel(text.slice(j + 1, end), ',').filter(arg => arg.trim()).map(arg => {
+                    const keyword = /^\s*([A-Za-z_]\w*)\s*=(?!=)([\s\S]*)$/.exec(arg);
+                    if (!keyword) throw new Error('unsupported Python dict() without keyword arguments');
+                    return `"${keyword[1]}",${rewriteExpression(keyword[2].trim())}`;
+                });
+                // No space, = or ': xacro-parser splits a macro's params="name:=${dict(a=1)}" on them.
+                value = `__dict__(${pairs.join(',')})`;
+                j = end + 1;
+            }
             for (;;) {
-                // xacro.* and math.* are namespaces, not values.
-                const member = !['xacro', 'math'].includes(name) && /^\.([A-Za-z_]\w*)(\(?)/.exec(text.slice(j));
+                const member = /^\.([A-Za-z_]\w*)(\(?)/.exec(text.slice(j));
                 if (text[j] === '[') {
                     const end = closingBracket(text, j);
                     const inner = text.slice(j + 1, end);
@@ -107,6 +187,7 @@ function rewriteExpression(text) {
             out += text[i++];
         }
     }
+    out = splitComparisonChains(out);
     // Lowest precedence and right-associative, so only the top level splits.
     const at = topLevelKeyword(out, 'if');
     const elseAt = at === -1 ? -1 : topLevelKeyword(out, 'else', at + 2);
@@ -134,8 +215,130 @@ function callMethod(value, method, ...args) {
     return fn(value, ...args);
 }
 
+const toExprEval = expression => Object.values(SPELLED)
+    .reduce((text, { mark, op, sentinel }) => text.replaceAll(mark, ` ${op} ${sentinel} ${op} `), rewriteExpression(expression));
+
+const XML_ENTITIES = { '&lt;': '<', '&gt;': '>', '&quot;': '"', '&amp;': '&' };
+const decodeXml = text => text.replace(/&(?:lt|gt|quot|amp);/g, entity => XML_ENTITIES[entity]);
+const encodeXml = text => text.replace(/[&<"]/g, char => ({ '&': '&amp;', '<': '&lt;', '"': '&quot;' })[char]);
+
+// The rewrite runs on the file's text, where <= is written &lt;=; ' stays as written, since either quote may delimit the attribute.
 function rewritePythonExpressions(text) {
-    return text.replace(/\$\{([^}]*)\}/g, (whole, expression) => `\${${rewriteExpression(expression)}}`);
+    return text.replace(/\$\{([^}]*)\}/g, (whole, expression) => `\${${encodeXml(toExprEval(decodeXml(expression)))}}`);
+}
+
+// Prints as Python prints a list, where a plain array would print as 1,2.
+class PyList extends Array {
+    toString() {
+        return `[${this.map(pyRepr).join(', ')}]`;
+    }
+}
+
+const toPyList = value => (Array.isArray(value) && !(value instanceof PyList) ? PyList.from(value, toPyList) : value);
+const pyStr = value => (typeof value === 'boolean' ? (value ? 'True' : 'False') : value == null ? 'None' : String(value));
+const pyRepr = value => (typeof value === 'string' ? `'${value}'` : pyStr(value));
+const pyTruthy = value => (value && typeof value === 'object' ? Object.keys(value).length > 0 : Boolean(value));
+const iterable = args => (args.length === 1 && Array.isArray(args[0]) ? args[0] : args);
+
+function pyInt(value, base) {
+    if (typeof value !== 'string') return Math.trunc(Number(value));
+    const number = base ? parseInt(value, base) : Number(value.trim());
+    if (value.trim() === '' || !Number.isInteger(number)) throw new Error(`invalid literal for int(): '${value}'`);
+    return number;
+}
+
+function pyFloat(value) {
+    const number = Number(value);
+    if (typeof value === 'string' && (value.trim() === '' || Number.isNaN(number))) throw new Error(`could not convert string to float: '${value}'`);
+    return number;
+}
+
+// Python rounds a tie to the even neighbour: round(2.5) is 2.
+function pyRound(value, digits = 0) {
+    const scale = 10 ** digits;
+    const scaled = value * scale;
+    const floor = Math.floor(scaled);
+    const rest = scaled - floor;
+    return (rest > 0.5 || (rest === 0.5 && floor % 2 !== 0) ? floor + 1 : floor) / scale;
+}
+
+function pyRange(start, stop, step = 1) {
+    if (stop === undefined) [start, stop] = [0, start];
+    const out = [];
+    for (let i = start; step > 0 ? i < stop : i > stop; i += step) out.push(i);
+    return PyList.from(out);
+}
+
+function pyFormat(format, args) {
+    const values = Array.isArray(args) ? [...args] : [args];
+    return format.replace(/%(?:\.(\d+))?([sdif%])|%./g, (spec, precision, kind) => {
+        if (!kind) throw new Error(`unsupported Python format ${spec}`);
+        if (kind === '%') return '%';
+        const value = values.shift();
+        if (kind === 's') return pyStr(value);
+        if (kind === 'f') return Number(value).toFixed(precision === undefined ? 6 : Number(precision));
+        return String(Math.trunc(Number(value)));
+    });
+}
+
+// Python's builtins and math functions that xacro exposes, with and without their python. and math. prefixes.
+const PY_FUNCTIONS = {
+    int: pyInt,
+    float: pyFloat,
+    str: pyStr,
+    bool: pyTruthy,
+    round: pyRound,
+    min: (...args) => Math.min(...iterable(args)),
+    max: (...args) => Math.max(...iterable(args)),
+    len: value => (typeof value === 'string' || Array.isArray(value) ? value.length : Object.keys(value).length),
+    abs: Math.abs,
+    sum: (values, start = 0) => values.reduce((total, value) => total + value, start),
+    sorted: values => PyList.from(values).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)),
+    list: value => PyList.from(value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : value),
+    range: pyRange,
+    ord: text => text.codePointAt(0),
+    all: values => values.every(pyTruthy),
+    any: values => values.some(pyTruthy),
+    sqrt: Math.sqrt,
+    floor: Math.floor,
+    ceil: Math.ceil,
+    trunc: Math.trunc,
+    fabs: Math.abs,
+    exp: Math.exp,
+    hypot: Math.hypot,
+    log: (value, base) => (base === undefined ? Math.log(value) : Math.log(value) / Math.log(base)),
+    log10: Math.log10,
+    __dict__: (...pairs) => Object.fromEntries(Array.from({ length: pairs.length / 2 }, (_, k) => [pairs[2 * k], pairs[2 * k + 1]])),
+    // xacro.error, warning and message print and expand to nothing; xacro.fatal stops.
+    __xacro_error__: (...args) => (console.warn(...args), ''),
+    __xacro_warning__: (...args) => (console.warn(...args), ''),
+    __xacro_message__: (...args) => (console.log(...args), ''),
+    __xacro_fatal__: (...args) => {
+        throw new Error(args.map(pyStr).join(' '));
+    }
+};
+
+function addPythonOperators(expressionParser) {
+    const ops = expressionParser.binaryOps;
+    const { '*': multiply, '+': add } = ops;
+    for (const { op, sentinel, apply } of Object.values(SPELLED)) {
+        const original = ops[op];
+        const marker = { sentinel };
+        expressionParser.consts[sentinel] = marker;
+        ops[op] = (a, b) => (b === marker ? { marker, left: a } : a?.marker === marker ? apply(a.left, b, original) : original(a, b));
+    }
+    // Python's % takes the divisor's sign: -7 % 3 is 2.
+    ops['%'] = (a, b) => (typeof a === 'string' && isNaN(a) ? pyFormat(a, b) : a - b * Math.floor(a / b));
+    ops['*'] = (a, b) => {
+        if (Number.isInteger(b) && (typeof a === 'string' || Array.isArray(a))) [a, b] = [b, a];
+        if (typeof b === 'string') return b.repeat(a);
+        if (Array.isArray(b)) return PyList.from(Array.from({ length: a }, () => b).flat());
+        return multiply(a, b);
+    };
+    ops['+'] = (a, b) => (Array.isArray(a) && Array.isArray(b) ? PyList.from([...a, ...b]) : add(a, b));
+    Object.assign(expressionParser.functions, PY_FUNCTIONS);
+    const evaluate = expressionParser.evaluate.bind(expressionParser);
+    expressionParser.evaluate = (...args) => toPyList(evaluate(...args));
 }
 
 export class XacroAdapter {
@@ -153,6 +356,8 @@ export class XacroAdapter {
         parser.workingPath = workingPath;
         // The webview has no process.env; the extension sends the variables
         // the model files reference.
+        // argumentDefaults comes from patches/xacro-parser@0.3.11.patch.
+        const allArguments = () => ({ ...parser.argumentDefaults, ...parser.arguments });
         parser.rospackCommands = (stem, ...args) => {
             if (stem === 'find') return `/${args[0]}`;
             if (stem === 'env') {
@@ -163,10 +368,9 @@ export class XacroAdapter {
             // currentWorkingPath comes from patches/xacro-parser@0.3.11.patch.
             if (stem === 'dirname') return parser.currentWorkingPath.replace(/\/+$/, '');
             if (stem === 'eval') {
-                // argumentDefaults comes from patches/xacro-parser@0.3.11.patch.
-                const scope = Object.fromEntries(Object.entries({ ...parser.argumentDefaults, ...parser.arguments })
+                const scope = Object.fromEntries(Object.entries(allArguments())
                     .map(([name, value]) => [name, value !== '' && !isNaN(value) ? Number(value) : value]));
-                return String(parser.expressionParser.evaluate(args.join(' '), scope));
+                return String(parser.expressionParser.evaluate(toExprEval(args.join(' ')), scope));
             }
             return null;
         };
@@ -202,6 +406,11 @@ export class XacroAdapter {
         // xacro-parser rewraps errors as text, so a yaml error's position is
         // kept here and reattached once parse() fails.
         let yamlError = null;
+        addPythonOperators(parser.expressionParser);
+        parser.expressionParser.functions.__xacro_arg__ = name => {
+            if (allArguments()[name] === undefined) throw new Error(`undefined xacro argument '${name}'`);
+            return allArguments()[name];
+        };
         parser.expressionParser.functions.__call_method__ = callMethod;
         parser.expressionParser.functions.__slice__ = (value, start, end) => value.slice(start, end);
         // Python counts a negative index from the end.

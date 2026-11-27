@@ -39,6 +39,7 @@ Pitfalls of building and publishing it: issues #1 and #5.
 
 - xacro-parser 0.3.11 with `patches/xacro-parser@0.3.11.patch`, checked against ROS 2 xacro's output for the UR5e and the FR3 (`tests/fixtures/xacro/`); every robot of franka_description 2.9.0 (8), realsense2_description's test models (11) and six UR types also matched xacro 2.1.1 element for element (2026-11). Upstream breaks `ur_description` on scopes, `^` defaults, dictionaries, quoted whitespace and `True` / `False`.
 - `load_yaml` files must match the path exactly: the mesh resolver's case and name guesses would load a file ROS would not.
+- Python in `${}` is rewritten into xacro-parser's expr-eval, not run by a Python interpreter: `//`, `not in` and chained comparisons, which expr-eval lacks, and `>=` / `<=`, which xacro-parser's tokenizer splits, become expr-eval operators around a sentinel; the builtins and `math` functions xacro exposes are added. Comprehensions, `lambda`, `%` formats other than `%s %d %i %f` and `dict()` without keywords stop with an error naming them. A float prints as JavaScript prints it (`1` where Python prints `1.0`); `tests/fixtures/xacro/expressions/` checks each form against xacro 2.1.1.
 
 ## DAE geometry in Rust
 

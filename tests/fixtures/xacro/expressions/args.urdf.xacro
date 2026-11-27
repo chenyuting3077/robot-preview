@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<!-- xacro:arg defaults used when nothing is passed -->
+<robot name="args" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="n" default="4"/>
+  <xacro:arg name="scale" default="0.5"/>
+  <xacro:arg name="robot" default="arm"/>
+  <xacro:arg name="full" default="$(arg prefix)$(arg robot)_v$(arg n)"/>
+  <xacro:arg name="use_gripper" default="true"/>
+  <xacro:arg name="sim" default="false"/>
+  <xacro:arg name="env_name" default="$(optenv ROBOT_PREVIEW_TEST_ROBOT bot)"/>
+  <xacro:property name="n" value="$(arg n)"/>
+  <check name="text" value="$(arg prefix)base $(arg full) $(arg env_name)"/>
+  <check name="math" value="${n * 2} ${$(arg n) + 1} ${$(arg scale) * 4} ${xacro.arg('n')}"/>
+  <check name="eval" value="$(eval n * 2) $(eval scale + 1) $(eval robot + '_x')"/>
+  <xacro:if value="$(arg use_gripper)">
+    <check name="gripper"/>
+  </xacro:if>
+  <xacro:unless value="$(arg sim)">
+    <check name="real"/>
+  </xacro:unless>
+  <xacro:if value="${'$(arg robot)' == 'arm'}">
+    <check name="is_arm"/>
+  </xacro:if>
+</robot>

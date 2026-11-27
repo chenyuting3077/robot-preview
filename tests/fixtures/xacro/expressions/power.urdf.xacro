@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- ** as in rde-urdf #105: box inertia, precedence, right associativity -->
+<robot name="power" xmlns:xacro="http://www.ros.org/wiki/xacro">
+  <xacro:macro name="box_inertial" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(z**2+y**2)/12}" ixy="0" ixz="0" iyy="${m*(z**2+x**2)/12}" iyz="0" izz="${m*(x**2+y**2)/12}"/>
+    </inertial>
+  </xacro:macro>
+  <xacro:property name="r" value="3"/>
+  <link name="base_link">
+    <xacro:box_inertial m="${2.0}" x="${0.36}" y="${0.26}" z="${0.12}"/>
+  </link>
+  <check name="power" value="${-r**2} ${2**3**2} ${2**-1} ${(1+1)**3} ${2**0.5} ${r ** 2 * 2} ${0.1**2} ${pow(r, 2)}"/>
+</robot>

@@ -12,5 +12,10 @@
     "revision": "7aeeddc449edf8d62b594f9e36a81da53e7796f9",
     "files": "the fr3.urdf.xacro dependencies (xacro --deps), package.xml, LICENSE (meshes omitted)",
     "golden": "fr3.urdf from xacro 2.1.1 off PyPI (Docker was not running); generate-golden.sh makes it with ROS Jazzy's xacro"
+  },
+  "expressions": {
+    "repository": "written for this repository, one Xacro expression form per <check>",
+    "files": "*.urdf.xacro",
+    "golden": "*.urdf from xacro 2.1.1 off PyPI (Docker was not running); generate-golden.sh makes them with ROS Jazzy's xacro"
   }
 }
