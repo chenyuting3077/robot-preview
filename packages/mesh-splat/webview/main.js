@@ -1,6 +1,9 @@
 import { startupDone } from '../../../src/utils/startup-errors.js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { Line2 } from 'three/examples/jsm/lines/Line2.js';
+import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -292,6 +295,7 @@ function resize() {
     const [columns, rows] = layout();
     camera.aspect = (window.innerWidth / columns) / (window.innerHeight / rows);
     camera.updateProjectionMatrix();
+    measureMarks?.traverse(object => object.material?.resolution?.set(window.innerWidth / columns, window.innerHeight / rows));
     wake();
 }
 new ResizeObserver(resize).observe(document.body);
@@ -448,19 +452,43 @@ function setMeasureMode(on) {
     measured = [];
     showMeasure();
 }
+// The selection blue, ringed white then dark so it shows on blue points and on a white background alike.
+let dotTexture = null;
+function measureDot() {
+    if (dotTexture) return dotTexture;
+    const canvas = Object.assign(document.createElement('canvas'), { width: 64, height: 64 });
+    const context = canvas.getContext('2d');
+    for (const [radius, color] of [[31, 'rgba(0, 0, 0, 0.55)'], [26, '#ffffff'], [19, '#0a84ff']]) {
+        context.beginPath();
+        context.arc(32, 32, radius, 0, Math.PI * 2);
+        context.fillStyle = color;
+        context.fill();
+    }
+    dotTexture = new THREE.CanvasTexture(canvas);
+    dotTexture.colorSpace = THREE.SRGBColorSpace;
+    return dotTexture;
+}
 // Marks sit at their points with geometry relative to them: float32 vertices at UTM coordinates would be off by 0.25 m.
 function markMeasure() {
-    measureMarks?.traverse(object => object.geometry?.dispose());
+    measureMarks?.traverse(object => { object.geometry?.dispose(); object.material?.dispose(); });
     measureMarks?.removeFromParent();
     measureMarks = null;
     if (!measured.length) return;
     const [a, b] = measured.map(point => point.view);
-    const shown = { color: 0xffff00, depthTest: false, transparent: true };
     const geometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), ...(b ? [b.clone().sub(a)] : [])]);
-    measureMarks = new THREE.Group().add(new THREE.Points(geometry, new THREE.PointsMaterial({ ...shown, size: 9, sizeAttenuation: false })));
-    if (b) measureMarks.add(new THREE.Line(geometry, new THREE.LineBasicMaterial(shown)));
+    measureMarks = new THREE.Group();
+    // WebGL draws a plain line 1 px wide whatever its linewidth, so the segment is a Line2, over a dark one for contrast.
+    if (b) {
+        const [columns, rows] = layout();
+        for (const [color, linewidth, opacity] of [[0x000000, 5, 0.55], [0x0a84ff, 3, 1]]) {
+            const material = new LineMaterial({ color, linewidth, opacity, transparent: true, depthTest: false });
+            material.resolution.set(window.innerWidth / columns, window.innerHeight / rows);
+            measureMarks.add(new Line2(new LineGeometry().setPositions([0, 0, 0, ...b.clone().sub(a).toArray()]), material));
+        }
+    }
+    measureMarks.add(new THREE.Points(geometry, new THREE.PointsMaterial({ map: measureDot(), transparent: true, depthTest: false, alphaTest: 0.1, size: 13, sizeAttenuation: false })));
     measureMarks.position.copy(a);
-    measureMarks.traverse(object => { object.renderOrder = 999; object.raycast = () => {}; });
+    measureMarks.children.forEach((object, i) => { object.renderOrder = 999 + i; object.raycast = () => {}; });
     scene.add(measureMarks);
 }
 function measureRows() {

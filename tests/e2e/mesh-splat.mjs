@@ -1565,6 +1565,9 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const noUnit = await evaluate("document.getElementById('measure-unit').hidden ? '' : document.getElementById('measure-unit').textContent");
     await click(pair.blue);
     const second = await readout();
+    const keepShot = async name => shots && fs.writeFileSync(path.join(shots, `${name}.png`), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    if (shots) fs.mkdirSync(shots, { recursive: true });
+    await keepShot('measure-pair');
     const marked = await shotDiff(unmeasured, await bare(pageShot));
     await evaluate(`navigator.clipboard.writeText = text => { window.__copied = text; return Promise.resolve(); }; document.getElementById('measure-copy').click()`);
     const copied = await evaluate('window.__copied');
@@ -1591,6 +1594,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const acrossFirst = await readout();
     await click(two.blue);
     const across = await readout();
+    await keepShot('measure-two-files');
     await toggle();
     const acrossExpected = ['A | 0.000, 0.000, 0.000 | origin.xyz', 'B | 1.000, 2.000, 3.000 | dot.gltf', '距離 | 3.742', 'ΔX ΔY ΔZ | 1.000, -3.000, 2.000'];
     const twoOk = JSON.stringify(acrossFirst) === JSON.stringify(acrossExpected.slice(0, 1)) && JSON.stringify(across) === JSON.stringify(acrossExpected);
