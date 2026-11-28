@@ -1,3 +1,4 @@
+// usage: npx -y -p node@22 node tests/e2e/mesh-splat.mjs [file…]; ONLY=<regex> runs only the fixture files and blocks (the `want(…)` names) it matches, SHOTS=<dir> saves screenshots.
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -9,6 +10,7 @@ import { MeshoptEncoder } from '../../packages/mesh-splat/node_modules/meshoptim
 
 const extension = fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url));
 const shots = process.env.SHOTS;
+const want = name => !process.env.ONLY || new RegExp(process.env.ONLY).test(name);
 const extraFiles = process.argv.slice(2);
 const results = [];
 
@@ -204,7 +206,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 // #24: without WebGL the view says why it is empty instead of staying blank. Its own Chrome, since the flag is per browser.
-{
+if (want('no-webgl')) {
     const started = Date.now();
     const bareProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-nogl-'));
     const barePort = 9100 + Math.floor(Math.random() * 400);
@@ -338,7 +340,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-fixtures-'));
 const files = [...fixtures(dir), ...extraFiles.map(file => path.resolve(file))];
 // CAD files (STEP, IGES) open twice: tessellated first, then from the cache the first open handed to the extension.
 const CAD = /\.(ste?p|ige?s)$/i;
-for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
+for (const file of [...files, ...files.filter(file => CAD.test(file))].filter(file => want(path.basename(file)))) {
     const name = path.basename(file);
     const extra = path.dirname(file) !== dir;
     const counted = results.length;
@@ -831,7 +833,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 // Several files in one view: a red map, then a blue scan from another folder, added through the protocol. The
 // extension re-renders the page with both, as VS Code would; the toolbar, Stage and legend are left out of
 // the pictures compared.
-{
+if (want('several-files')) {
     const started = Date.now();
     const disk = (cx, z, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = Math.sqrt(i / 3000), a = i * 2.399; return `${cx + r * Math.cos(a)} ${r * Math.sin(a)} ${z} ${rgb}`; }).join('\n');
     const map = path.join(dir, 'map.xyz');
@@ -954,7 +956,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 // lifted 1 m (mean 0.27, 75% within 5 cm):
 // colored by its distance to the map (or to a plane mesh under it), the near part takes the low end and the lifted
 // part the top; the first tolerance (3 medians, 0.06 rounded to 0.05) hides the near part.
-{
+if (want('distance')) {
     const started = Date.now();
     const compareDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-compare-'));
     const at = name => path.join(compareDir, name);
@@ -1137,7 +1139,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 }
 
 // Two UTM clouds 3 m apart, each read less its own offset and placed back: in one view they stand side by side.
-{
+if (want('utm')) {
     const utmDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-utm-'));
     const disk = (cx, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = Math.sqrt(i / 3000), a = i * 2.399; return `${cx + r * Math.cos(a)} ${4000000 + r * Math.sin(a)} 500 ${rgb}`; }).join('\n');
     const west = path.join(utmDir, 'west.xyz');
@@ -1173,7 +1175,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 }
 
 // A page for a changed file keeps only the colors: a file added before it is up must not bring back the rest.
-{
+if (want('stale-page')) {
     const staleDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-stale-'));
     const cloud = path.join(staleDir, 'cloud.xyz');
     const other = path.join(staleDir, 'other.xyz');
@@ -1207,7 +1209,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 }
 
 // Add file… pressed while a slow file still loads saves no half-made view for the page the add brings.
-{
+if (want('slow-add')) {
     const slowDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-slow-'));
     const small = path.join(slowDir, 'small.xyz');
     const slow = path.join(slowDir, 'slow.xyz');
@@ -1231,7 +1233,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 
 // A 200 m cloud added to a 10 cm one: the view kept over the add (its far plane set for 10 cm) still shows it, and
 // still does once hidden, framed without it (F) and shown again. A cloud 12 km off must not clip the part either.
-{
+if (want('far-cloud')) {
     const farDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-far-'));
     const disk = (radius, x, z, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = radius * Math.sqrt(i / 3000), a = i * 2.399; return `${x + r * Math.cos(a)} ${r * Math.sin(a)} ${z} ${rgb}`; }).join('\n');
     const small = path.join(farDir, 'small.xyz');
@@ -1295,7 +1297,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 // A file 50 km off cannot share one depth range with a 10 cm part: shown, the view frames both; hidden, it must not
 // re-frame the view on every other change. And a cloud whose axes were held back (origin past far) gets them as soon
 // as a file shown again brings the origin within far.
-{
+if (want('far-off-file')) {
     const remoteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-remote-'));
     const disk = (radius, x, y, rgb) => Array.from({ length: 3000 }, (_, i) => { const r = radius * Math.sqrt(i / 3000), a = i * 2.399; return `${x + r * Math.cos(a)} ${y + r * Math.sin(a)} 0 ${rgb}`; }).join('\n');
     const at = name => path.join(remoteDir, name);
@@ -1372,7 +1374,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 }
 
 // #24: a lost context says so in the view, and a restored one draws the same picture again, splats too.
-{
+if (want('lost-context')) {
     const lostDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-lost-'));
     fs.copyFileSync(path.join(dir, 'cube.stl'), path.join(lostDir, 'cube.stl'));
     fs.writeFileSync(path.join(lostDir, 'gauss.ply'), splatPly(['scale_0', 'scale_1', 'scale_2']));
@@ -1410,7 +1412,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 }
 
 // A file with no points opens empty, and a view whose every file fails still lists them, the added one removable.
-{
+if (want('empty')) {
     const started = Date.now();
     const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-empty-'));
     const at = name => path.join(emptyDir, name);
@@ -1452,7 +1454,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 }
 
 // #25: a background color set in the settings fills the view and its screenshot, and a theme change leaves it.
-{
+if (want('background')) {
     const bgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-background-'));
     const cube = path.join(bgDir, 'cube.stl');
     fs.copyFileSync(path.join(dir, 'cube.stl'), cube);
@@ -1497,7 +1499,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
 }
 
 // Measure (#29): UTM points read in the file's coordinates; a glTF point added to a +Z cloud reads in its own +Y-up frame.
-{
+if (want('measure')) {
     const started = Date.now();
     const measureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-measure-'));
     const at = name => path.join(measureDir, name);
@@ -1628,4 +1630,4 @@ try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } cat
 fs.rmSync(dir, { recursive: true, force: true });
 fs.rmSync(globalStorage, { recursive: true, force: true });
 console.log(`${results.filter(Boolean).length}/${results.length} passed`);
-process.exit(results.every(Boolean) ? 0 : 1);
+process.exit(results.length && results.every(Boolean) ? 0 : 1);
