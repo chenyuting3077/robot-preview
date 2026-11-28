@@ -670,10 +670,10 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 // Measuring, a click on Tri reads its point in the stage's Z-up frame and selects nothing.
                 await evaluate(`document.getElementById('measure-btn').click()`);
                 await click(...onTri);
-                const measured = await evaluate(`[...document.querySelectorAll('#measure-table tr')].map(row => row.cells[1]?.textContent).join()`);
+                const measured = await evaluate(`[...document.querySelectorAll('#measure-table tr')].map(row => row.cells[1]?.textContent).join() + ' / ' + document.getElementById('measure-unit').textContent`);
                 const measureSelects = await selectedName();
                 await evaluate(`document.getElementById('measure-btn').click()`);
-                const measureOk = /^0\.\d{3}, 0\.\d{3}, 0\.000 cm$/.test(measured) && measureSelects === '';
+                const measureOk = /^0\.\d{3}, 0\.\d{3}, 0\.000 \/ 單位 cm$/.test(measured) && measureSelects === '';
                 camera += ` measure "${measured}" selected "${measureSelects}"`;
                 const toggleOk = measureOk && hiddenBox < 0.001 && offClears && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri' && staysClosed && reopened.name === 'Tri' && reopened.shown;
                 const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '' && toggleOk;

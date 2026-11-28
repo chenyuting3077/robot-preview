@@ -30,7 +30,7 @@ import { lasReader, lazReader } from './las.mjs';
 import { createTransport } from './transport.mjs';
 import { recentering } from './recenter.mjs';
 import { legendLabels } from './legend-format.mjs';
-import { measurement, decimalsFor, formatLength, formatPoint, UNIT_NAMES } from './measure.mjs';
+import { measurement, decimalsFor, formatLength, formatPoint, readoutUnit, UNIT_NAMES } from './measure.mjs';
 import { createRenderer, watchContext } from '../../../src/utils/webgl.js';
 
 const STRINGS = {
@@ -467,12 +467,13 @@ function measureRows() {
     const [a, b = a] = measured.map(({ view, file }) => ({ view: view.toArray(), turn: file.group.getWorldQuaternion(new THREE.Quaternion()).toArray(), scale: file.viewScale, file }));
     if (!a) return [];
     const decimals = decimalsFor(localBox?.getSize(new THREE.Vector3()).length());
-    const unit = a.file.metersPerUnit;
+    const perRow = readoutUnit(measured.map(({ file }) => file.metersPerUnit)).perRow;
+    const unit = perRow && a.file.metersPerUnit;
     const named = file => (files.length > 1 ? file.name : '');
     const result = measurement(a, b);
     const rows = [
         ['A', formatPoint(result.a, decimals, unit), named(a.file)],
-        ['B', formatPoint(result.b, decimals, b.file.metersPerUnit), named(b.file)],
+        ['B', formatPoint(result.b, decimals, perRow && b.file.metersPerUnit), named(b.file)],
         [t('distance'), formatLength(result.distance, decimals, unit), ''],
         ['ΔX ΔY ΔZ', formatPoint(result.delta, decimals, unit), '']
     ];
@@ -488,7 +489,9 @@ function showMeasure() {
         return row;
     }));
     $('measure-hint').textContent = measured.length < 2 ? t(measured.length ? 'measureNext' : 'measureHint') : '';
-    $('measure-unit').hidden = !rows.length || measured.every(({ file }) => file.metersPerUnit);
+    const { shared, perRow } = readoutUnit(measured.map(({ file }) => file.metersPerUnit));
+    $('measure-unit').hidden = !rows.length || perRow;
+    $('measure-unit').textContent = shared ? `${t('unit')} ${shared}` : t('noUnit');
     $('measure-copy').hidden = !rows.length;
     $('measure-copy').textContent = t('copy');
     $('measure-copy').onclick = () => navigator.clipboard.writeText(rows.map(cells => cells.filter(Boolean).join('\t')).join('\n'))

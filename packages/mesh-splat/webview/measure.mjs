@@ -29,7 +29,10 @@ const fixed = (value, decimals) => {
     const text = value.toFixed(decimals);
     return Number(text) === 0 ? text.replace('-', '') : text;
 };
-const unitSuffix = metersPerUnit => (metersPerUnit ? ` ${UNIT_NAMES[metersPerUnit] ?? `× ${metersPerUnit} m`}` : '');
+const unitName = metersPerUnit => UNIT_NAMES[metersPerUnit] ?? `× ${metersPerUnit} m`;
+const unitSuffix = metersPerUnit => (metersPerUnit ? ` ${unitName(metersPerUnit)}` : '');
+// Said once below the rows when the points share it (null: the file states none); per row only when they differ.
+export const readoutUnit = units => (new Set(units.map(unit => unit || null)).size > 1 ? { perRow: true } : { shared: units[0] ? unitName(units[0]) : null });
 
 export const formatLength = (value, decimals, metersPerUnit) => `${fixed(value, decimals)}${unitSuffix(metersPerUnit)}`;
 export const formatPoint = (point, decimals, metersPerUnit) => `${point.map(value => fixed(value, decimals)).join(', ')}${unitSuffix(metersPerUnit)}`;

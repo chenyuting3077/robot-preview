@@ -78,3 +78,14 @@ test('a stage the view scales to meters reads in its own units', () => {
     assert.ok(Math.abs(result.distance - 50) < 1e-9);
     near(result.delta, [0, 30, 40], 1e-9);
 });
+
+test('a unit is named once for the readout, and only when every point shares it', async () => {
+    const { readoutUnit } = await import('../../packages/mesh-splat/webview/measure.mjs');
+    assert.deepEqual(readoutUnit([0.01, 0.01]), { shared: 'cm' });
+    assert.deepEqual(readoutUnit([1]), { shared: 'm' });
+    assert.deepEqual(readoutUnit([0.0254]), { shared: '× 0.0254 m' });
+    assert.deepEqual(readoutUnit([undefined, null]), { shared: null });
+    // Points of files in different units each carry theirs.
+    assert.deepEqual(readoutUnit([0.01, 1]), { perRow: true });
+    assert.deepEqual(readoutUnit([0.01, undefined]), { perRow: true });
+});
