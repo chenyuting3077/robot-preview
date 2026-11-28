@@ -56,6 +56,38 @@
         "priority": "option"
       }
     ],
+    "commands": [
+      {
+        "command": "robotPreviewUsd.open3D",
+        "title": "Open 3D Preview",
+        "category": "Robot Preview",
+        "icon": {
+          "light": "images/preview-light.svg",
+          "dark": "images/preview-dark.svg"
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "robotPreviewUsd.open3D",
+          "when": "resourceExtname =~ /^\\.usda$/i && activeCustomEditorId != robotPreviewUsd.text",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "robotPreviewUsd.open3D",
+          "when": "resourceExtname =~ /^\\.usda$/i"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "robotPreviewUsd.open3D",
+          "when": "resourceExtname =~ /^\\.usda$/i"
+        }
+      ]
+    },
     "configuration": {
       "title": "Robot Preview: USD Viewer (OpenUSD, Isaac Sim)",
       "properties": {

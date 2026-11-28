@@ -6,7 +6,7 @@ Click a `.usd` in the Explorer and see the robot or scene, without starting Isaa
 
 ## Open it
 
-Click a `.usd`, `.usdc` or `.usdz` file. `.usda` stays in the text editor; open its view with *Reopen Editor With…*.
+Click a `.usd`, `.usdc` or `.usdz` file. `.usda` stays in the text editor; open its view with the preview button at the top right of the editor, or *Open 3D Preview* in the Explorer's menu. To open `.usda` in the view by default, add `"workbench.editorAssociations": { "*.usda": "robotPreviewUsd.text" }` to your settings.
 
 ## What you get
 

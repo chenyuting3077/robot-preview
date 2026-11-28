@@ -288,6 +288,16 @@ test('Add to Point Cloud View waits out a late delete of the opened file and ski
     assert.deepEqual(names(panel), ['map.pcd', 'a.pcd']);
 });
 
+test('the USD extension opens a .usda in its view from Open 3D Preview', async () => {
+    const usd = fileURLToPath(new URL('../../packages/usd', import.meta.url));
+    const root = workspace({ 'scene.usda': '#usda 1.0' });
+    const env = loadExtension({ workspace: root, extension: fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url)), root: usd, globalStorage: path.join(root, 'storage') });
+    env.activate();
+    const scene = env.vscode.Uri.file(path.join(root, 'scene.usda'));
+    await env.state.commands['robotPreviewUsd.open3D'](scene);
+    assert.deepEqual(env.state.executed.at(-1), ['vscode.openWith', scene, 'robotPreviewUsd.text']);
+});
+
 test('the USD extension, which ships this file, registers no Open as points command', () => {
     const usd = fileURLToPath(new URL('../../packages/usd', import.meta.url));
     const root = workspace({ 'scene.usda': '#usda 1.0' });

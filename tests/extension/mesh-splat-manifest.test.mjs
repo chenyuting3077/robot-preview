@@ -54,3 +54,19 @@ test('Add to Point Cloud View shows on files the view takes, not on folders, YAM
     for (const ext of ['.pcd', '.PLY', '.bin', '.splat', '.pgm', '.stl', '.las', '.LAZ']) assert.ok(shownFor(ext), ext);
     for (const ext of ['.yaml', '.step', '.igs', '.txt', '.pcdx']) assert.ok(!shownFor(ext), ext);
 });
+
+test('a .usda editor has a title button and an Explorer entry that open the USD view, with the Mesh & Splat icon', () => {
+    const usd = JSON.parse(fs.readFileSync(new URL('../../packages/usd/package.json', import.meta.url), 'utf8')).contributes;
+    const { icon } = usd.commands.find(({ command }) => command === 'robotPreviewUsd.open3D');
+    for (const theme of ['light', 'dark']) {
+        assert.equal(fs.readFileSync(new URL(`../../packages/usd/${icon[theme]}`, import.meta.url), 'utf8'), fs.readFileSync(new URL(`../../packages/mesh-splat/images/preview-${theme}.svg`, import.meta.url), 'utf8'), theme);
+    }
+    for (const place of ['editor/title', 'explorer/context']) {
+        const item = usd.menus[place].find(({ command }) => command === 'robotPreviewUsd.open3D');
+        assert.ok(item, place);
+        const shownFor = ext => new RegExp(item.when.match(/resourceExtname =~ \/(.*)\/i/)[1], 'i').test(ext);
+        assert.ok(shownFor('.usda') && shownFor('.USDA'), place);
+        for (const ext of ['.usd', '.usdc', '.usdz']) assert.ok(!shownFor(ext), `${place}: ${ext}`);
+    }
+    assert.match(usd.menus['editor/title'].find(({ command }) => command === 'robotPreviewUsd.open3D').when, /activeCustomEditorId != robotPreviewUsd\.text/);
+});

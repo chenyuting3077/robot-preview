@@ -445,13 +445,14 @@ function activate(context) {
     context.subscriptions.push(...customEditors.map(({ viewType }) => vscode.window.registerCustomEditorProvider(viewType, provider, options)));
     // Formats that are not opened by default open from a title button instead: .bin is too common a binary
     // extension (firmware, weights), and OBJ, glTF, DAE, VRML and XYZ are text people edit (XYZ is also a
-    // molecule format). Only this package contributes the commands: the USD extension ships this file too.
+    // molecule format), as is USDA. Each package registers only the commands its manifest contributes.
     const contributes = id => manifest.contributes.commands?.some(({ command }) => command === id);
-    for (const id of ['robotPreviewMeshSplat.openAsPoints', 'robotPreviewMeshSplat.open3D']) {
+    const openers = { 'robotPreviewMeshSplat.openAsPoints': 'robotPreviewMeshSplat.textPoints', 'robotPreviewMeshSplat.open3D': 'robotPreviewMeshSplat.textPoints', 'robotPreviewUsd.open3D': 'robotPreviewUsd.text' };
+    for (const [id, viewType] of Object.entries(openers)) {
         if (!contributes(id)) continue;
         context.subscriptions.push(vscode.commands.registerCommand(id, uri => {
             uri ??= vscode.window.activeTextEditor?.document.uri ?? vscode.window.tabGroups?.activeTabGroup.activeTab?.input?.uri;
-            if (uri) return vscode.commands.executeCommand('vscode.openWith', uri, 'robotPreviewMeshSplat.textPoints');
+            if (uri) return vscode.commands.executeCommand('vscode.openWith', uri, viewType);
         }));
     }
     // Dragging files onto a webview reaches it only while Shift is held, else VS Code opens each in a tab; the
