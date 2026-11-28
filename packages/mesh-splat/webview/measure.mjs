@@ -1,7 +1,6 @@
 // Measured points back in their files' own frames, and their readout. Usage: measurement({ view, turn }, { view, turn })
 
-// USD's metersPerUnit values that have a name; the same names Info shows.
-export const UNIT_NAMES = { 1: 'm', 0.01: 'cm', 0.001: 'mm' };
+const UNIT_NAMES = { 1: 'm', 0.01: 'cm', 0.001: 'mm' };
 
 // `turn` is the file's rotation in the view, [x, y, z, w]; a far cloud's offset is already in the view point, where the cloud is placed.
 export function filePoint([x, y, z], [qx, qy, qz, qw]) {
@@ -29,7 +28,7 @@ const fixed = (value, decimals) => {
     const text = value.toFixed(decimals);
     return Number(text) === 0 ? text.replace('-', '') : text;
 };
-const unitName = metersPerUnit => UNIT_NAMES[metersPerUnit] ?? `× ${metersPerUnit} m`;
+export const unitName = metersPerUnit => UNIT_NAMES[metersPerUnit] ?? `× ${metersPerUnit} m`;
 const unitSuffix = metersPerUnit => (metersPerUnit ? ` ${unitName(metersPerUnit)}` : '');
 // Said once below the rows when the points share it (null: the file states none); per row only when they differ.
 export const readoutUnit = units => (new Set(units.map(unit => unit || null)).size > 1 ? { perRow: true } : { shared: units[0] ? unitName(units[0]) : null });

@@ -44,10 +44,11 @@ const PICK_KEY = 'pickParts';
 // it is kept per file, the 500 last chosen.
 const SETTINGS_KEY = 'viewSettings';
 const UP_AXES = ['+Z', '-Z', '+Y', '-Y', '+X', '-X'];
+const POINT_SIZES = [1, 2, 4];
 const MAX_UP_FILES = 500;
 function mergeSettings(saved = {}, message, file) {
     const next = { ...saved, upByFile: { ...saved.upByFile } };
-    if ([1, 2, 4].includes(message.pointSize)) next.pointSize = message.pointSize;
+    if (POINT_SIZES.includes(message.pointSize)) next.pointSize = message.pointSize;
     if (['rgb', 'height'].includes(message.colorMode)) next.colorMode = message.colorMode;
     if (UP_AXES.includes(message.up)) {
         delete next.upByFile[file];
@@ -66,7 +67,7 @@ function configured(section, saved, file) {
     const set = [inspected?.globalValue, inspected?.workspaceValue, inspected?.workspaceFolderValue].some(value => value !== undefined);
     return {
         background: /^#[0-9a-f]{6}$/i.test(background) ? background : 'theme',
-        pointSize: set && [1, 2, 4].includes(pointSize) ? pointSize : undefined,
+        pointSize: set && POINT_SIZES.includes(pointSize) ? pointSize : undefined,
         up: saved.upByFile?.[file] ?? (UP_AXES.includes(upAxis) ? upAxis : undefined)
     };
 }
@@ -349,7 +350,7 @@ function activate(context) {
                 rerender: () => render(KEEP_VIEW),
                 pick: message => context.globalState.update(PICK_KEY, message.on !== false),
                 settings: message => {
-                    if ([1, 2, 4].includes(message.pointSize)) chosen.pointSize = message.pointSize;
+                    if (POINT_SIZES.includes(message.pointSize)) chosen.pointSize = message.pointSize;
                     if (UP_AXES.includes(message.up)) chosen.up = message.up;
                     return context.globalState.update(SETTINGS_KEY, mergeSettings(context.globalState.get(SETTINGS_KEY), message, document.uri.fsPath));
                 },

@@ -33,7 +33,7 @@ import { lasReader, lazReader } from './las.mjs';
 import { createTransport } from './transport.mjs';
 import { recentering } from './recenter.mjs';
 import { legendLabels } from './legend-format.mjs';
-import { measurement, decimalsFor, formatLength, formatPoint, readoutUnit, UNIT_NAMES } from './measure.mjs';
+import { measurement, decimalsFor, formatLength, formatPoint, readoutUnit, unitName } from './measure.mjs';
 import { createRenderer, watchContext } from '../../../src/utils/webgl.js';
 
 const STRINGS = {
@@ -491,25 +491,25 @@ function markMeasure() {
     measureMarks.children.forEach((object, i) => { object.renderOrder = 999 + i; object.raycast = () => {}; });
     scene.add(measureMarks);
 }
-function measureRows() {
+function measureRows(perRow) {
     const [a, b = a] = measured.map(({ view, file }) => ({ view: view.toArray(), turn: file.group.getWorldQuaternion(new THREE.Quaternion()).toArray(), scale: file.viewScale, file }));
     if (!a) return [];
     const decimals = decimalsFor(localBox?.getSize(new THREE.Vector3()).length());
-    const perRow = readoutUnit(measured.map(({ file }) => file.metersPerUnit)).perRow;
-    const unit = perRow && a.file.metersPerUnit;
+    const unitOf = file => perRow && file.metersPerUnit;
     const named = file => (files.length > 1 ? file.name : '');
     const result = measurement(a, b);
     const rows = [
-        ['A', formatPoint(result.a, decimals, unit), named(a.file)],
-        ['B', formatPoint(result.b, decimals, perRow && b.file.metersPerUnit), named(b.file)],
-        [t('distance'), formatLength(result.distance, decimals, unit), ''],
-        ['ΔX ΔY ΔZ', formatPoint(result.delta, decimals, unit), '']
+        ['A', formatPoint(result.a, decimals, unitOf(a.file)), named(a.file)],
+        ['B', formatPoint(result.b, decimals, unitOf(b.file)), named(b.file)],
+        [t('distance'), formatLength(result.distance, decimals, unitOf(a.file)), ''],
+        ['ΔX ΔY ΔZ', formatPoint(result.delta, decimals, unitOf(a.file)), '']
     ];
     return rows.slice(0, measured.length > 1 ? 4 : 1);
 }
 function showMeasure() {
     markMeasure();
-    const rows = measureMode ? measureRows() : [];
+    const { shared, perRow } = readoutUnit(measured.map(({ file }) => file.metersPerUnit));
+    const rows = measureMode ? measureRows(perRow) : [];
     $('measure-readout').hidden = !measureMode;
     $('measure-table').replaceChildren(...rows.map(cells => {
         const row = document.createElement('tr');
@@ -517,7 +517,6 @@ function showMeasure() {
         return row;
     }));
     $('measure-hint').textContent = measured.length < 2 ? t(measured.length ? 'measureNext' : 'measureHint') : '';
-    const { shared, perRow } = readoutUnit(measured.map(({ file }) => file.metersPerUnit));
     $('measure-unit').hidden = !rows.length || perRow;
     $('measure-unit').textContent = shared ? `${t('unit')} ${shared}` : t('noUnit');
     $('measure-copy').hidden = !rows.length;
@@ -617,6 +616,7 @@ function meshOf(geometry) {
     return new THREE.Mesh(geometry, surfaceMaterial(hasColor(geometry) ? [1, 1, 1] : MESH_GREY, { vertexColors: hasColor(geometry) }));
 }
 
+const POINT_SIZES = [1, 2, 4];
 let pointSize = 2;
 const pointsOf = geometry => new THREE.Points(float32Attributes(geometry), new THREE.PointsMaterial({
     size: pointSize, sizeAttenuation: false, color: hasColor(geometry) ? 0xffffff : POINT_GREY, vertexColors: hasColor(geometry)
@@ -884,7 +884,7 @@ async function loadUsd(info, file) {
     // three.js draws an authored metersPerUnit in meters and an unauthored one at 1; the USD spec reads it as 0.01.
     file.viewScale = metersPerUnit ?? 1;
     file.metersPerUnit = metersPerUnit ?? 0.01;
-    info.unit = UNIT_NAMES[file.metersPerUnit] ?? `${file.metersPerUnit} m`;
+    info.unit = unitName(file.metersPerUnit);
     for (const { object, ply } of gaussians) object.add(await loadSplat(ply, info, 'gaussians.ply'));
     // Its prims are rows of the Stage panel, which setupStage builds once every file has loaded.
     group.userData.stage = true;
@@ -1176,7 +1176,7 @@ window.addEventListener('message', ({ data }) => {
     if (data?.type !== 'defaults') return;
     setBackground(data.background);
     if (!ownUp) return Object.assign(savedSettings, { pointSize: data.pointSize ?? savedSettings.pointSize, up: data.up });
-    if (!changedHere.pointSize && [1, 2, 4].includes(data.pointSize)) setPointSize(data.pointSize);
+    if (!changedHere.pointSize && POINT_SIZES.includes(data.pointSize)) setPointSize(data.pointSize);
     const up = UP[data.up] ? data.up : ownUp;
     if (changedHere.up || up === $('up-select').value) return;
     $('up-select').value = up;
@@ -1779,7 +1779,7 @@ async function setupView(shown) {
         if (isCloud && helper === 'axes' && !originNear) axesHeldBack = true;
         else setHelper(helper, true);
     }
-    if ([1, 2, 4].includes(savedSettings.pointSize)) setPointSize(savedSettings.pointSize);
+    if (POINT_SIZES.includes(savedSettings.pointSize)) setPointSize(savedSettings.pointSize);
     ownUp = frameUp;
     if (kept?.mode && counted.some(info => info.faces > 0)) setMode(kept.mode);
     // Solid is offered only while the view holds several files: kept for one, it could not be turned off.

@@ -884,7 +884,6 @@ export class SceneManager {
         });
     }
 
-    // `value` is the robotPreviewUrdf.background setting: 'theme' or '#rrggbb'.
     setBackground(value) {
         this.fixedBackground = /^#[0-9a-f]{6}$/i.test(value) ? value : null;
         this.updateBackgroundColor();
