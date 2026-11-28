@@ -963,6 +963,7 @@ try {
     // #28: the RViz parity fixture in Chrome; SHOTS=<dir> keeps rviz-parity.png to compare by eye with its comments.
     {
         const dir = fileURLToPath(new URL('../fixtures/rviz-parity/', import.meta.url));
+        const visuals = fs.readFileSync(path.join(dir, 'robot.urdf'), 'utf8').match(/<visual>/g).length;
         const files = ['robot.urdf', 'meshes/Wedge.STL', 'meshes/wedge.gltf'].map(rel => ({ path: `/rviz_parity/${rel}`, data: fs.readFileSync(path.join(dir, rel)).toString('base64') }));
         await ev(`window.postMessage({ type: 'load', files: ${JSON.stringify(files)}.map(f => ({ path: f.path, data: Uint8Array.from(atob(f.data), c => c.charCodeAt(0)) })), primary: '/rviz_parity/robot.urdf' }, '*')`);
         await waitFor(`window.app.currentModel?.links?.has('wheel_with_effort')`, 10000);
@@ -979,7 +980,7 @@ try {
             return { missing: model.missingMeshes.length, colors };`);
         const { colors } = parity;
         const count = Object.values(colors).flat().length;
-        check('the RViz parity fixture draws every visual with RViz\'s colors', parity.missing === 0 && count === 13 && colors.local_reference?.[0] === colors.local_definition?.[0]
+        check('the RViz parity fixture draws every visual with RViz\'s colors', parity.missing === 0 && count === visuals && colors.local_reference?.[0] === colors.local_definition?.[0]
             && colors.gltf_urdf_material?.[0] === colors.stl_right?.[0] && colors.gltf_own_material?.[0] !== colors.gltf_urdf_material?.[0], JSON.stringify(parity));
         if (process.env.SHOTS) {
             await sleep(500);

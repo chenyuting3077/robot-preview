@@ -43,6 +43,10 @@ test('a named material defined in one link colors a later link that names it', (
     assert.deepEqual(colorOf('local_reference'), [orange]);
 });
 
+test('a robot-level material wins over the color a visual gives for the same name', () => {
+    assert.deepEqual(colorOf('robot_material_wins'), ['33b34d']);
+});
+
 test('a URDF material replaces a mesh\'s own; without one the mesh keeps it', () => {
     assert.deepEqual(colorOf('gltf_urdf_material'), ['33b34d']);
     // glTF baseColorFactor is linear by spec, unlike URDF rgba.

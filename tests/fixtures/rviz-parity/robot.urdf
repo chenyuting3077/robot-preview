@@ -20,6 +20,11 @@
     <visual><geometry><box size="0.15 0.15 0.15"/></geometry><material name="orange"/></visual>
   </link>
 
+  <!-- Names the robot-level green and gives its own red: green (urdfdom takes the robot-level material). -->
+  <link name="robot_material_wins">
+    <visual><geometry><box size="0.15 0.15 0.15"/></geometry><material name="green"><color rgba="1 0 0 1"/></material></visual>
+  </link>
+
   <!-- Upper-case .STL loads; the wedge's slope faces -x, tall along +z, as in the file (no axis change for STL). -->
   <link name="stl_right">
     <visual><geometry><mesh filename="meshes/Wedge.STL"/></geometry><material name="green"/></visual>
@@ -52,6 +57,7 @@
 
   <joint name="to_local_definition" type="fixed"><parent link="multi_visual"/><child link="local_definition"/><origin xyz="0.4 0 0"/></joint>
   <joint name="to_local_reference" type="fixed"><parent link="multi_visual"/><child link="local_reference"/><origin xyz="0.7 0 0"/></joint>
+  <joint name="to_robot_material_wins" type="fixed"><parent link="multi_visual"/><child link="robot_material_wins"/><origin xyz="1.0 0 0"/></joint>
   <joint name="to_stl_right" type="fixed"><parent link="multi_visual"/><child link="stl_right"/><origin xyz="0 -0.5 -0.1"/></joint>
   <joint name="to_stl_mirrored" type="fixed"><parent link="multi_visual"/><child link="stl_mirrored"/><origin xyz="-0.1 -0.5 -0.1"/></joint>
   <joint name="to_gltf_own_material" type="fixed"><parent link="multi_visual"/><child link="gltf_own_material"/><origin xyz="0.4 -0.5 -0.15"/></joint>

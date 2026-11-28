@@ -42,6 +42,14 @@ Pitfalls of building and publishing it: issues #1 and #5.
 - `load_yaml` files must match the path exactly: the mesh resolver's case and name guesses would load a file ROS would not.
 - Python in `${}` is rewritten into xacro-parser's expr-eval, not run by a Python interpreter: `//`, `not in` and chained comparisons, which expr-eval lacks, and `>=` / `<=`, which xacro-parser's tokenizer splits, become expr-eval operators around a sentinel; the builtins and `math` functions xacro exposes are added. Comprehensions, `lambda`, `%` formats other than `%s %d %i %f` and `dict()` without keywords stop with an error naming them, only once xacro would evaluate them; a failing expression is reported at its line as written, found by searching the files for the attribute xacro-parser names, so an identical attribute earlier in another file takes the report. A float prints as JavaScript prints it (`1` where Python prints `1.0`); `tests/fixtures/xacro/expressions/` checks each form against xacro 2.1.1.
 
+## URDF as RViz draws it
+
+- Matched to rviz2 rolling (`robot_link.cpp`), not to urdf-loader: a visual's `<material>` replaces every submesh's material, so a DAE, OBJ or glTF mesh keeps its own colors only when the visual has none (ros2/rviz#1782).
+- A material name resolves to the robot-level `<material>` of that name even when the visual also gives a `<color>`; a name first defined inside a link colors later links that only name it (urdfdom `assignMaterial`).
+- glTF/GLB is turned from Y-up to ROS Z-up (ros2/rviz#1482); Collada `up_axis` is ignored, as in RViz.
+- `rgba` is a display (sRGB) color, as RViz shows it (#58); glTF `baseColorFactor` stays linear, as its spec says. Lighting is three.js's, not Ogre's, so pixels do not match RViz exactly.
+- `tests/fixtures/rviz-parity/robot.urdf` has one link per case, each commented with what RViz draws.
+
 ## DAE geometry in Rust
 
 - Only the geometry is parsed in Rust (`rust/dae`, 100 KB of WASM); ColladaLoader still reads materials, units and the node tree, so its material and node-collapse rules hold by construction. Unhandled features (vertex colors, a second UV set, skinning, CDATA) go to ColladaLoader alone.
