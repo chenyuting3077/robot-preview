@@ -1,0 +1,90 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "robot-viewer tests"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0,
+   "name": "wedge"
+  }
+ ],
+ "meshes": [
+  {
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1
+     },
+     "material": 0
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "name": "red",
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.8,
+     0.1,
+     0.1,
+     1
+    ],
+    "metallicFactor": 0,
+    "roughnessFactor": 0.6
+   }
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3",
+   "min": [
+    0,
+    0,
+    -0.05
+   ],
+   "max": [
+    0.2,
+    0.3,
+    0.05
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 24,
+   "type": "VEC3"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 288
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 288,
+   "byteLength": 288
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 576,
+   "uri": "data:application/octet-stream;base64,AAAAAAAAAADNzEw9zcxMPgAAAADNzEw9AAAAAJqZmT7NzEw9AAAAAAAAAADNzEy9AAAAAJqZmT7NzEy9zcxMPgAAAADNzEy9AAAAAAAAAADNzEw9zcxMPgAAAADNzEy9zcxMPgAAAADNzEw9AAAAAAAAAADNzEw9AAAAAAAAAADNzEy9zcxMPgAAAADNzEy9zcxMPgAAAADNzEw9AAAAAJqZmT7NzEy9AAAAAJqZmT7NzEw9zcxMPgAAAADNzEw9zcxMPgAAAADNzEy9AAAAAJqZmT7NzEy9AAAAAJqZmT7NzEw9AAAAAAAAAADNzEy9AAAAAAAAAADNzEw9AAAAAJqZmT7NzEw9AAAAAJqZmT7NzEy9AAAAAAAAAADNzEy9AAAAgAAAAIAAAIA/AAAAgAAAAIAAAIA/AAAAgAAAAIAAAIA/AAAAgAAAAIAAAIC/AAAAgAAAAIAAAIC/AAAAgAAAAIAAAIC/AAAAAAAAgL8AAACAAAAAAAAAgL8AAACAAAAAAAAAgL8AAACAAAAAgAAAgL8AAACAAAAAgAAAgL8AAACAAAAAgAAAgL8AAACAQAFVP9UADj8AAACAQAFVP9UADj8AAACAQAFVP9UADj8AAACAQAFVP9UADj8AAAAAQAFVP9UADj8AAAAAQAFVP9UADj8AAAAAAACAvwAAAIAAAACAAACAvwAAAIAAAACAAACAvwAAAIAAAACAAACAvwAAAIAAAACAAACAvwAAAIAAAACAAACAvwAAAIAAAACA"
+  }
+ ]
+}

@@ -1,0 +1,44 @@
+diff --git a/src/URDFLoader.js b/src/URDFLoader.js
+index d47fda4a461f7bb659e4a9b6037c2216ad348e6c..a4f9c61f7d3b543fddc27f7a7266aadfc6184f5c 100644
+--- a/src/URDFLoader.js
++++ b/src/URDFLoader.js
+@@ -498,19 +498,25 @@ class URDFLoader {
+             const isCollisionNode = vn.nodeName.toLowerCase() === 'collision';
+             const children = [ ...vn.children ];
+             let material = null;
++            let hasMaterial = false;
+ 
+             // get the material first
+             const materialNode = children.filter(n => n.nodeName.toLowerCase() === 'material')[0];
+             if (materialNode) {
+ 
+                 const name = materialNode.getAttribute('name');
++                const defines = [ ...materialNode.children ].some(n => /^(color|texture)$/i.test(n.nodeName));
+                 if (name && name in materialMap) {
+ 
+                     material = materialMap[name];
++                    hasMaterial = true;
+ 
+                 } else {
+ 
+                     material = processMaterial(materialNode);
++                    hasMaterial = defines;
++                    // urdfdom: a named material first defined inside a link is reused by later links that name it.
++                    if (name && defines && !isCollisionNode) materialMap[name] = material;
+ 
+                 }
+ 
+@@ -553,7 +559,12 @@ class URDFLoader {
+ 
+                                 } else if (obj) {
+ 
+-                                    if (obj instanceof THREE.Mesh) {
++                                    if (hasMaterial) {
++
++                                        // RViz: the visual's <material> replaces the mesh's own materials (ros2/rviz#1782).
++                                        obj.traverse(c => { if (c.isMesh) c.material = material; });
++
++                                    } else if (obj instanceof THREE.Mesh) {
+ 
+                                         obj.material = material;
+ 

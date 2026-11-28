@@ -1,4 +1,4 @@
-import { isScalarJoint } from '../models/UnifiedRobotModel.js';
+import { clampToLimits, isScalarJoint } from '../models/UnifiedRobotModel.js';
 import * as THREE from 'three';
 import { MathUtils } from './MathUtils.js';
 import { pickDisplayed, isGround } from './picking.js';
@@ -299,13 +299,8 @@ export class JointDragControls {
                 const currentValue = this.getJointCurrentValue(manipulating);
                 let newAngle = currentValue + delta;
 
-                // Apply limits
-                if (manipulating.limits) {
-                    const ignoreLimits = this.model?.userData?.ignoreLimits || this.model?.threeObject?.userData?.ignoreLimits || false;
-                    if (!ignoreLimits) {
-                        newAngle = Math.max(manipulating.limits.lower, Math.min(manipulating.limits.upper, newAngle));
-                    }
-                }
+                const ignoreLimits = this.model?.userData?.ignoreLimits || this.model?.threeObject?.userData?.ignoreLimits || false;
+                if (!ignoreLimits) newAngle = clampToLimits(manipulating, newAngle);
 
                 this.updateJoint(manipulating, newAngle);
             }

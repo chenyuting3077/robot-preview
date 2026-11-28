@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<!-- Cases where other URDF viewers differ from RViz (#28). Each link's comment is what RViz (rolling) draws. -->
+<robot name="rviz_parity">
+  <material name="green"><color rgba="0.2 0.7 0.3 1"/></material>
+
+  <!-- Three visuals: all three drawn (box, sphere above it, cylinder beside it). -->
+  <link name="multi_visual">
+    <visual><geometry><box size="0.2 0.2 0.2"/></geometry><material name="green"/></visual>
+    <visual><origin xyz="0 0 0.2"/><geometry><sphere radius="0.08"/></geometry><material name="green"/></visual>
+    <visual><origin xyz="0 0.18 0" rpy="1.5708 0 0"/><geometry><cylinder radius="0.04" length="0.12"/></geometry><material name="green"/></visual>
+  </link>
+
+  <!-- A named material defined inside this link: orange. -->
+  <link name="local_definition">
+    <visual><geometry><box size="0.15 0.15 0.15"/></geometry><material name="orange"><color rgba="1 0.5 0 1"/></material></visual>
+  </link>
+
+  <!-- Names the material the previous link defined: orange too (urdfdom registers it for later links). -->
+  <link name="local_reference">
+    <visual><geometry><box size="0.15 0.15 0.15"/></geometry><material name="orange"/></visual>
+  </link>
+
+  <!-- Upper-case .STL loads; the wedge's slope faces -x, tall along +z, as in the file (no axis change for STL). -->
+  <link name="stl_right">
+    <visual><geometry><mesh filename="meshes/Wedge.STL"/></geometry><material name="green"/></visual>
+  </link>
+
+  <!-- scale="-1 1 1": the same wedge mirrored, slope facing +x, lit like the other one. -->
+  <link name="stl_mirrored">
+    <visual><geometry><mesh filename="meshes/Wedge.STL" scale="-1 1 1"/></geometry><material name="green"/></visual>
+  </link>
+
+  <!-- glTF without a URDF material: keeps its own red; glTF Y-up is turned to Z-up, so it stands like the STL; placed by origin. -->
+  <link name="gltf_own_material">
+    <visual><origin xyz="0 0 0.05"/><geometry><mesh filename="meshes/wedge.gltf"/></geometry></visual>
+  </link>
+
+  <!-- glTF with a URDF material: green replaces the mesh's red. -->
+  <link name="gltf_urdf_material">
+    <visual><origin xyz="0 0 0.05"/><geometry><mesh filename="meshes/wedge.gltf"/></geometry><material name="green"/></visual>
+  </link>
+
+  <!-- Continuous joints, without <limit> and with an effort-only <limit>: both turn freely. -->
+  <link name="wheel">
+    <visual><origin rpy="1.5708 0 0"/><geometry><cylinder radius="0.1" length="0.04"/></geometry><material name="green"/></visual>
+    <visual><origin xyz="0.07 0 0"/><geometry><box size="0.04 0.05 0.04"/></geometry><material name="orange"/></visual>
+  </link>
+  <link name="wheel_with_effort">
+    <visual><origin rpy="1.5708 0 0"/><geometry><cylinder radius="0.1" length="0.04"/></geometry><material name="green"/></visual>
+    <visual><origin xyz="0.07 0 0"/><geometry><box size="0.04 0.05 0.04"/></geometry><material name="orange"/></visual>
+  </link>
+
+  <joint name="to_local_definition" type="fixed"><parent link="multi_visual"/><child link="local_definition"/><origin xyz="0.4 0 0"/></joint>
+  <joint name="to_local_reference" type="fixed"><parent link="multi_visual"/><child link="local_reference"/><origin xyz="0.7 0 0"/></joint>
+  <joint name="to_stl_right" type="fixed"><parent link="multi_visual"/><child link="stl_right"/><origin xyz="0 -0.5 -0.1"/></joint>
+  <joint name="to_stl_mirrored" type="fixed"><parent link="multi_visual"/><child link="stl_mirrored"/><origin xyz="-0.1 -0.5 -0.1"/></joint>
+  <joint name="to_gltf_own_material" type="fixed"><parent link="multi_visual"/><child link="gltf_own_material"/><origin xyz="0.4 -0.5 -0.15"/></joint>
+  <joint name="to_gltf_urdf_material" type="fixed"><parent link="multi_visual"/><child link="gltf_urdf_material"/><origin xyz="0.7 -0.5 -0.15"/></joint>
+  <joint name="wheel" type="continuous"><parent link="multi_visual"/><child link="wheel"/><origin xyz="0 0.5 0"/><axis xyz="0 1 0"/></joint>
+  <joint name="wheel_with_effort" type="continuous"><parent link="multi_visual"/><child link="wheel_with_effort"/><origin xyz="0.4 0.5 0"/><axis xyz="0 1 0"/><limit effort="10" velocity="5"/></joint>
+</robot>

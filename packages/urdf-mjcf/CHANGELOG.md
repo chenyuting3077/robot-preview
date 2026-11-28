@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- URDF is drawn as RViz draws it in cases other viewers get wrong: a visual's `<material>` replaces the colors of a DAE, OBJ or glTF mesh (a mesh without one keeps its own), a named material defined inside one link colors later links that name it, glTF/GLB meshes are turned from Y-up to ROS Z-up, and a `continuous` joint without lower/upper turns freely when dragged in the view.
+
 ## 0.9.0
 
 - `robotPreviewUrdf.background` setting: `theme` (as before), or a fixed color such as `#ffffff` for figures, also used in screenshots. Changing it updates open previews.

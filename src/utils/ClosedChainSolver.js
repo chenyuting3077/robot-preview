@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { isScalarJoint } from '../models/UnifiedRobotModel.js';
+import { clampToLimits, isScalarJoint } from '../models/UnifiedRobotModel.js';
 
 const rotation = values => {
     const axis = new THREE.Vector3(...values);
@@ -219,7 +219,7 @@ export class ClosedChainSolver {
             const { joint, offset, size } = entry;
             if (!unlocked.has(offset)) continue;
             if (size === 1 && joint.limits && !this.model.userData?.ignoreLimits) {
-                values[offset] = Math.max(joint.limits.lower, Math.min(joint.limits.upper, values[offset]));
+                values[offset] = clampToLimits(joint, values[offset]);
             } else if (joint.type === 'ball' && joint.limits) {
                 const length = norm(values.slice(offset, offset + 3));
                 if (length > joint.limits.upper) for (let i = 0; i < 3; i++) values[offset + i] *= joint.limits.upper / length;
@@ -236,7 +236,7 @@ export class ClosedChainSolver {
         }
         const unlockedSet = new Set(unlocked);
         const columnByOffset = new Map(unlocked.map((offset, column) => [offset, column]));
-        const bounds = this.entries.filter(entry => entry.size === 1 && entry.joint.limits && unlockedSet.has(entry.offset))
+        const bounds = this.entries.filter(entry => entry.size === 1 && entry.joint.limits && entry.joint.type !== 'continuous' && unlockedSet.has(entry.offset))
             .map(entry => ({ offset: entry.offset, column: columnByOffset.get(entry.offset), limits: entry.joint.limits }));
         let values = [...this.variables];
         let residual = this.residual();

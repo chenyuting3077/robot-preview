@@ -138,6 +138,14 @@ export function isScalarJoint(joint) {
     return ['revolute', 'continuous', 'prismatic'].includes(joint?.type);
 }
 
+/** Clamps a scalar joint value to its limits; a continuous joint turns freely, as in RViz, whatever lower/upper say. */
+export function clampToLimits(joint, value) {
+    if (!joint?.limits || joint.type === 'continuous') return value;
+    const lower = Number.isFinite(joint.limits.lower) ? joint.limits.lower : -Infinity;
+    const upper = Number.isFinite(joint.limits.upper) ? joint.limits.upper : Infinity;
+    return Math.max(lower, Math.min(upper, value));
+}
+
 /**
  * JointLimits interface
  */

@@ -3,6 +3,7 @@ import { fitDistance, FRAME_RISE } from '../utils/framing.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { PointerJointDragControls } from '../utils/JointDragControls.js';
 import { ModelLoaderFactory } from '../loaders/ModelLoaderFactory.js';
+import { clampToLimits } from '../models/UnifiedRobotModel.js';
 import { EnvironmentManager } from './EnvironmentManager.js';
 import { VisualizationManager } from './VisualizationManager.js';
 import { InertialVisualization } from './InertialVisualization.js';
@@ -596,9 +597,7 @@ export class SceneManager {
                     ignoreLimits: checkIgnoreLimits
                 });
             } else {
-                if (!checkIgnoreLimits && joint.limits) {
-                    angle = Math.max(joint.limits.lower, Math.min(joint.limits.upper, angle));
-                }
+                if (!checkIgnoreLimits) angle = clampToLimits(joint, angle);
 
                 ModelLoaderFactory.setJointAngle(model, joint.name, angle);
                 joint.currentValue = angle;

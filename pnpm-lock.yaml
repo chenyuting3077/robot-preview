@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  urdf-loader@0.12.6:
+    hash: f363e73pelccq5as7gd5mscf2q
+    path: patches/urdf-loader@0.12.6.patch
   xacro-parser@0.3.11:
     hash: nc5fqjmpsb3emxacysoevzqsua
     path: patches/xacro-parser@0.3.11.patch
@@ -30,7 +33,7 @@ importers:
         version: 0.163.0
       urdf-loader:
         specifier: ^0.12.5
-        version: 0.12.6(three@0.163.0)
+        version: 0.12.6(patch_hash=f363e73pelccq5as7gd5mscf2q)(three@0.163.0)
       xacro-parser:
         specifier: ^0.3.11
         version: 0.3.11(patch_hash=nc5fqjmpsb3emxacysoevzqsua)
@@ -1011,7 +1014,7 @@ snapshots:
 
   uhyphen@0.2.0: {}
 
-  urdf-loader@0.12.6(three@0.163.0):
+  urdf-loader@0.12.6(patch_hash=f363e73pelccq5as7gd5mscf2q)(three@0.163.0):
     dependencies:
       three: 0.163.0
 

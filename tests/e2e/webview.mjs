@@ -971,6 +971,34 @@ try {
         check('a lost context says so, and a restored one draws the model again', /GPU/.test(lost) && !restored && changed < 0.01, JSON.stringify({ lost, restored, changed }));
     }
 
+    // #28: the RViz parity fixture in Chrome; SHOTS=<dir> keeps rviz-parity.png to compare by eye with its comments.
+    {
+        const dir = fileURLToPath(new URL('../fixtures/rviz-parity/', import.meta.url));
+        const files = ['robot.urdf', 'meshes/Wedge.STL', 'meshes/wedge.gltf'].map(rel => ({ path: `/rviz_parity/${rel}`, data: fs.readFileSync(path.join(dir, rel)).toString('base64') }));
+        await ev(`window.postMessage({ type: 'load', files: ${JSON.stringify(files)}.map(f => ({ path: f.path, data: Uint8Array.from(atob(f.data), c => c.charCodeAt(0)) })), primary: '/rviz_parity/robot.urdf' }, '*')`);
+        await waitFor(`window.app.currentModel?.links?.has('wheel_with_effort')`, 10000);
+        const parity = await ev(`const model = window.app.currentModel;
+            await model.meshesReady;
+            const colors = {};
+            model.threeObject.traverse(o => {
+                let link = o.parent;
+                while (link && !link.isURDFLink) link = link.parent;
+                let visual = o.parent;
+                while (visual && !visual.isURDFVisual) visual = visual.parent;
+                if (o.isMesh && visual && link) (colors[link.name] ||= []).push(o.material.color.getHexString());
+            });
+            return { missing: model.missingMeshes.length, colors };`);
+        const { colors } = parity;
+        const count = Object.values(colors).flat().length;
+        check('the RViz parity fixture draws every visual with RViz\'s colors', parity.missing === 0 && count === 13 && colors.local_reference?.[0] === colors.local_definition?.[0]
+            && colors.gltf_urdf_material?.[0] === colors.stl_right?.[0] && colors.gltf_own_material?.[0] !== colors.gltf_urdf_material?.[0], JSON.stringify(parity));
+        if (process.env.SHOTS) {
+            await sleep(500);
+            fs.mkdirSync(process.env.SHOTS, { recursive: true });
+            fs.writeFileSync(path.join(process.env.SHOTS, 'rviz-parity.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+        }
+    }
+
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));
 

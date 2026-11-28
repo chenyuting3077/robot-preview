@@ -1,7 +1,9 @@
 // Installs linkedom as the webview's DOMParser and XMLSerializer for the tests that import this file.
-import { DOMParser } from 'linkedom';
+import { DOMParser, Document, Element } from 'linkedom';
 
 globalThis.DOMParser ??= DOMParser;
+globalThis.Document ??= Document;
+globalThis.Element ??= Element;
 globalThis.XMLSerializer ??= class {
     serializeToString(node) {
         return node.toString();

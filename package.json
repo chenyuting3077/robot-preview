@@ -38,7 +38,8 @@
   },
   "pnpm": {
     "patchedDependencies": {
-      "xacro-parser@0.3.11": "patches/xacro-parser@0.3.11.patch"
+      "xacro-parser@0.3.11": "patches/xacro-parser@0.3.11.patch",
+      "urdf-loader@0.12.6": "patches/urdf-loader@0.12.6.patch"
     }
   }
 }

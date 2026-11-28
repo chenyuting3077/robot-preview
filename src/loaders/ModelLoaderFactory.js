@@ -542,7 +542,9 @@ export class ModelLoaderFactory {
                     const gltfModel = await new Promise((resolve, reject) => {
                         gltfLoader.load(blobUrl, resolve, undefined, reject);
                     });
-                    meshObject = gltfModel.scene;
+                    // RViz turns glTF's Y-up into ROS Z-up (ros2/rviz#1482); urdf-loader resets the returned object's rotation, so the turn sits on a wrapper.
+                    gltfModel.scene.rotation.x = Math.PI / 2;
+                    meshObject = new THREE.Group().add(gltfModel.scene);
                     break;
                 }
 

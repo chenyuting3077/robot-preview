@@ -1,4 +1,4 @@
-import { isScalarJoint } from '../../models/UnifiedRobotModel.js';
+import { clampToLimits, isScalarJoint } from '../../models/UnifiedRobotModel.js';
 import { ModelLoaderFactory } from '../../loaders/ModelLoaderFactory.js';
 
 /**
@@ -57,13 +57,8 @@ export class PoseController {
             return null;
         }
 
-        let appliedValue = value;
         const limitsAreIgnored = ignoreLimits || this.sceneManager?.ignoreLimits;
-        if (!limitsAreIgnored && joint.type !== 'continuous' && joint.limits) {
-            const lower = Number.isFinite(joint.limits.lower) ? joint.limits.lower : -Infinity;
-            const upper = Number.isFinite(joint.limits.upper) ? joint.limits.upper : Infinity;
-            appliedValue = Math.max(lower, Math.min(upper, appliedValue));
-        }
+        let appliedValue = limitsAreIgnored ? value : clampToLimits(joint, value);
 
         ModelLoaderFactory.setJointAngle(this.model, jointName, appliedValue, limitsAreIgnored, !this.model.constraintSolver);
         joint.currentValue = appliedValue;
