@@ -74,13 +74,17 @@ function lengthUnit(bytes, records) {
     if (!keys || keys.length < 8) return null;
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const units = new Set();
-    let projected = 0;
+    let projected = 0, model = 0, geographic = 0;
     for (let k = 1; k <= view.getUint16(keys.at + 6, true) && 8 * k + 8 <= keys.length; k++) {
         const [id, location, , value] = [0, 2, 4, 6].map(i => view.getUint16(keys.at + 8 * k + i, true));
         if (location !== 0) continue;
         if (id === 3076 || id === 4099) units.add(GEO_UNITS[value] ?? NaN);
         if (id === 3072) projected = value;
+        if (id === 1024) model = value;
+        if (id === 2048) geographic = value;
     }
+    // GTModelType 2, or a geographic CRS that is not a projection's base, is in degrees.
+    if (model === 2 || (geographic && !projected)) return null;
     if (!units.size && UTM.some(([from, to]) => projected >= from && projected <= to)) units.add(1);
     const unit = oneOf(units);
     return Number.isNaN(unit) ? null : unit;

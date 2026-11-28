@@ -250,6 +250,9 @@ test('the length unit comes from the coordinate system, and none when it is uncl
     // A UTM zone is in metres by definition, which is all laspy writes for one.
     assert.equal(unit(keys([[3072, 0, 1, 32632]])), 1);
     assert.equal(unit(keys([[3072, 0, 1, 2277]])), null);
+    // A geographic CRS (GTModelType 2, or 2048 without 3072) is in degrees whatever its vertical unit.
+    assert.equal(unit(keys([[1024, 0, 1, 2], [2048, 0, 1, 4326], [4099, 0, 1, 9001]])), null);
+    assert.equal(unit(keys([[2048, 0, 1, 4326], [4099, 0, 1, 9001]])), null);
     assert.equal(unit([]), null);
     assert.equal(read(fixture('f3-geotiff.las')).las.metersPerUnit, 1);
     assert.equal(read(fixture('f7-wkt.las')).las.metersPerUnit, 1);
