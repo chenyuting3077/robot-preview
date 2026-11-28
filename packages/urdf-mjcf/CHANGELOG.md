@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 - `robotPreviewUrdf.background` setting: `theme` (as before), or a fixed color such as `#ffffff` for figures, also used in screenshots. Changing it updates open previews.
 
