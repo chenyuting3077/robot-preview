@@ -4,16 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { copyFixture, loadExtension, sleep } from '../extension/vscode-mock.mjs';
-import { launch } from './cdp.mjs';
+import { launch, only } from './cdp.mjs';
 import { createPathMatrix } from '../extension/path-fixture.mjs';
 
 const dist = fileURLToPath(new URL('../../packages/urdf-mjcf/dist/', import.meta.url));
-let matched = false;
-const want = name => {
-    const hit = !process.env.ONLY || new RegExp(process.env.ONLY).test(name);
-    matched ||= hit;
-    return hit;
-};
+const { want, wanted } = only();
 const results = [];
 const check = (name, ok, detail = '') => {
     results.push(ok);
@@ -961,7 +956,7 @@ try {
     }
 
     // #28: the RViz parity fixture in Chrome; SHOTS=<dir> keeps rviz-parity.png to compare by eye with its comments.
-    {
+    if (want('rviz-parity')) {
         const dir = fileURLToPath(new URL('../fixtures/rviz-parity/', import.meta.url));
         const visuals = fs.readFileSync(path.join(dir, 'robot.urdf'), 'utf8').match(/<visual>/g).length;
         const files = ['robot.urdf', 'meshes/Wedge.STL', 'meshes/wedge.gltf'].map(rel => ({ path: `/rviz_parity/${rel}`, data: fs.readFileSync(path.join(dir, rel)).toString('base64') }));
@@ -1022,7 +1017,7 @@ if (want('no-webgl')) {
     }
 }
 
-if (!matched) check(`ONLY=${process.env.ONLY} matches a block`, false);
+if (!wanted()) check(`ONLY=${process.env.ONLY} matches a block`, false);
 const failed = results.filter(ok => !ok).length;
 console.log(`${results.length - failed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -5,12 +5,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { loadExtension, sleep, fakePanel, webviewFile } from '../extension/vscode-mock.mjs';
-import { launch } from './cdp.mjs';
+import { launch, only } from './cdp.mjs';
 import { MeshoptEncoder } from '../../packages/mesh-splat/node_modules/meshoptimizer/meshopt_encoder.js';
 
 const extension = fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url));
 const shots = process.env.SHOTS;
-const want = name => !process.env.ONLY || new RegExp(process.env.ONLY).test(name);
+const { want, wanted } = only();
 const extraFiles = process.argv.slice(2);
 const results = [];
 
@@ -1566,5 +1566,9 @@ server.close();
 await chrome.close();
 fs.rmSync(dir, { recursive: true, force: true });
 fs.rmSync(globalStorage, { recursive: true, force: true });
+if (!wanted()) {
+    console.log(`FAIL ONLY=${process.env.ONLY} matches a block`);
+    results.push(false);
+}
 console.log(`${results.filter(Boolean).length}/${results.length} passed`);
 process.exit(results.length && results.every(Boolean) ? 0 : 1);

@@ -1,10 +1,21 @@
-// Headless Chrome driven over the DevTools protocol, shared by the e2e scripts.
+// Headless Chrome driven over the DevTools protocol, and ONLY= block selection, shared by the e2e scripts.
 // Usage: const chrome = await launch(['--window-size=900,600']); await chrome.send('Page.navigate', { url }); await chrome.evaluate('document.title'); await chrome.close();
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { chromePath, sleep } from '../extension/vscode-mock.mjs';
+
+/** Usage: const { want, wanted } = only(); if (want('name')) {…}; wanted() is false when ONLY=<regex> matched no block. */
+export function only(pattern = process.env.ONLY) {
+    let matched = false;
+    const want = name => {
+        const hit = !pattern || new RegExp(pattern).test(name);
+        matched ||= hit;
+        return hit;
+    };
+    return { want, wanted: () => matched };
+}
 
 export async function launch(flags = []) {
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-chrome-'));
