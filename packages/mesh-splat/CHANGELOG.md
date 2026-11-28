@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 - Settings for the defaults a view opens with: `robotPreviewMeshSplat.background` (`theme`, or a fixed color such as `#ffffff` for figures, also used in screenshots), `.pointSize` (1 / 2 / 4) and `.upAxis` (`auto` follows the format). Changing them updates open views, except a control already changed in that view; an up axis chosen for a file still wins.
 - Measure from the toolbar's ruler button: click a point to read its coordinates in the file's own frame (a UTM cloud's offset added back, the view's up axis undone), and a second point for the distance between them with its X, Y and Z parts, drawn in the view. *Copy* puts the values on the clipboard; Esc or the button again clears them. Points of several files read in each file's own frame. Values carry the unit where the file states one (a LAS file's coordinate system, a ROS map's YAML), and otherwise the readout says the file states none. Gaussian splats are not picked yet.
