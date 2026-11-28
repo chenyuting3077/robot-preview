@@ -6,5 +6,5 @@
 - 量測用的大檔在 `test-files/`，對應 `docs/mesh-splat.md` 的表格；URDF 量測用的 ROS package 用 `scripts/fetch-robot-packages.sh` 抓到 `test-files/urdf/`。
 - 和 ROS 2 xacro 逐元素比對展開結果：`scripts/xacro-vs-ros.mjs`（用法在檔頭，不需要 Docker）。
 - 重建 WASM：`packages/mesh-splat/vendor/build.sh`、`rust/dae/build.sh`。
-- 發版：推 tag 後由 `.github/workflows/release.yml` 發佈。
+- 發版：每個要發的套件跑 `node scripts/release.mjs <套件> <版本>`，推 main 和 tag 後由 `.github/workflows/release.yml` 發到 Marketplace 和 Open VSX（不建 GitHub release），`gh run watch` 看結果。
 - 踩過的坑在 GitHub issues：`gh issue list --state all`。
