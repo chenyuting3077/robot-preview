@@ -1,6 +1,6 @@
 - 規範：`CODING_STANDARDS.md`。
 - urdf-mjcf 的 webview 原始碼在根目錄 `src/` 和 `index.html`；mesh-splat 在 `packages/mesh-splat`；usd 沒有自己的 webview，build 時用 mesh-splat 的。
-- `pnpm test`；`pnpm test:e2e` 和 `tests/e2e/*.mjs` 要 Node 22（`npx -y -p node@22 node …`）；`mesh-splat.mjs` 整套要幾分鐘，迭代時用 `ONLY=<regex>` 只跑相關的（用法在檔頭）。
+- `pnpm test`；`pnpm test:e2e` 和 `tests/e2e/*.mjs` 要 Node 22（`npx -y -p node@22 node …`）；`webview.mjs`、`mesh-splat.mjs` 整套都要幾分鐘，迭代時用 `ONLY=<regex>` 只跑相關的（用法在檔頭）。
 - 在真的 VS Code 裡量測或截圖：`tests/e2e/vscode.mjs`，用法和環境變數在檔頭；設 `EXT_DIR` 可以直接測 build 出來的版本，不用打包安裝。
 - 重錄宣傳頁的 GIF 與截圖：`scripts/capture-samples.py` 建樣本，再跑 `tests/e2e/capture.mjs`（用法在檔頭）。
 - 量測用的大檔在 `test-files/`，對應 `docs/mesh-splat.md` 的表格；URDF 量測用的 ROS package 用 `scripts/fetch-robot-packages.sh` 抓到 `test-files/urdf/`。

@@ -1,11 +1,11 @@
 // usage: npx -y -p node@22 node tests/e2e/mesh-splat.mjs [file…]; ONLY=<regex> runs only the fixture files and blocks (the `want(…)` names) it matches, SHOTS=<dir> saves screenshots.
-import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { loadExtension, sleep, fakePanel, chromePath, webviewFile } from '../extension/vscode-mock.mjs';
+import { loadExtension, sleep, fakePanel, webviewFile } from '../extension/vscode-mock.mjs';
+import { launch } from './cdp.mjs';
 import { MeshoptEncoder } from '../../packages/mesh-splat/node_modules/meshoptimizer/meshopt_encoder.js';
 
 const extension = fileURLToPath(new URL('../../packages/mesh-splat/extension.js', import.meta.url));
@@ -208,25 +208,8 @@ const origin = `http://127.0.0.1:${server.address().port}`;
 // #24: without WebGL the view says why it is empty instead of staying blank. Its own Chrome, since the flag is per browser.
 if (want('no-webgl')) {
     const started = Date.now();
-    const bareProfile = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-nogl-'));
-    const barePort = 9100 + Math.floor(Math.random() * 400);
-    const bare = spawn(chromePath(), ['--headless=new', `--remote-debugging-port=${barePort}`, `--user-data-dir=${bareProfile}`, '--disable-3d-apis', 'about:blank'], { stdio: 'ignore' });
-    let target;
-    for (let i = 0; i < 100 && !target; i++) {
-        try { target = (await (await fetch(`http://127.0.0.1:${barePort}/json`)).json()).find(t => t.type === 'page'); } catch { await sleep(100); }
-    }
-    const socket = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise(resolve => { socket.onopen = resolve; });
-    let id = 0;
-    const replies = new Map();
-    const thrown = [];
-    socket.onmessage = ({ data }) => {
-        const m = JSON.parse(data);
-        replies.get(m.id)?.(m.result);
-        if (m.method === 'Runtime.exceptionThrown') thrown.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
-    };
-    const call = (method, params = {}) => new Promise(resolve => { replies.set(++id, resolve); socket.send(JSON.stringify({ id, method, params })); });
-    await call('Runtime.enable');
+    const bare = await launch(['--disable-3d-apis']);
+    const { send: call, evaluate: evaluateBare, exceptions: thrown } = bare;
     await call('Page.addScriptToEvaluateOnNewDocument', { source: 'window.acquireVsCodeApi = () => ({ getState: () => null, setState() {}, postMessage() {} });' });
     const cube = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-nogl-files-'));
     fs.writeFileSync(path.join(cube, 'cube.stl'), 'solid c\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid c\n');
@@ -235,10 +218,9 @@ if (want('no-webgl')) {
     let text = '';
     for (let i = 0; i < 50 && !/WebGL/.test(text); i++) {
         await sleep(200);
-        text = (await call('Runtime.evaluate', { expression: "document.getElementById('load-error')?.checkVisibility() && !document.getElementById('loading-indicator').checkVisibility() ? document.getElementById('load-error').textContent : ''", returnByValue: true })).result.value;
+        text = await evaluateBare("document.getElementById('load-error')?.checkVisibility() && !document.getElementById('loading-indicator').checkVisibility() ? document.getElementById('load-error').textContent : ''");
     }
-    const unlabelled = (await call('Runtime.evaluate', { expression: "[...document.querySelectorAll('[data-t]')].filter(e => !(e.querySelector('span') ?? e).textContent.trim()).length", returnByValue: true })).result.value;
-    const evaluateBare = async expression => (await call('Runtime.evaluate', { expression, returnByValue: true })).result.value;
+    const unlabelled = await evaluateBare("[...document.querySelectorAll('[data-t]')].filter(e => !(e.querySelector('span') ?? e).textContent.trim()).length");
     // A triple click selects the message, so it can be copied into a bug report.
     const at = await evaluateBare("(() => { const r = document.getElementById('load-error').getBoundingClientRect(); return { x: r.left + 20, y: r.top + 12 }; })()");
     for (const type of ['mousePressed', 'mouseReleased']) await call('Input.dispatchMouseEvent', { type, x: at.x, y: at.y, button: 'left', clickCount: 3 });
@@ -257,49 +239,12 @@ if (want('no-webgl')) {
     const brokenOk = /JSON/.test(broken?.error) && !broken.loading;
     results.push(brokenOk);
     console.log(`${brokenOk ? 'PASS' : 'FAIL'} a throw while the page starts shows in the view ${JSON.stringify(broken)}`);
-    bare.kill();
-    await new Promise(resolve => bare.on('exit', resolve));
-    await sleep(500);
-    for (const at of [bareProfile, cube]) try { fs.rmSync(at, { recursive: true, force: true, maxRetries: 5 }); } catch {}
+    await bare.close();
+    fs.rmSync(cube, { recursive: true, force: true });
 }
 
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-splat-e2e-'));
-const port = 9500 + Math.floor(Math.random() * 400);
-const chrome = spawn(chromePath(), [
-    '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--window-size=900,600',
-    '--use-gl=angle', `--use-angle=${process.env.ANGLE || 'swiftshader'}`, '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--js-flags=--expose-gc', 'about:blank'
-], { stdio: 'ignore' });
-
-let target;
-for (let i = 0; i < 100 && !target; i++) {
-    try { target = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === 'page'); } catch { await sleep(100); }
-}
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise(resolve => { ws.onopen = resolve; });
-let nextId = 0;
-const pending = new Map();
-ws.onmessage = event => {
-    const message = JSON.parse(event.data);
-    pending.get(message.id)?.(message);
-};
-// A reply that never comes (a screenshot or an awaited page promise) fails the file with what it waited for
-// instead of hanging the run: one run sat 63 minutes after cloud.ply with nothing logged.
-const send = (method, params = {}, timeout = 60000) => new Promise((resolve, reject) => {
-    const id = ++nextId;
-    const what = `${method} ${String(params.expression ?? '').slice(0, 200)}`;
-    const timer = setTimeout(() => {
-        pending.delete(id);
-        reject(new Error(`no reply in ${timeout / 1000} s: ${what}`));
-    }, timeout);
-    pending.set(id, message => {
-        clearTimeout(timer);
-        pending.delete(id);
-        if (message.error) reject(new Error(`${message.error.message}: ${what}`));
-        else resolve(message.result);
-    });
-    ws.send(JSON.stringify({ id, method, params }));
-});
-const evaluate = async (expression, timeout) => (await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, timeout)).result.value;
+const chrome = await launch(['--window-size=900,600', '--use-gl=angle', `--use-angle=${process.env.ANGLE || 'swiftshader'}`, '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--js-flags=--expose-gc']);
+const { send, evaluate, exceptions } = chrome;
 // The share of a quarter-size screenshot that differs between two of them.
 const pageShot = async () => {
     const [width, height] = await evaluate('[innerWidth, innerHeight]');
@@ -322,17 +267,12 @@ const coloredPoints = png => evaluate(`(async () => {
     for (let i = 0; i < d.length; i += 4) if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) > 60) { n++; x += (i / 4) % c.width; y += Math.floor(i / 4 / c.width); }
     return [n / (d.length / 4), x / n, y / n];
 })()`);
-await send('Page.enable');
 // Viewer warnings and errors go to stderr, so a failed check shows why.
-const exceptions = [];
-ws.addEventListener('message', ({ data }) => {
-    const m = JSON.parse(data);
+chrome.on(m => {
     if (m.method === 'Runtime.consoleAPICalled' && ['warning', 'error'].includes(m.params.type)) console.error('console:', m.params.args.map(a => a.value ?? a.description).join(' '));
     if (m.method === 'Runtime.bindingCalled' && m.params.name === '__toExtension') activePanel?.listener(JSON.parse(m.params.payload));
-    if (m.method === 'Runtime.exceptionThrown') exceptions.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
     if (m.method === 'Runtime.exceptionThrown') console.error('exception:', m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
 });
-await send('Runtime.enable');
 await send('Runtime.addBinding', { name: '__toExtension' });
 await send('Page.addScriptToEvaluateOnNewDocument', { source: "window.acquireVsCodeApi = () => ({ getState: () => JSON.parse(sessionStorage.getItem('vscodeState') || 'null'), setState: state => { window.__setStates = (window.__setStates || 0) + 1; if (!document.getElementById('loading-indicator')?.hidden) window.__early = (window.__early || 0) + 1; sessionStorage.setItem('vscodeState', JSON.stringify(state)); }, postMessage: message => { if (message.type === 'stepCache') { (window.__cache ||= []).push(message); window.postMessage({ type: 'stepCacheAck', key: message.key, render: message.render, at: message.at }, '*'); } else if (message.type === 'read') window.postMessage({ type: 'readReply', file: message.file, id: message.id, at: message.at, error: 'no extension' }, '*'); else if (message.type === 'settings') window.__toExtension(JSON.stringify(message)); else if (message.type === 'readImage') { (window.__imageReads ||= []).push(message.path); fetch(encodeURI(message.path.replace(/\\\\/g, '/').replace(/^(?=[A-Za-z]:)/, '/'))).then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.statusText))).then(b => window.postMessage({ type: 'imageReply', id: message.id, render: message.render, bytes: new Uint8Array(b) }, '*'), e => window.postMessage({ type: 'imageReply', id: message.id, render: message.render, error: e.message }, '*')); } else if (message.type !== 'readDone') window.__posted = message; } }); window.__draws = 0; for (const proto of [WebGLRenderingContext.prototype, WebGL2RenderingContext.prototype]) for (const name of ['drawArrays', 'drawElements', 'drawArraysInstanced', 'drawElementsInstanced']) { const draw = proto[name]; if (draw) proto[name] = function (...args) { window.__draws++; return draw.apply(this, args); }; } window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.violatedDirective + ' ' + e.blockedURI));" });
 
@@ -1622,11 +1562,8 @@ if (want('measure')) {
     fs.rmSync(measureDir, { recursive: true, force: true });
 }
 
-chrome.kill();
-await new Promise(resolve => chrome.on('exit', resolve));
 server.close();
-await sleep(1000);
-try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
+await chrome.close();
 fs.rmSync(dir, { recursive: true, force: true });
 fs.rmSync(globalStorage, { recursive: true, force: true });
 console.log(`${results.filter(Boolean).length}/${results.length} passed`);

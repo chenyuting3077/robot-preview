@@ -1,14 +1,19 @@
-import { spawn } from 'node:child_process';
+// usage: pnpm build, then npx -y -p node@22 node tests/e2e/webview.mjs; ONLY=<regex> runs only the blocks (the `want(…)` names) it matches.
 import http from 'node:http';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { copyFixture, loadExtension, sleep, chromePath } from '../extension/vscode-mock.mjs';
+import { copyFixture, loadExtension, sleep } from '../extension/vscode-mock.mjs';
+import { launch } from './cdp.mjs';
 import { createPathMatrix } from '../extension/path-fixture.mjs';
 
 const dist = fileURLToPath(new URL('../../packages/urdf-mjcf/dist/', import.meta.url));
-const chromeBinary = chromePath();
+let matched = false;
+const want = name => {
+    const hit = !process.env.ONLY || new RegExp(process.env.ONLY).test(name);
+    matched ||= hit;
+    return hit;
+};
 const results = [];
 const check = (name, ok, detail = '') => {
     results.push(ok);
@@ -134,41 +139,11 @@ window.__send = async (name, patch) => {
 }
 
 async function connect(port, flags = []) {
-    const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'robot-preview-chrome-'));
-    const chrome = spawn(chromeBinary, ['--headless=new', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--no-first-run', '--enable-unsafe-swiftshader', '--window-size=1400,900', ...flags, 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'] });
-    const wsUrl = await new Promise((resolve, reject) => {
-        chrome.stderr.on('data', chunk => {
-            const match = String(chunk).match(/ws:\/\/\S+/);
-            if (match) resolve(match[0]);
-        });
-        chrome.on('exit', code => reject(new Error(`chrome exited ${code}`)));
+    const chrome = await launch(['--enable-unsafe-swiftshader', '--window-size=1400,900', ...flags]);
+    chrome.on(message => {
+        if (message.method === 'Runtime.exceptionThrown') console.log('EXCEPTION', chrome.exceptions.at(-1)?.slice(0, 300));
     });
-    const targets = await (await fetch(`http://${new URL(wsUrl).host}/json`)).json();
-    const ws = new WebSocket(targets.find(target => target.type === 'page').webSocketDebuggerUrl);
-    await new Promise(resolve => { ws.onopen = resolve; });
-    let id = 0;
-    const pending = new Map();
-    const exceptions = [];
-    ws.onmessage = ({ data }) => {
-        const message = JSON.parse(data);
-        if (message.id && pending.has(message.id)) {
-            pending.get(message.id)(message.result);
-            pending.delete(message.id);
-        }
-        if (message.method === 'Runtime.exceptionThrown') {
-            exceptions.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
-            console.log('EXCEPTION', exceptions.at(-1)?.slice(0, 300));
-        }
-    };
-    const send = (method, params = {}) => new Promise(resolve => {
-        pending.set(++id, resolve);
-        ws.send(JSON.stringify({ id, method, params }));
-    });
-    const ev = async expression => {
-        const result = await send('Runtime.evaluate', { expression: `(async () => { ${expression} })()`, awaitPromise: true, returnByValue: true });
-        if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description);
-        return result.result.value;
-    };
+    const ev = expression => chrome.evaluate(`(async () => { ${expression} })()`);
     const waitFor = async (expression, ms = 20000) => {
         const start = Date.now();
         while (Date.now() - start < ms) {
@@ -182,17 +157,8 @@ async function connect(port, flags = []) {
         await waitFor("window.__out.find(m => m.type === 'diagnostics' && !m.partial)", ms);
         return ev("return window.__out.find(m => m.type === 'diagnostics' && !m.partial)");
     };
-    await send('Runtime.enable');
-    await send('Page.enable');
-    await send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
-    const close = async () => {
-        const exited = new Promise(resolve => chrome.once('exit', resolve));
-        chrome.kill();
-        await exited;
-        await sleep(1000);
-        try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
-    };
-    return { send, ev, waitFor, finalDiagnostics, close, exceptions };
+    await chrome.send('Page.navigate', { url: `http://127.0.0.1:${port}/` });
+    return { send: chrome.send, ev, waitFor, finalDiagnostics, close: chrome.close, exceptions: chrome.exceptions };
 }
 
 const messages = await captureMessages();
@@ -519,6 +485,12 @@ try {
     check('zh-TW from <html lang>', await ev(`return window.i18n.getCurrentLanguage() === 'zh-TW' && document.getElementById('toggle-joints-panel').textContent.trim() === '關節'`));
     check('panels closed by default', await ev(`return ${panelsHidden}`));
 
+    // A triangle 1 tall along the file's Z: upright on screen unless the file declares Y_UP.
+    const dae = up => `<?xml version="1.0"?><COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1"><asset>${up}</asset><library_geometries><geometry id="g"><mesh><source id="p"><float_array id="pa" count="9">0 0 0 0.1 0 0 0 0 1</float_array><technique_common><accessor source="#pa" count="3" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source><vertices id="v"><input semantic="POSITION" source="#p"/></vertices><triangles count="1"><input semantic="VERTEX" source="#v" offset="0"/><p>0 1 2</p></triangles></mesh></geometry></library_geometries><library_visual_scenes><visual_scene id="s"><node id="n"><instance_geometry url="#g"/></node></visual_scene></library_visual_scenes><scene><instance_visual_scene url="#s"/></scene></COLLADA>`;
+    const box = '<robot name="b"><link name="base"><visual><origin xyz="0 0 0.1"/><geometry><box size="0.2 0.2 0.2"/></geometry></visual></link></robot>';
+    const mouse = (type, x, y, buttons = 0) => send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? (buttons ? 'left' : 'none') : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1 });
+
+    if (want('robot')) {
     await ev(`await window.__send('load', m => { m.settings = { 'show-visual': false, 'show-collision': true, unit: 'deg' }; })`);
     check('model loads with both packages', await waitFor(`window.app.currentModel?.links?.has('left_arm') && window.app.currentModel.links.has('lift_link')`));
     check('STL without normals is shaded', await ev(`let n; window.app.currentModel.links.get('left_arm').threeObject.traverse(o => { if (!n && o.isMesh) n = o.geometry.attributes.normal; }); return !!n && Array.from(n.array).some(v => v !== 0)`));
@@ -636,7 +608,9 @@ try {
     check('xacro arguments override defaults', await waitFor(`window.app.currentModel?.links?.has('right_arm')`, 10000));
     const missing = (await finalDiagnostics(5000)).missingMeshes;
     check('missing mesh reported', missing.length === 1 && missing[0].endsWith('arm.stl'), JSON.stringify(missing));
+    }
 
+    if (want('path-matrix')) {
     await ev(`window.__out.length = 0; await window.__send('matrix')`);
     check('path matrix model loads', await waitFor(`window.app.currentModel?.links?.has('l9')`, 10000));
     const matrixDiagnostics = await finalDiagnostics(15000);
@@ -644,7 +618,9 @@ try {
     const unexpected = (matrixDiagnostics?.missingMeshes || []).filter(mesh => !expectedMissing.some(path => mesh.endsWith(path)));
     check('every path form resolves to its mesh', matrixDiagnostics?.loadError === null && unexpected.length === 0, JSON.stringify(unexpected));
     check('a case-mismatched mesh is reported as a guess', JSON.stringify(matrixDiagnostics?.guessedMeshes) === JSON.stringify([{ path: 'pkg/meshes/case.STL', resolved: '/pkg/meshes/Case.stl', match: 'case' }]), JSON.stringify(matrixDiagnostics?.guessedMeshes));
+    }
 
+    if (want('xacro')) {
     await ev(`await window.__send('ur')`);
     check('UR5e with load_yaml loads in the webview', await waitFor(`window.app.currentModel?.links?.has('wrist_3_link') && window.app.currentModel.joints.has('shoulder_pan_joint')`, 15000));
     check('UR5e joint limit read from yaml (!degrees)', await ev(`return Math.abs(window.app.currentModel.joints.get('shoulder_pan_joint').limits.upper - 2 * Math.PI) < 1e-6`), JSON.stringify(await ev(`return window.app.currentModel.joints.get('shoulder_pan_joint')?.limits`)));
@@ -673,17 +649,19 @@ try {
     const xacroDiagnostics = await finalDiagnostics(15000);
     check('an unsupported expression points at its line, as written', xacroDiagnostics?.loadErrorLocation?.key === '/turtlebot3_description/urdf/turtlebot3_burger.urdf' && xacroDiagnostics.loadErrorLocation.line === 49
         && xacroDiagnostics.loadError.includes('${[x for x in [1]] if 1 <= 2 else 0}') && /comprehension/.test(xacroDiagnostics.loadError), JSON.stringify(xacroDiagnostics));
+    }
 
+    if (want('theme')) {
     await ev(`document.body.classList.add('vscode-light')`);
     check('theme follows VS Code', await waitFor(`document.documentElement.getAttribute('data-theme') === 'light'`, 3000));
     await ev(`document.body.classList.remove('vscode-light')`);
+    }
 
+    if (want('mesh-preview')) {
     await ev(`await window.__send('load', m => { m.files = m.files.filter(f => f.path.endsWith('arm.stl')).map(f => ({ path: '/mesh/arm.stl', data: window.__messages.onDemand[f.path] })); m.primary = '/mesh/arm.stl'; })`);
     check('mesh preview', await waitFor(`window.app.currentModel?.isMesh === true`, 10000));
     check('mesh preview follows the up menu', await ev(`return window.app.currentModel.threeObject.parent === window.app.sceneManager.world && document.getElementById('up-select').value === '+Z'`));
 
-    // A triangle 1 tall along the file's Z: upright on screen unless the file declares Y_UP.
-    const dae = up => `<?xml version="1.0"?><COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1"><asset>${up}</asset><library_geometries><geometry id="g"><mesh><source id="p"><float_array id="pa" count="9">0 0 0 0.1 0 0 0 0 1</float_array><technique_common><accessor source="#pa" count="3" stride="3"><param name="X" type="float"/><param name="Y" type="float"/><param name="Z" type="float"/></accessor></technique_common></source><vertices id="v"><input semantic="POSITION" source="#p"/></vertices><triangles count="1"><input semantic="VERTEX" source="#v" offset="0"/><p>0 1 2</p></triangles></mesh></geometry></library_geometries><library_visual_scenes><visual_scene id="s"><node id="n"><instance_geometry url="#g"/></node></visual_scene></library_visual_scenes><scene><instance_visual_scene url="#s"/></scene></COLLADA>`;
     const heights = [];
     for (const [i, up] of ['<up_axis>Z_UP</up_axis>', '', '<up_axis>Y_UP</up_axis>'].entries()) {
         await ev(`window.postMessage({ type: 'load', files: [{ path: '/d/t${i}.dae', data: new TextEncoder().encode(${JSON.stringify(dae(up))}) }], primary: '/d/t${i}.dae' }, '*')`);
@@ -691,7 +669,9 @@ try {
         heights.push(await ev(`return (o => { o.updateMatrixWorld(true); const b = window.app.sceneManager.getModelBoundingBox(o); return +(b.max.y - b.min.y).toFixed(2); })(window.app.currentModel.threeObject)`));
     }
     check('DAE up_axis is put in the Z-up frame', JSON.stringify(heights) === '[1,1,0]', JSON.stringify(heights));
+    }
 
+    if (want('mjcf-bar')) {
     const mjcf = '<mujoco model="t"><worldbody><light pos="0 0 3"/><geom type="plane" size="2 2 .1"/><body name="arm" pos="0 0 1"><joint name="hinge" type="hinge" axis="0 1 0"/><geom type="capsule" fromto="0 0 0 .5 0 0" size=".05"/></body></worldbody></mujoco>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/t/t.xml', data: new TextEncoder().encode(${JSON.stringify(mjcf)}) }], primary: '/t/t.xml' }, '*')`);
     check('MJCF loads', await waitFor(`window.app.currentModel?.joints?.has('hinge')`, 15000));
@@ -706,10 +686,11 @@ try {
     check('without room the simulation bar wraps below the toolbar and panels move below it', narrow.simTop >= narrow.toolbarBottom && narrow.panelTop >= narrow.simTop + 20, JSON.stringify(narrow));
     await ev(`document.getElementById('mujoco-simulate-btn-bar').click()`);
     check('MuJoCo simulation runs under the CSP', await waitFor(`window.app.mujocoSimulationManager.isSimulationRunning()`, 30000));
+    }
 
+    if (want('background')) {
     // The shadow-catching ground plane is coplanar with the grid; if it writes
     // depth, grid lines z-fight with it and flicker as the camera moves.
-    const box = '<robot name="b"><link name="base"><visual><origin xyz="0 0 0.1"/><geometry><box size="0.2 0.2 0.2"/></geometry></visual></link></robot>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/b/b.urdf', data: new TextEncoder().encode(${JSON.stringify(box)}) }], primary: '/b/b.urdf' }, '*')`);
     await waitFor(`window.app.currentModel?.links?.has('base')`, 10000);
     const hidden = await ev(`
@@ -774,19 +755,25 @@ try {
     await ev(`document.body.classList.remove('vscode-light')`);
     const themeDark = await cornerBecomes('80,80,80');
     check('a background change back to theme follows the theme again', themeLight === '255,255,255' && themeDark === '80,80,80', JSON.stringify({ themeLight, themeDark }));
+    }
 
+    if (want('model-checks')) {
     const flawed = '<robot name="f"><link name="base"/><link name="arm"><visual><geometry><box size="0.1 0.1 0.1"/></geometry></visual></link><joint name="j" type="revolute"><parent link="base"/><child link="arm"/><axis xyz="0 0 1"/></joint></robot>';
     await ev(`window.__out.length = 0; window.postMessage({ type: 'load', files: [{ path: '/f/f.urdf', data: new TextEncoder().encode(${JSON.stringify(flawed)}) }], primary: '/f/f.urdf' }, '*')`);
     const checks = (await finalDiagnostics()).checks.map(c => c.rule + ':' + c.name).sort();
     check('a later load sends one report, no partial one first', await ev(`return !window.__out.some(m => m.type === 'diagnostics' && m.partial)`));
     check('model checks run on the loaded robot', JSON.stringify(checks) === JSON.stringify(['missing-inertial:arm', 'missing-limit:j']), JSON.stringify(checks));
+    }
 
+    if (want('dae-normals')) {
     // SketchUp-exported DAE such as RealSense d435.dae carry no normals and render black under lit materials.
     const noNormalsDae = dae('');
     const daeUrdf = '<robot name="n"><link name="l"><visual><geometry><mesh filename="package://n/m.dae"/></geometry></visual></link></robot>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/n/n.urdf', data: new TextEncoder().encode(${JSON.stringify(daeUrdf)}) }, { path: '/n/m.dae', data: new TextEncoder().encode(${JSON.stringify(noNormalsDae)}) }], primary: '/n/n.urdf' }, '*')`);
     check('a DAE without normals gets them', await waitFor(`(() => { let ok = false; window.app.currentModel?.threeObject?.traverse(o => { if (o.isMesh && o.geometry.attributes.normal) ok = true; }); return ok; })()`, 5000));
+    }
 
+    if (want('picking')) {
     // Only what is on screen answers the pointer. The collision box reaches past the end of the visual box; `tip` is
     // a point there, on collision geometry only, with no visual behind it.
     const arm = '<robot name="h"><link name="base"/><link name="arm"><visual><origin xyz="0.25 0 0"/><geometry><box size="0.3 0.1 0.1"/></geometry></visual><collision><origin xyz="0.25 0 0"/><geometry><box size="0.4 0.2 0.2"/></geometry></collision></link><joint name="j" type="revolute"><parent link="base"/><child link="arm"/><origin xyz="0 0 0.3"/><axis xyz="0 0 1"/><limit lower="-3" upper="3" effort="1" velocity="1"/></joint></robot>';
@@ -804,7 +791,6 @@ try {
             const x = Math.round(r.left + (v.x + 1) / 2 * r.width), y = Math.round(r.top + (1 - v.y) / 2 * r.height);
             return { x, y, onCanvas: document.elementFromPoint(x, y) === sm.renderer.domElement };
         });`);
-    const mouse = (type, x, y, buttons = 0) => send('Input.dispatchMouseEvent', { type, x, y, button: type === 'mouseMoved' ? (buttons ? 'left' : 'none') : 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1 });
     const hover = async at => {
         await view();
         await mouse('mouseMoved', 5, 5);
@@ -898,7 +884,9 @@ try {
     const back = await hover(middle);
     await sleep(600);
     check('turned back on, hovering shows the card again', back === 'arm' && (await card()).visible);
+    }
 
+    if (want('mjcf-floor')) {
     // A MuJoCo floor is not hovered or clicked, but double-click can still put the orbit pivot on it.
     const floorScene = '<mujoco model="fl"><asset><texture name="grid" type="2d" builtin="checker" rgb1=".1 .2 .3" rgb2=".2 .3 .4" width="64" height="64"/><material name="grid" texture="grid" texrepeat="4 4"/></asset><worldbody><light pos="0 0 3"/><geom name="floor" type="plane" size="2 2 .1" material="grid"/><body name="arm" pos="0 0 .5"><joint name="hinge" type="hinge" axis="0 1 0"/><geom type="box" pos=".3 0 0" size=".1 .1 .1"/></body></worldbody></mujoco>';
     await ev(`window.postMessage({ type: 'load', files: [{ path: '/fl/fl.xml', data: new TextEncoder().encode(${JSON.stringify(floorScene)}) }], primary: '/fl/fl.xml' }, '*')`);
@@ -948,9 +936,10 @@ try {
     await ev(`document.getElementById('mujoco-reset-btn-bar').click()`);
     const reset = await ev(`const sim = window.app.mujocoSimulationManager; return { root: sim.mujocoRoot.visible, model: window.app.currentModel.threeObject.visible, time: sim.isOldAPI ? sim.data.time : sim.simulation.time }`);
     check('Reset while paused shows the model again and rewinds the physics', !reset.root && reset.model && reset.time === 0, JSON.stringify(reset));
+    }
 
     // #24: a lost context says so in the view, and a restored one draws the same picture again.
-    {
+    if (want('lost-context')) {
         await ev(`window.postMessage({ type: 'load', files: [{ path: '/b/b.urdf', data: new TextEncoder().encode(${JSON.stringify(box)}) }], primary: '/b/b.urdf' }, '*')`);
         await waitFor(`window.app.currentModel?.links?.has('base') && !window.app.mujocoSimulationManager.isSimulationRunning()`, 10000);
         const pixels = `const sm = window.app.sceneManager, gl = sm.renderer.getContext(), w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, buf = new Uint8Array(w * h * 4);
@@ -1002,14 +991,14 @@ try {
     const violations = await ev(`return window.__csp`);
     check('no CSP violations', violations.length === 0, JSON.stringify(violations));
 
-    await floatingPanels();
+    if (want('floating-panels')) await floatingPanels();
 } finally {
     await page.close();
     server.close();
 }
 
 // #24: without WebGL the view says why it is empty instead of staying blank.
-{
+if (want('no-webgl')) {
     const bareServer = await serve(messages);
     const bare = await connect(bareServer.address().port, ['--disable-3d-apis']);
     try {
@@ -1032,6 +1021,7 @@ try {
     }
 }
 
+if (!matched) check(`ONLY=${process.env.ONLY} matches a block`, false);
 const failed = results.filter(ok => !ok).length;
 console.log(`${results.length - failed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
