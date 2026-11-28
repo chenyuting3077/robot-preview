@@ -583,7 +583,8 @@ export class MujocoSimulationManager {
                             // Try to extract rgba from material
                             visual.threeObject.traverse((child) => {
                                 if (child.isMesh && child.material && !rgbaFromOriginal) {
-                                    const matColor = child.material.color;
+                                    // rgbaFromOriginal holds a file's (sRGB) values; the material's color is linear.
+                                    const matColor = child.material.color.getRGB({ r: 0, g: 0, b: 0 }, THREE.SRGBColorSpace);
                                     rgbaFromOriginal = {
                                         r: matColor.r,
                                         g: matColor.g,
