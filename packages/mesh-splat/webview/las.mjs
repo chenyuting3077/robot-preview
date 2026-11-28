@@ -42,6 +42,50 @@ function crsName(bytes, records) {
     return citation ? `${citation} (EPSG:${code})` : `EPSG:${code}`;
 }
 
+// One suffix labels X, Y and Z, so mixed horizontal and vertical units, or degrees, give null.
+const GEO_UNITS = { 9001: 1, 9002: 0.3048, 9003: 1200 / 3937 };
+// UTM zones (WGS 84, NAD27, NAD83, ETRS89) are metres by definition; laspy writes only their EPSG code.
+const UTM = [[32601, 32660], [32701, 32760], [26701, 26722], [26901, 26923], [25828, 25838]];
+const ANGULAR = ['GEOGCS', 'GEOGCRS', 'BASEGEOGCRS'];
+const oneOf = values => (values.size === 1 ? [...values][0] : null);
+function lengthUnit(bytes, records) {
+    const wkt = records['LASF_Projection/2112'];
+    if (wkt) {
+        const text = textOf(bytes, wkt.at, wkt.length);
+        const units = new Set(), stack = [];
+        const value = /\s*"[^"]*"\s*,\s*([-+\d.eE]+)/y;
+        for (const token of text.matchAll(/([A-Z_]+)\s*\[|\]/g)) {
+            if (!token[1]) {
+                stack.pop();
+                continue;
+            }
+            // A GEOGCS / GEOGCRS that is not a projection's base makes X and Y degrees.
+            if (['GEOGCRS', 'GEOGCS'].includes(token[1]) && !['PROJCS', 'PROJCRS'].includes(stack.at(-1))) return null;
+            if ((token[1] === 'UNIT' && !ANGULAR.includes(stack.at(-1))) || (token[1] === 'LENGTHUNIT' && stack.at(-1) !== 'ELLIPSOID')) {
+                value.lastIndex = token.index + token[0].length;
+                const factor = Number(value.exec(text)?.[1]);
+                if (factor > 0) units.add(factor);
+            }
+            stack.push(token[1]);
+        }
+        return oneOf(units);
+    }
+    const keys = records['LASF_Projection/34735'];
+    if (!keys || keys.length < 8) return null;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const units = new Set();
+    let projected = 0;
+    for (let k = 1; k <= view.getUint16(keys.at + 6, true) && 8 * k + 8 <= keys.length; k++) {
+        const [id, location, , value] = [0, 2, 4, 6].map(i => view.getUint16(keys.at + 8 * k + i, true));
+        if (location !== 0) continue;
+        if (id === 3076 || id === 4099) units.add(GEO_UNITS[value] ?? NaN);
+        if (id === 3072) projected = value;
+    }
+    if (!units.size && UTM.some(([from, to]) => projected >= from && projected <= to)) units.add(1);
+    const unit = oneOf(units);
+    return Number.isNaN(unit) ? null : unit;
+}
+
 // The public header and the coordinate system its VLRs name, from the bytes up to the point data.
 function lasHeader(bytes) {
     headerNeeds(bytes);
@@ -65,6 +109,7 @@ function lasHeader(bytes) {
         min: [f64(187), f64(203), f64(219)],
         max: [f64(179), f64(195), f64(211)],
         crs: crsName(bytes, records),
+        metersPerUnit: lengthUnit(bytes, records),
         // 0 none, 1 pointwise, 2 pointwise chunked, 3 layered chunked (LAS 1.4 formats 6-10).
         compressor: laszip?.length >= 2 ? view.getUint16(laszip.at, true) : null
     };
@@ -193,14 +238,14 @@ export function lasReader(limit = Infinity, { inside, expected, offset: given, d
                 if (name === 'gps_time') for (let i = 0; i < kept; i++) shown[i] -= gpsMin - gpsFirst;
                 if (shown.some(value => value !== shown[0])) fields[name] = shown;
             }
-            const { version, format, crs } = header;
+            const { version, format, crs, metersPerUnit } = header;
             return {
                 total: header.count - sampler.missing,
                 positions: positions.subarray(0, kept * 3),
                 colors,
                 scalars: fields,
                 offset: center && (center[0] || center[1]) ? center : null,
-                las: { version, format, crs }
+                las: { version, format, crs, metersPerUnit }
             };
         }
     };

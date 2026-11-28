@@ -68,3 +68,13 @@ test('coordinates read without grouping, so they paste into code, and never as -
     assert.equal(formatPoint([-0.0001, -1.5, 0], 3, 0.01), '0.000, -1.500, 0.000 cm');
     assert.equal(formatLength(-0.0001, 3), '0.000');
 });
+
+test('a stage the view scales to meters reads in its own units', () => {
+    // A metersPerUnit 0.01 stage is shown at 0.01: 1.5 m in the view is 150 cm in the stage.
+    const turn = turnOf('+Y');
+    const result = measurement({ view: [1.5, 0, 0], turn, scale: 0.01 }, { view: [1.5, 0.3, 0.4], turn, scale: 0.01 });
+    near(result.a, [150, 0, 0], 1e-9);
+    near(result.b, [150, 30, 40], 1e-9);
+    assert.ok(Math.abs(result.distance - 50) < 1e-9);
+    near(result.delta, [0, 30, 40], 1e-9);
+});

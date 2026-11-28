@@ -10,14 +10,15 @@ export function filePoint([x, y, z], [qx, qy, qz, qw]) {
     return [x + qw * tx + iy * tz - iz * ty, y + qw * ty + iz * tx - ix * tz, z + qw * tz + ix * ty - iy * tx];
 }
 
-// Each point in its own file's frame; the deltas in the first point's, which is also its file's when both share one.
+// `scale` is the view's size of one file unit (a USD stage is drawn in meters); deltas are in the first point's file.
 export function measurement(a, b) {
     const step = [0, 1, 2].map(axis => b.view[axis] - a.view[axis]);
+    const inFile = ({ scale = 1 }, point) => point.map(value => value / scale);
     return {
-        a: filePoint(a.view, a.turn),
-        b: filePoint(b.view, b.turn),
-        distance: Math.hypot(...step),
-        delta: filePoint(step, a.turn)
+        a: inFile(a, filePoint(a.view, a.turn)),
+        b: inFile(b, filePoint(b.view, b.turn)),
+        distance: Math.hypot(...step) / (a.scale ?? 1),
+        delta: inFile(a, filePoint(step, a.turn))
     };
 }
 

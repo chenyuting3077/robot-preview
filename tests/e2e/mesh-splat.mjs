@@ -673,7 +673,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
                 const measured = await evaluate(`[...document.querySelectorAll('#measure-table tr')].map(row => row.cells[1]?.textContent).join()`);
                 const measureSelects = await selectedName();
                 await evaluate(`document.getElementById('measure-btn').click()`);
-                const measureOk = /^0\.\d{3}, 0\.\d{3}, 0\.000$/.test(measured) && measureSelects === '';
+                const measureOk = /^0\.\d{3}, 0\.\d{3}, 0\.000 cm$/.test(measured) && measureSelects === '';
                 camera += ` measure "${measured}" selected "${measureSelects}"`;
                 const toggleOk = measureOk && hiddenBox < 0.001 && offClears && offPressed === 'false' && offHover === '' && offClick === '' && backOn === 'Tri' && staysClosed && reopened.name === 'Tri' && reopened.shown;
                 const pickOk = byRow === 'Tri World/TriMesh' && boxed > 0.0005 && cleared && byClick === 'Tri' && emptyClears && hoverName === 'World › Tri' && hoverOff === '' && toggleOk;
@@ -1562,6 +1562,7 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const empty = await readout();
     await click(pair.red);
     const first = await readout();
+    const noUnit = await evaluate("document.getElementById('measure-unit').hidden ? '' : document.getElementById('measure-unit').textContent");
     await click(pair.blue);
     const second = await readout();
     const marked = await shotDiff(unmeasured, await bare(pageShot));
@@ -1575,9 +1576,9 @@ for (const file of [...files, ...files.filter(file => CAD.test(file))]) {
     const offClick = await readout();
     const expected = ['A | 500000.000, 4000000.000, 500.000', 'B | 500003.000, 4000004.000, 500.000', '距離 | 5.000', 'ΔX ΔY ΔZ | 3.000, 4.000, 0.000'];
     const pairOk = on === 'true' && JSON.stringify(empty) === '[]' && JSON.stringify(first) === JSON.stringify(expected.slice(0, 1)) && JSON.stringify(second) === JSON.stringify(expected)
-        && copied === expected.map(row => row.replaceAll(' | ', '\t')).join('\n') && marked > 0.001 && JSON.stringify(escaped) === '[]' && unmarked < 0.0005 && off === 'false' && offClick === null;
+        && noUnit === '檔案沒有標單位' && copied === expected.map(row => row.replaceAll(' | ', '\t')).join('\n') && marked > 0.001 && JSON.stringify(escaped) === '[]' && unmarked < 0.0005 && off === 'false' && offClick === null;
     results.push(pairOk);
-    console.log(`${pairOk ? 'PASS' : 'FAIL'} measure pair.xyz at UTM ${Math.round((Date.now() - started) / 100) / 10}s dots ${JSON.stringify(pair)} on ${on} empty ${JSON.stringify(empty)} first ${JSON.stringify(first)} second ${JSON.stringify(second)} copied ${JSON.stringify(copied)} marked ${(marked * 100).toFixed(2)}% esc ${JSON.stringify(escaped)} unmarked ${(unmarked * 100).toFixed(2)}% off ${off} off click ${JSON.stringify(offClick)}`);
+    console.log(`${pairOk ? 'PASS' : 'FAIL'} measure pair.xyz at UTM ${Math.round((Date.now() - started) / 100) / 10}s dots ${JSON.stringify(pair)} on ${on} empty ${JSON.stringify(empty)} first ${JSON.stringify(first)} no unit "${noUnit}" second ${JSON.stringify(second)} copied ${JSON.stringify(copied)} marked ${(marked * 100).toFixed(2)}% esc ${JSON.stringify(escaped)} unmarked ${(unmarked * 100).toFixed(2)}% off ${off} off click ${JSON.stringify(offClick)}`);
 
     const twoAt = Date.now();
     await htmlFor(at('origin.xyz'));

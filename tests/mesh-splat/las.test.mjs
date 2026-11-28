@@ -86,7 +86,7 @@ test('point formats 0, 1, 2, 3, 6, 7 and 8 give the positions, colors and fields
         assert.deepEqual(plain(points.scalars.gps_time), GPS[format] >= 0 ? [0, 1, 2, 3] : undefined, `format ${format}`);
         const rgb = rows(4).flatMap(({ rgb }) => rgb.map(v => table[v >> 8]));
         assert.deepEqual(plain(points.colors), RGB[format] >= 0 ? rgb : null, `format ${format}`);
-        assert.deepEqual(points.las, { version: format >= 6 ? '1.4' : '1.2', format, crs: null });
+        assert.deepEqual(points.las, { version: format >= 6 ? '1.4' : '1.2', format, crs: null, metersPerUnit: null });
     }
 });
 
@@ -228,4 +228,29 @@ test('every point format, LAS 1.2 to 1.4, reads as laspy reads it', () => {
 test('the coordinate system laspy wrote is named', () => {
     assert.equal(read(fixture('f7-wkt.las')).las.crs, 'NAD83 / UTM zone 15N');
     assert.equal(read(fixture('f3-geotiff.las')).las.crs, 'NAD83 / UTM zone 15N (EPSG:26915)');
+});
+
+test('the length unit comes from the coordinate system, and none when it is unclear', () => {
+    const wkt = text => [{ id: 2112, data: new TextEncoder().encode(`${text}\0`) }];
+    const unit = vlrs => read(las({ format: 6, version: '1.4', points: rows(2), vlrs })).las.metersPerUnit;
+    // The GEOGCS's degree is angular; the PROJCS's own UNIT is the one coordinates are in.
+    assert.equal(unit(wkt('PROJCS["UTM 32N",GEOGCS["WGS 84",UNIT["degree",0.0174532925199433]],UNIT["metre",1]]')), 1);
+    assert.equal(unit(wkt('PROJCS["NAD83 / Texas Central (ftUS)",GEOGCS["NAD83",UNIT["degree",0.0174532925199433]],UNIT["US survey foot",0.304800609601219]]')), 0.304800609601219);
+    assert.equal(unit(wkt('GEOGCS["WGS 84",UNIT["degree",0.0174532925199433]]')), null);
+    assert.equal(unit(wkt('COMPD_CS["UTM + height",PROJCS["UTM 32N",GEOGCS["WGS 84",UNIT["degree",0.0174532925199433]],UNIT["metre",1]],VERT_CS["NAVD88",VERT_DATUM["NAVD88",2005],UNIT["metre",1]]]')), 1);
+    assert.equal(unit(wkt('COMPD_CS["UTM + height in feet",PROJCS["UTM 32N",UNIT["metre",1]],VERT_CS["NAVD88",UNIT["foot",0.3048]]]')), null);
+    assert.equal(unit(wkt('PROJCRS["UTM 32N",BASEGEOGCRS["WGS 84",ANGLEUNIT["degree",0.0174532925199433]],CS[Cartesian,2],AXIS["(E)",east,LENGTHUNIT["metre",1]]]')), 1);
+    // Degrees: an ellipsoid's axis length is not the coordinates' unit, nor is a vertical CRS's beside a geographic one.
+    assert.equal(unit(wkt('GEOGCRS["WGS 84",DATUM["WGS 84",ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1]]],CS[ellipsoidal,2],ANGLEUNIT["degree",0.0174532925199433]]')), null);
+    assert.equal(unit(wkt('COMPD_CS["WGS 84 + height",GEOGCS["WGS 84",UNIT["degree",0.0174532925199433]],VERT_CS["EGM96",UNIT["metre",1]]]')), null);
+    // GeoKeys: 3076 / 4099 name the horizontal / vertical unit (9001 metre, 9002 foot, 9003 US survey foot).
+    const keys = entries => [{ id: 34735, data: new Uint8Array(new Uint16Array([1, 1, 0, entries.length, ...entries.flat()]).buffer) }];
+    assert.equal(unit(keys([[3072, 0, 1, 2277], [3076, 0, 1, 9003]])), 1200 / 3937);
+    assert.equal(unit(keys([[3072, 0, 1, 2277], [3076, 0, 1, 9001], [4099, 0, 1, 9002]])), null);
+    // A UTM zone is in metres by definition, which is all laspy writes for one.
+    assert.equal(unit(keys([[3072, 0, 1, 32632]])), 1);
+    assert.equal(unit(keys([[3072, 0, 1, 2277]])), null);
+    assert.equal(unit([]), null);
+    assert.equal(read(fixture('f3-geotiff.las')).las.metersPerUnit, 1);
+    assert.equal(read(fixture('f7-wkt.las')).las.metersPerUnit, 1);
 });
