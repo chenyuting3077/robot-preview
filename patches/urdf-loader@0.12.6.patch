@@ -1,8 +1,18 @@
 diff --git a/src/URDFLoader.js b/src/URDFLoader.js
-index d47fda4a461f7bb659e4a9b6037c2216ad348e6c..a4f9c61f7d3b543fddc27f7a7266aadfc6184f5c 100644
+index d47fda4a461f7bb659e4a9b6037c2216ad348e6c..d2da12bc2cda7297ce94ee6902cce44ff58af913 100644
 --- a/src/URDFLoader.js
 +++ b/src/URDFLoader.js
-@@ -498,19 +498,25 @@ class URDFLoader {
+@@ -466,7 +466,8 @@ class URDFLoader {
+                             .split(/\s/g)
+                             .map(v => parseFloat(v));
+ 
+-                    material.color.setRGB(rgba[0], rgba[1], rgba[2]);
++                    // URDF rgba is a display (sRGB) color, as RViz and CAD exporters use it (#58).
++                    material.color.setRGB(rgba[0], rgba[1], rgba[2], THREE.SRGBColorSpace);
+                     material.opacity = rgba[3];
+                     material.transparent = rgba[3] < 1;
+                     material.depthWrite = !material.transparent;
+@@ -498,19 +499,25 @@ class URDFLoader {
              const isCollisionNode = vn.nodeName.toLowerCase() === 'collision';
              const children = [ ...vn.children ];
              let material = null;
@@ -28,7 +38,7 @@ index d47fda4a461f7bb659e4a9b6037c2216ad348e6c..a4f9c61f7d3b543fddc27f7a7266aadf
  
                  }
  
-@@ -553,7 +559,12 @@ class URDFLoader {
+@@ -553,7 +560,12 @@ class URDFLoader {
  
                                  } else if (obj) {
  

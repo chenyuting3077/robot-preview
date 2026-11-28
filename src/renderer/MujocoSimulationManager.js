@@ -554,7 +554,7 @@ export class MujocoSimulationManager {
                                         rgbaFromOriginal = visual.userData.rgba;
                                         // Update material color from rgba (if material exists)
                                         if (material && material.color) {
-                                            material.color.setRGB(rgbaFromOriginal.r, rgbaFromOriginal.g, rgbaFromOriginal.b);
+                                            material.color.setRGB(rgbaFromOriginal.r, rgbaFromOriginal.g, rgbaFromOriginal.b, THREE.SRGBColorSpace);
                                             if (rgbaFromOriginal.a < 1.0) {
                                                 material.transparent = true;
                                                 material.opacity = rgbaFromOriginal.a;
@@ -691,7 +691,7 @@ export class MujocoSimulationManager {
                 // Check current enhanced lighting state
                 const enhancedLighting = this.sceneManager.visualizationManager.showEnhancedLighting;
                 material = new THREE.MeshPhongMaterial({
-                    color: isCollisionGeom ? new THREE.Color(0, 1, 0) : new THREE.Color(color[0], color[1], color[2]),
+                    color: isCollisionGeom ? new THREE.Color(0, 1, 0) : new THREE.Color().setRGB(color[0], color[1], color[2], THREE.SRGBColorSpace),
                     transparent: isCollisionGeom ? true : (color[3] < 1.0),
                     opacity: isCollisionGeom ? 0.3 : color[3],
                     shininess: enhancedLighting ? 50 : 30,  // Apply based on lighting state

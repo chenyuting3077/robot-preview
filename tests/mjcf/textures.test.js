@@ -27,6 +27,7 @@ const scene = `
       <geom name="own_rgba" type="box" size="0.1 0.1 0.1" material="red" rgba="0 1 0 1" pos="1 0 0"/>
       <geom name="default_rgba" type="box" size="0.1 0.1 0.1" material="red" rgba="0.5 0.5 0.5 1" pos="2 0 0"/>
       <geom name="tiled" type="box" size="0.1 0.2 0.3" material="tiles" pos="3 0 0"/>
+      <geom name="display_rgba" type="box" size="0.1 0.1 0.1" rgba="0.2 0.7 0.3 1" pos="4 0 0"/>
     </body>
   </worldbody>
 </mujoco>`;
@@ -78,6 +79,11 @@ test('geom rgba wins over the material unless it is the default 0.5 0.5 0.5 1', 
     const model = await MJCFAdapter.parse(scene, new Map());
     assert.deepEqual(findMesh(model, 'own_rgba').material.color.toArray(), [0, 1, 0]);
     assert.deepEqual(findMesh(model, 'default_rgba').material.color.toArray(), [1, 0, 0]);
+});
+
+test('geom rgba is a display color: 0.2 0.7 0.3 shows as #33b34d, as in MuJoCo (#58)', async () => {
+    const model = await MJCFAdapter.parse(scene, new Map());
+    assert.equal(findMesh(model, 'display_rgba').material.color.getHexString(), '33b34d');
 });
 
 test('builtin checker and edge mark match MuJoCo Builtin2D', () => {

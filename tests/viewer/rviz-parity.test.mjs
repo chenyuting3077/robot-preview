@@ -38,15 +38,19 @@ test('all visuals of a link are drawn', () => {
 });
 
 test('a named material defined in one link colors a later link that names it', () => {
-    const orange = new THREE.Color(1, 0.5, 0).getHexString();
+    const orange = 'ff8000';
     assert.deepEqual(colorOf('local_definition'), [orange]);
     assert.deepEqual(colorOf('local_reference'), [orange]);
 });
 
 test('a URDF material replaces a mesh\'s own; without one the mesh keeps it', () => {
-    const green = new THREE.Color(0.2, 0.7, 0.3).getHexString();
-    assert.deepEqual(colorOf('gltf_urdf_material'), [green]);
+    assert.deepEqual(colorOf('gltf_urdf_material'), ['33b34d']);
+    // glTF baseColorFactor is linear by spec, unlike URDF rgba.
     assert.deepEqual(colorOf('gltf_own_material'), [new THREE.Color(0.8, 0.1, 0.1).getHexString()]);
+});
+
+test('URDF rgba is a display color: 0.2 0.7 0.3 shows as #33b34d, as in RViz (#58)', () => {
+    assert.deepEqual(colorOf('multi_visual'), ['33b34d', '33b34d', '33b34d']);
 });
 
 test('negative scale mirrors the mesh', () => {

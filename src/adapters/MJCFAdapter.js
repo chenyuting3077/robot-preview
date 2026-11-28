@@ -1851,7 +1851,8 @@ export class MJCFAdapter {
                     // If MJCF defines rgba color, apply to mesh
                     if (visual.userData && visual.userData.rgba) {
                         const rgba = visual.userData.rgba;
-                        const color = new THREE.Color(rgba.r, rgba.g, rgba.b);
+                        // MJCF rgba is a display (sRGB) color, as MuJoCo's viewer shows it (#58).
+                        const color = new THREE.Color().setRGB(rgba.r, rgba.g, rgba.b, THREE.SRGBColorSpace);
 
                         mesh.traverse((child) => {
                             if (child.isMesh && child.material) {

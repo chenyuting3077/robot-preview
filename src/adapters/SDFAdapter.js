@@ -170,7 +170,7 @@ export class SDFAdapter {
             object.traverse(mesh => {
                 if (!mesh.isMesh) return;
                 mesh.material = mesh.material.clone();
-                mesh.material.color.setRGB(rgba[0], rgba[1], rgba[2]);
+                mesh.material.color.setRGB(rgba[0], rgba[1], rgba[2], THREE.SRGBColorSpace);
                 mesh.material.transparent = rgba[3] < 1;
                 mesh.material.opacity = rgba[3];
             });
