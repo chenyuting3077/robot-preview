@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
 
 - A `.usda` editor has a preview button at the top right, and the Explorer menu an *Open 3D Preview* entry, that open the stage's view.
 - Settings for the defaults a view opens with: `robotPreviewUsd.background` (`theme`, or a fixed color such as `#ffffff` for figures, also used in screenshots), `.pointSize` (1 / 2 / 4) and `.upAxis` (`auto` follows the stage). Changing them updates open views, except a control already changed in that view; an up axis chosen for a file still wins.
