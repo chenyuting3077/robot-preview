@@ -31,8 +31,7 @@ export async function launch(flags = []) {
         if (message.method === 'Runtime.exceptionThrown') exceptions.push(message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
         for (const listener of listeners) listener(message);
     };
-    // A reply that never comes (a screenshot or an awaited page promise) fails with what it waited for instead of
-    // hanging the run: one mesh-splat run sat 63 minutes after cloud.ply with nothing logged.
+    // A reply that never comes (a screenshot, an awaited page promise) fails with what it waited for instead of hanging the run.
     const send = (method, params = {}, timeout = 60000) => new Promise((resolve, reject) => {
         const id = ++nextId;
         const what = `${method} ${String(params.expression ?? '').slice(0, 200)}`;
